@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Optional AgentCore Payments administration resources for TPipe.
+
+Parameters:
+  PaymentManagerName:
+    Type: String
+    Default: tpipe_agentcore_payments
+  PaymentManagerRoleArn:
+    Type: String
+    Default: ''
+    Description: Existing IAM role ARN for payment-manager operations.
+  PaymentCredentialProviderArn:
+    Type: String
+    Default: ''
+    Description: Existing payment credential-provider ARN; no credential value is accepted here.
+  EnablePayments:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  PaymentsEnabled: !And
+    - !Equals [!Ref EnablePayments, 'true']
+    - !Not [!Equals [!Ref PaymentManagerRoleArn, '']]
+    - !Not [!Equals [!Ref PaymentCredentialProviderArn, '']]
+
+Resources:
+  AgentCorePaymentManager:
+    Condition: PaymentsEnabled
+    Type: AWS::BedrockAgentCore::PaymentManager
+    Properties:
+      Name: !Ref PaymentManagerName
+      AuthorizerType: AWS_IAM
+      RoleArn: !Ref PaymentManagerRoleArn
+      Description: TPipe explicit-payment smoke manager; no automatic spending.
+
+  AgentCorePaymentConnector:
+    Condition: PaymentsEnabled
+    Type: AWS::BedrockAgentCore::PaymentConnector
+    Properties:
+      ConnectorName: tpipe_agentcore_connector
+      ConnectorType: CoinbaseCDP
+      PaymentManagerId: !GetAtt AgentCorePaymentManager.PaymentManagerId
+      CredentialProviderConfigurations:
+        - CoinbaseCdp:
+            CredentialProviderArn: !Ref PaymentCredentialProviderArn
+
+Outputs:
+  PaymentManagerArn:
+    Condition: PaymentsEnabled
+    Value: !GetAtt AgentCorePaymentManager.PaymentManagerArn
+  PaymentConnectorArn:
+    Condition: PaymentsEnabled
+    Value: !GetAtt AgentCorePaymentConnector.PaymentConnectorArn

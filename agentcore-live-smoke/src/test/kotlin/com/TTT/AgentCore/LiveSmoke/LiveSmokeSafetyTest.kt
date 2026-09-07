@@ -74,6 +74,21 @@ class LiveSmokeSafetyTest
     }
 
     @Test
+    fun unverifiedStandaloneCleanupIsNotReportedAsFailure()
+    {
+        val report = SmokeReport(
+            runId = "tpipe_smoke_test01",
+            region = "us-east-1",
+            startedAt = "2026-09-06T00:00:00Z",
+            finishedAt = "2026-09-06T00:00:01Z",
+            cleanupStatus = SmokeStatus.SKIPPED,
+            cases = emptyList()
+        )
+
+        assertFalse(report.hasFailure())
+    }
+
+    @Test
     fun manifestAcceptsExplicitRunTagWhenGeneratedNamesCannotContainFullRunId()
     {
         val runId = "tpipe_smoke_test01"

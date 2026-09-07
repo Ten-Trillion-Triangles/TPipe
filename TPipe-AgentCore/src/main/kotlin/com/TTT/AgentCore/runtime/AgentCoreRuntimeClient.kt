@@ -2,6 +2,11 @@ package com.TTT.AgentCore.runtime
 
 import aws.sdk.kotlin.services.bedrockagentcore.model.InvokeAgentRuntimeRequest
 import aws.sdk.kotlin.services.bedrockagentcore.model.InvokeAgentRuntimeResponse
+import aws.sdk.kotlin.services.bedrockagentcore.model.InvokeAgentRuntimeCommandRequest
+import aws.sdk.kotlin.services.bedrockagentcore.model.InvokeAgentRuntimeCommandResponse
+import aws.sdk.kotlin.services.bedrockagentcore.model.CommandExecutionStatus
+import aws.sdk.kotlin.services.bedrockagentcore.model.DeleteCapacityProviderSessionRequest
+import aws.sdk.kotlin.services.bedrockagentcore.model.DeleteCapacityProviderSessionResponse
 import aws.sdk.kotlin.services.bedrockagentcore.model.StopRuntimeSessionRequest
 import aws.sdk.kotlin.services.bedrockagentcore.model.StopRuntimeSessionResponse
 import aws.smithy.kotlin.runtime.content.toFlow
@@ -393,6 +398,37 @@ class AgentCoreRuntimeClient(
         return response
     }
 
+    /** Execute a Runtime command through the generated event-stream operation.
+     *
+     * Every stdout/stderr delta is delivered to [onEvent] as it arrives. The
+     * returned aggregate is only a convenience summary; callers that handle
+     * large command output should consume the callback and avoid retaining it.
+     *
+     * @param request AWS command request, including its command timeout.
+     * @param onEvent Callback for output and terminal events.
+     * @return Terminal command summary.
+     */
+    suspend fun executeCommand(
+        request: InvokeAgentRuntimeCommandRequest,
+        onEvent: suspend (AgentCoreRuntimeCommandEvent) -> Unit = {}
+    ): AgentCoreRuntimeCommandResult
+    {
+        val timeoutMillis = request.body?.timeout?.toLong()?.let { it * 1_000L }
+        val execute: suspend () -> AgentCoreRuntimeCommandResult = {
+            checkNotNull(dataClient) {
+                "This runtime client was not constructed with AgentCoreClients."
+            }.invokeCommand(request, onEvent)
+        }
+        return if(timeoutMillis == null)
+        {
+            execute()
+        }
+        else
+        {
+            kotlinx.coroutines.withTimeout(timeoutMillis.coerceAtLeast(1L)) { execute() }
+        }
+    }
+
     /** Stop a pinned SDK runtime session when this client was SDK-configured.
      *
      * @param sessionId Runtime session identifier.
@@ -410,6 +446,13 @@ class AgentCoreRuntimeClient(
                 runtimeSessionId = sessionId
             }
         )
+
+    /** Delete an Instances capacity-provider session explicitly. */
+    suspend fun deleteCapacityProviderSession(
+        request: DeleteCapacityProviderSessionRequest
+    ): DeleteCapacityProviderSessionResponse = checkNotNull(dataClient) {
+        "This runtime client was not constructed with AgentCoreClients."
+    }.deleteCapacityProviderSession(request)
 
     /** Close the owned HTTP client. */
     override fun close()
@@ -472,6 +515,18 @@ interface AgentCoreRuntimeDataClient {
      * @return SDK stop-session response.
      */
     suspend fun stop(request: StopRuntimeSessionRequest): StopRuntimeSessionResponse
+
+    /** Execute a generated Runtime command and stream its events. */
+    suspend fun invokeCommand(
+        request: InvokeAgentRuntimeCommandRequest,
+        onEvent: suspend (AgentCoreRuntimeCommandEvent) -> Unit
+    ): AgentCoreRuntimeCommandResult = error("Runtime command execution is not supported by this data client.")
+
+    /** Delete an Instances capacity-provider session. */
+    suspend fun deleteCapacityProviderSession(
+        request: DeleteCapacityProviderSessionRequest
+    ): DeleteCapacityProviderSessionResponse =
+        error("Capacity-provider session deletion is not supported by this data client.")
 }
 
 private class AwsAgentCoreRuntimeDataClient(
@@ -492,6 +547,53 @@ private class AwsAgentCoreRuntimeDataClient(
 
     override suspend fun stop(request: StopRuntimeSessionRequest): StopRuntimeSessionResponse =
         delegate.stopRuntimeSession(request)
+
+    override suspend fun invokeCommand(
+        request: InvokeAgentRuntimeCommandRequest,
+        onEvent: suspend (AgentCoreRuntimeCommandEvent) -> Unit
+    ): AgentCoreRuntimeCommandResult
+    {
+        var response: InvokeAgentRuntimeCommandResponse? = null
+        var stdout = StringBuilder()
+        var stderr = StringBuilder()
+        var exitCode: Int? = null
+        var status: CommandExecutionStatus? = null
+        delegate.invokeAgentRuntimeCommand(request) { commandResponse ->
+            response = commandResponse
+            commandResponse.stream?.collect { output ->
+                val chunk = output.asChunkOrNull() ?: return@collect
+                chunk.contentDelta?.let { delta ->
+                    delta.stdout?.let { value ->
+                        stdout.append(value)
+                        onEvent(AgentCoreRuntimeCommandEvent.Stdout(value))
+                    }
+                    delta.stderr?.let { value ->
+                        stderr.append(value)
+                        onEvent(AgentCoreRuntimeCommandEvent.Stderr(value))
+                    }
+                }
+                chunk.contentStop?.let { stop ->
+                    exitCode = stop.exitCode
+                    status = stop.status
+                    onEvent(AgentCoreRuntimeCommandEvent.Terminal(stop.exitCode, stop.status))
+                }
+            }
+        }
+        val capturedResponse = checkNotNull(response) {
+            "AgentCore Runtime command returned no response."
+        }
+        return AgentCoreRuntimeCommandResult(
+            stdout = stdout.toString(),
+            stderr = stderr.toString(),
+            exitCode = exitCode,
+            status = status,
+            runtimeSessionId = capturedResponse.runtimeSessionId
+        )
+    }
+
+    override suspend fun deleteCapacityProviderSession(
+        request: DeleteCapacityProviderSessionRequest
+    ): DeleteCapacityProviderSessionResponse = delegate.deleteCapacityProviderSession(request)
 }
 
 /** A P2P adapter that routes generic TPipe requests to AgentCore Runtime.

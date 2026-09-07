@@ -110,12 +110,13 @@ class AgentCorePolicyAdmin(private val client: BedrockAgentCoreControlClient)
     suspend fun deleteEngine(request: DeletePolicyEngineRequest): DeletePolicyEngineResponse =
         client.deletePolicyEngine(request)
 
-    /** Create a Cedar policy.
+    /** Create a Cedar or temporal/Dogwood policy using the generated AWS model.
      *
      * @param request Policy creation request.
      * @return The service response.
      */
-    suspend fun createPolicy(request: CreatePolicyRequest): CreatePolicyResponse = client.createPolicy(request)
+    suspend fun createPolicy(request: CreatePolicyRequest): CreatePolicyResponse =
+        client.createPolicy(request.withDefaultLogOnly())
 
     /** Read a Cedar policy.
      *
@@ -124,12 +125,13 @@ class AgentCorePolicyAdmin(private val client: BedrockAgentCoreControlClient)
      */
     suspend fun getPolicy(request: GetPolicyRequest): GetPolicyResponse = client.getPolicy(request)
 
-    /** Update a Cedar policy.
+    /** Update a Cedar or temporal/Dogwood policy using the generated AWS model.
      *
      * @param request Policy update request.
      * @return The service response.
      */
-    suspend fun updatePolicy(request: UpdatePolicyRequest): UpdatePolicyResponse = client.updatePolicy(request)
+    suspend fun updatePolicy(request: UpdatePolicyRequest): UpdatePolicyResponse =
+        client.updatePolicy(request.withDefaultLogOnly())
 
     /** Delete a Cedar policy.
      *
@@ -177,6 +179,7 @@ class AgentCorePolicyAdmin(private val client: BedrockAgentCoreControlClient)
                     authorizerType = gateway.authorizerType
                     authorizerConfiguration = gateway.authorizerConfiguration
                     protocolConfiguration = gateway.protocolConfiguration
+                    protocolType = gateway.protocolType
                     customTransformConfiguration = gateway.customTransformConfiguration
                     interceptorConfigurations = gateway.interceptorConfigurations
                     kmsKeyArn = gateway.kmsKeyArn
@@ -192,6 +195,26 @@ class AgentCorePolicyAdmin(private val client: BedrockAgentCoreControlClient)
                     }
                 }
             )
+        }
+
+    private fun CreatePolicyRequest.withDefaultLogOnly(): CreatePolicyRequest =
+        if(enforcementMode == null)
+        {
+            copy { enforcementMode = EnforcementMode.LogOnly }
+        }
+        else
+        {
+            this
+        }
+
+    private fun UpdatePolicyRequest.withDefaultLogOnly(): UpdatePolicyRequest =
+        if(enforcementMode == null)
+        {
+            copy { enforcementMode = EnforcementMode.LogOnly }
+        }
+        else
+        {
+            this
         }
 }
 

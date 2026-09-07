@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Optional custom Browser and Code Interpreter resources for TPipe.
+
+Parameters:
+  BrowserName:
+    Type: String
+    Default: tpipe_agentcore_browser
+  BrowserNetworkMode:
+    Type: String
+    Default: PUBLIC
+    AllowedValues: [PUBLIC, VPC]
+  BrowserSecurityGroupIds:
+    Type: String
+    Default: ''
+    Description: Comma-delimited VPC security-group IDs; required when BrowserNetworkMode is VPC.
+  BrowserSubnetIds:
+    Type: String
+    Default: ''
+    Description: Comma-delimited VPC subnet IDs; required when BrowserNetworkMode is VPC.
+  BrowserProfileName:
+    Type: String
+    Default: tpipe_agentcore_profile
+  CodeInterpreterName:
+    Type: String
+    Default: tpipe_agentcore_code
+  CodeInterpreterNetworkMode:
+    Type: String
+    Default: PUBLIC
+    AllowedValues: [PUBLIC, VPC]
+  EnableCustomTools:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  CustomToolsEnabled: !Equals [!Ref EnableCustomTools, 'true']
+  BrowserVpc: !Equals [!Ref BrowserNetworkMode, VPC]
+  CodeInterpreterVpc: !Equals [!Ref CodeInterpreterNetworkMode, VPC]
+
+Resources:
+  AgentCoreBrowserCustom:
+    Condition: CustomToolsEnabled
+    Type: AWS::BedrockAgentCore::BrowserCustom
+    Properties:
+      Name: !Ref BrowserName
+      NetworkConfiguration:
+        NetworkMode: !Ref BrowserNetworkMode
+        VpcConfig: !If
+          - BrowserVpc
+          - SecurityGroups: !Split [',', !Ref BrowserSecurityGroupIds]
+            Subnets: !Split [',', !Ref BrowserSubnetIds]
+          - !Ref 'AWS::NoValue'
+      Tags:
+        tpipe:component: agentcore-browser
+
+  AgentCoreBrowserProfile:
+    Condition: CustomToolsEnabled
+    Type: AWS::BedrockAgentCore::BrowserProfile
+    Properties:
+      Name: !Ref BrowserProfileName
+      Description: Persistent browser profile owned by the caller.
+      Tags:
+        tpipe:component: agentcore-browser-profile
+
+  AgentCoreCodeInterpreterCustom:
+    Condition: CustomToolsEnabled
+    Type: AWS::BedrockAgentCore::CodeInterpreterCustom
+    Properties:
+      Name: !Ref CodeInterpreterName
+      NetworkConfiguration:
+        NetworkMode: !Ref CodeInterpreterNetworkMode
+        VpcConfig: !If
+          - CodeInterpreterVpc
+          - SecurityGroups: !Split [',', !Ref BrowserSecurityGroupIds]
+            Subnets: !Split [',', !Ref BrowserSubnetIds]
+          - !Ref 'AWS::NoValue'
+      Tags:
+        tpipe:component: agentcore-code-interpreter
+
+Outputs:
+  BrowserArn:
+    Condition: CustomToolsEnabled
+    Value: !GetAtt AgentCoreBrowserCustom.BrowserArn
+  BrowserProfileArn:
+    Condition: CustomToolsEnabled
+    Value: !GetAtt AgentCoreBrowserProfile.ProfileArn
+  CodeInterpreterArn:
+    Condition: CustomToolsEnabled
+    Value: !GetAtt AgentCoreCodeInterpreterCustom.CodeInterpreterArn

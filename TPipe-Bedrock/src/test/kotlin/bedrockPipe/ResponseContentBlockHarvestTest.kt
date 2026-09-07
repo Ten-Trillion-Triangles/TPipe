@@ -106,7 +106,7 @@ class ResponseContentBlockHarvestTest
     @Test
     fun citationsContentBlockIsHarvestedIntoBedrockCallMetadata()
     {
-        // CitationsContentBlock in 1.6.107 has TWO list fields:
+        // CitationsContentBlock has two list fields in the current SDK:
         //   - citations: List<Citation>           <- what we want for BedrockCallMetadata
         //   - content:   List<CitationGeneratedContent>  (model-side generated content snippets)
         // Citation has sourceContent: List<CitationSourceContent> (NOT CitationGeneratedContent).

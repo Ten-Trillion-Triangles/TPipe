@@ -7,3 +7,4 @@ typealias AgentCorePolicyDecision = com.TTT.AgentCore.policy.AgentCorePolicyDeci
 typealias AgentCorePolicyEvaluator = com.TTT.AgentCore.policy.AgentCorePolicyEvaluator
 typealias AgentCorePolicyAdmin = com.TTT.AgentCore.policy.AgentCorePolicyAdmin
 typealias AgentCoreGatewayPolicyBinding = com.TTT.AgentCore.policy.AgentCoreGatewayPolicyBinding
+typealias AgentCoreTemporalPolicySession = com.TTT.AgentCore.policy.AgentCoreTemporalPolicySession

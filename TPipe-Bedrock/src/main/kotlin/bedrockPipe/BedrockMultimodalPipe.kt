@@ -379,7 +379,7 @@ open class BedrockMultimodalPipe : BedrockPipe()
                         }
                     }
                 }
-                // NEW (Task 9): harvest the new ContentBlock variants from 1.6.107.
+                // Harvest the ContentBlock variants exposed by the current SDK.
                 // These don't fit MultimodalContent (no carrier for typed ToolUse,
                 // Citations, or GuardrailConverseContentBlock), so they land in
                 // BedrockCallMetadata for callers to read via getLastCallMetadata().
@@ -451,7 +451,7 @@ open class BedrockMultimodalPipe : BedrockPipe()
         // assessments, cache tokens, stop reason) without extending
         // MultimodalContent.
         //
-        // Citations: CitationsContentBlock has TWO list fields in 1.6.107:
+        // CitationsContentBlock has two list fields in the current SDK:
         //   - `citations: List<Citation>` (the references themselves)
         //   - `content:   List<CitationGeneratedContent>` (model-generated snippets)
         // BedrockCallMetadata.citations is typed `List<Citation>`, so we flatten

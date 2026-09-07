@@ -5,3 +5,5 @@ typealias AgentCoreMemoryConfig = com.TTT.AgentCore.memory.AgentCoreMemoryConfig
 typealias AgentCoreMemoryBackend = com.TTT.AgentCore.memory.AgentCoreMemoryBackend
 typealias AgentCoreMemoryCodec = com.TTT.AgentCore.memory.AgentCoreMemoryCodec
 typealias AgentCoreSemanticMemory = com.TTT.AgentCore.memory.AgentCoreSemanticMemory
+typealias AgentCoreMemoryNamespaceTemplate = com.TTT.AgentCore.memory.AgentCoreMemoryNamespaceTemplate
+typealias AgentCoreMemoryNamespaceConfiguration = com.TTT.AgentCore.memory.AgentCoreMemoryNamespaceConfiguration

@@ -36,7 +36,7 @@ class GuardrailPrecheckLiveTest
         // we expect non-null response with at least the inline check results.
         assertNotNull(result, "Live guardrail precheck should return a response")
         result?.let {
-            // The 1.6.107 InvokeGuardrailChecksResponse carries per-policy results
+            // The current InvokeGuardrailChecksResponse carries per-policy results
             // (contentFilter, promptAttack, sensitiveInformation) — not the older
             // 'assessments' list returned by ApplyGuardrailResponse. Pin the shape.
             assertNotNull(it.results, "Response should have results (per-policy check outcomes)")

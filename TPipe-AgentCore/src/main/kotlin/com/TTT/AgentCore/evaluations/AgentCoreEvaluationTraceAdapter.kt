@@ -1,6 +1,7 @@
 package com.TTT.AgentCore.evaluations
 
 import com.TTT.Debug.TraceEvent
+import com.TTT.AgentCore.observability.AgentCoreTraceAttributes
 
 /** Converts TPipe trace events to a redacted, evaluation-friendly map. */
 object AgentCoreEvaluationTraceAdapter {
@@ -21,7 +22,7 @@ object AgentCoreEvaluationTraceAdapter {
                 put("phase", event.phase.name)
                 put("pipeName", event.pipeName)
                 put("timestamp", event.timestamp)
-                put("metadata", event.metadata)
+                put("metadata", event.metadata.filterKeys { !AgentCoreTraceAttributes.isSensitiveKey(it) })
                 if(includeContent) put("content", event.content?.text.orEmpty())
             }
         }

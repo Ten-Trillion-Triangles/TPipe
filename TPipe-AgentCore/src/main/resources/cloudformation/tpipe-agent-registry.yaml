@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Optional AWS Agent Registry catalog and MCP record for TPipe.
+
+Parameters:
+  RegistryName:
+    Type: String
+    Default: tpipe-agentcore-registry
+  RegistryRecordName:
+    Type: String
+    Default: tpipe-agentcore-mcp
+  RegistryRecordVersion:
+    Type: String
+    Default: v1
+  RegistryMcpData:
+    Type: String
+    Default: '{"name":"tpipe-agentcore","version":"v1"}'
+
+Resources:
+  AgentRegistry:
+    Type: AWS::AgentRegistry::Registry
+    Properties:
+      Name: !Ref RegistryName
+      AuthorizerType: AWS_IAM
+      ApprovalConfiguration:
+        ApprovalMode: MANUAL
+
+  AgentRegistryMcpRecord:
+    Type: AWS::AgentRegistry::RegistryRecord
+    Properties:
+      RegistryId: !GetAtt AgentRegistry.RegistryId
+      Name: !Ref RegistryRecordName
+      RecordType: MCP
+      RecordVersion: !Ref RegistryRecordVersion
+      Descriptors:
+        McpServer:
+          Data: !Ref RegistryMcpData
+          DataSchemaVersion: '2025-06-18'
+
+Outputs:
+  RegistryArn:
+    Value: !GetAtt AgentRegistry.RegistryArn
+  RegistryRecordArn:
+    Value: !GetAtt AgentRegistryMcpRecord.RecordArn

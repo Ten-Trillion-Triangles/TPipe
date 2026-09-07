@@ -1,8 +1,10 @@
 package com.TTT.AgentCore.gateway
 
 import com.TTT.MCP.Client.McpRemoteClient
+import com.TTT.MCP.Client.McpRemoteClientConfig
 import com.TTT.Pipe.Pipe
 import com.TTT.PipeContextProtocol.getPcpContext
+import com.TTT.AgentCore.policy.AgentCoreTemporalPolicySession
 
 /**
  * Gateway adapter that uses MCP tools as PCP dynamic functions.
@@ -22,12 +24,14 @@ class AgentCoreGateway(
             endpoint: String,
             region: String,
             credentialsProvider: AgentCoreGatewayCredentialsProvider,
-            namespacePrefix: String? = "gateway__"
+            namespacePrefix: String? = "gateway__",
+            temporalPolicySession: AgentCoreTemporalPolicySession? = null
         ): AgentCoreGateway = AgentCoreGateway(
             McpRemoteClient(
-                com.TTT.MCP.Client.McpRemoteClientConfig(
+                McpRemoteClientConfig(
                     endpoint = endpoint,
                     namespacePrefix = namespacePrefix,
+                    requestHeaders = temporalPolicySession?.asHeader().orEmpty(),
                     requestSigner = AgentCoreGatewaySigV4Auth(region, credentialsProvider)
                 )
             )

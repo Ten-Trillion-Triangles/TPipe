@@ -97,6 +97,22 @@ Parameters:
   KmsKeyArn:
     Type: String
     Default: ''
+  RuntimeIdleSessionTimeout:
+    Type: Number
+    Default: 60
+    MinValue: 60
+    MaxValue: 28800
+    Description: Idle runtime-session timeout in seconds when EnableRuntimeLifecycle is true.
+  RuntimeMaxLifetime:
+    Type: Number
+    Default: 60
+    MinValue: 60
+    MaxValue: 28800
+    Description: Runtime-session maximum lifetime in seconds when EnableRuntimeLifecycle is true.
+  EnableRuntimeLifecycle:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
 
 Metadata:
   TPipe:
@@ -109,7 +125,7 @@ Metadata:
       CodeInterpreter: !Ref EnableCodeInterpreter
       Evaluations: !Ref EnableEvaluations
     Notes:
-      - Optional capabilities are application-owned and use the pinned 1.6.107 SDK clients.
+      - Optional capabilities use the aligned AWS SDK Kotlin 1.8.47 and Smithy Kotlin 1.7.9 generation.
       - Secrets belong in IAM, workload identity, or Secrets Manager, not parameters or environment variables.
       - Policy starts in LOG_ONLY by convention; enforcement is an explicit application decision.
 
@@ -228,6 +244,11 @@ Resources:
       AgentRuntimeArtifact:
         ContainerConfiguration:
           ContainerUri: !Ref RuntimeImageUri
+      LifecycleConfiguration: !If
+        - HasRuntimeLifecycle
+        - IdleRuntimeSessionTimeout: !Ref RuntimeIdleSessionTimeout
+          MaxLifetime: !Ref RuntimeMaxLifetime
+        - !Ref 'AWS::NoValue'
 
   AgentCoreRuntimeEndpoint:
     Type: AWS::BedrockAgentCore::RuntimeEndpoint
@@ -303,6 +324,7 @@ Conditions:
   CodeInterpreterEnabled: !Equals [!Ref EnableCodeInterpreter, 'true']
   EvaluationsEnabled: !Equals [!Ref EnableEvaluations, 'true']
   HasKmsKey: !Not [!Equals [!Ref KmsKeyArn, '']]
+  HasRuntimeLifecycle: !Equals [!Ref EnableRuntimeLifecycle, 'true']
 
 Outputs:
   RuntimeName:

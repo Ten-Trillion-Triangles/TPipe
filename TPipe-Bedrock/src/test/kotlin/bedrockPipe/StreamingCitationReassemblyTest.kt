@@ -56,7 +56,7 @@ import org.junit.jupiter.api.Test
  *   multiple citations per block.
  *
  * Adversarial fixture facts (verified via javap on
- * bedrockruntime-jvm-1.6.107.jar, NOT in the plan's pre-baked snippet):
+ * the current bedrockruntime JVM artifact, rather than the plan's pre-baked snippet):
  *
  * - The sealed discriminator for streaming events lives under
  *   [ConverseStreamOutput$MessageStart] etc., not `ConverseStreamResponse.`.

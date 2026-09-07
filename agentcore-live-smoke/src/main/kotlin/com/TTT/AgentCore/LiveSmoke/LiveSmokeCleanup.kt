@@ -15,14 +15,32 @@ import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeletePolicyEngineR
 import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeletePolicyRequest
 import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteWorkloadIdentityRequest
 import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteResourcePolicyRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteCapacityProviderRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteGatewayRateLimitRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteGatewayRuleRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteConsentPortalRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteDatasetRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteConfigurationBundleRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteBrowserRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteBrowserProfileRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeleteCodeInterpreterRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeletePaymentConnectorRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.DeletePaymentManagerRequest
 import com.TTT.AgentCore.AgentCoreClients
+import com.TTT.AgentCore.AgentCoreConfig
 import com.TTT.AgentCore.control.controlPlane
 import com.TTT.AgentCore.evaluations.evaluationAdmin
 import com.TTT.AgentCore.gateway.gatewayAdmin
 import com.TTT.AgentCore.harness.harnessAdmin
 import com.TTT.AgentCore.identity.identityAdmin
+import com.TTT.AgentCore.payments.paymentAdmin
 import com.TTT.AgentCore.policy.policyAdmin
+import com.TTT.AgentCore.registry.AgentRegistryClients
+import com.TTT.AgentCore.registry.agentCoreRegistryAdmin
 import com.TTT.AgentCore.runtime.runtimeAdmin
+import com.TTT.AgentCore.tools.browserAdmin
+import com.TTT.AgentCore.tools.browserProfileAdmin
+import com.TTT.AgentCore.tools.codeInterpreterAdmin
 
 /** Result of an exact manifest cleanup attempt. */
 data class SmokeCleanupResult(
@@ -85,6 +103,9 @@ class AgentCoreLiveSmokeCleanup(
             "runtime" -> clients.runtimeAdmin().delete(
                 DeleteAgentRuntimeRequest { agentRuntimeId = requireId(resource) }
             )
+            "capacity-provider" -> clients.runtimeAdmin().deleteCapacityProvider(
+                DeleteCapacityProviderRequest { capacityProviderId = requireId(resource) }
+            )
             "gateway-target" -> clients.gatewayAdmin().deleteTarget(
                 DeleteGatewayTargetRequest {
                     gatewayIdentifier = requireParentId(resource)
@@ -93,6 +114,18 @@ class AgentCoreLiveSmokeCleanup(
             )
             "gateway" -> clients.gatewayAdmin().delete(
                 DeleteGatewayRequest { gatewayIdentifier = requireId(resource) }
+            )
+            "gateway-rate-limit" -> clients.gatewayAdmin().deleteRateLimit(
+                DeleteGatewayRateLimitRequest {
+                    gatewayIdentifier = requireParentId(resource)
+                    rateLimitId = requireId(resource)
+                }
+            )
+            "gateway-rule" -> clients.gatewayAdmin().deleteRule(
+                DeleteGatewayRuleRequest {
+                    gatewayIdentifier = requireParentId(resource)
+                    ruleId = requireId(resource)
+                }
             )
             "memory" -> clients.controlPlane().execute {
                 deleteMemory(DeleteMemoryRequest { memoryId = requireId(resource) })
@@ -131,6 +164,12 @@ class AgentCoreLiveSmokeCleanup(
                     DeleteOnlineEvaluationConfigRequest { onlineEvaluationConfigId = requireId(resource) }
                 )
             }
+            "dataset" -> clients.evaluationAdmin().deleteDataset(
+                DeleteDatasetRequest { datasetId = requireId(resource) }
+            )
+            "configuration-bundle" -> clients.evaluationAdmin().deleteConfigurationBundle(
+                DeleteConfigurationBundleRequest { bundleId = requireId(resource) }
+            )
             "api-key-credential-provider" -> clients.controlPlane().execute {
                 deleteApiKeyCredentialProvider(
                     DeleteApiKeyCredentialProviderRequest { name = requireName(resource) }
@@ -139,6 +178,42 @@ class AgentCoreLiveSmokeCleanup(
             "oauth2-credential-provider" -> clients.controlPlane().execute {
                 deleteOauth2CredentialProvider(
                     DeleteOauth2CredentialProviderRequest { name = requireName(resource) }
+                )
+            }
+            "consent-portal" -> clients.identityAdmin().deleteConsentPortal(
+                DeleteConsentPortalRequest { consentPortalIdentifier = requireId(resource) }
+            )
+            "browser-custom" -> clients.browserAdmin().delete(
+                DeleteBrowserRequest { browserId = requireId(resource) }
+            )
+            "browser-profile" -> clients.browserProfileAdmin().delete(
+                DeleteBrowserProfileRequest { profileId = requireId(resource) }
+            )
+            "code-interpreter-custom" -> clients.codeInterpreterAdmin().delete(
+                DeleteCodeInterpreterRequest { codeInterpreterId = requireId(resource) }
+            )
+            "payment-connector" -> clients.paymentAdmin().deleteConnector(
+                DeletePaymentConnectorRequest {
+                    paymentManagerId = requireParentId(resource)
+                    paymentConnectorId = requireId(resource)
+                }
+            )
+            "payment-manager" -> clients.paymentAdmin().deleteManager(
+                DeletePaymentManagerRequest { paymentManagerId = requireId(resource) }
+            )
+            "registry-record" -> AgentRegistryClients(AgentCoreConfig(resource.region)).use { registryClients ->
+                registryClients.agentCoreRegistryAdmin().deleteRegistryRecord(
+                    aws.sdk.kotlin.services.agentregistrycontrol.model.DeleteRegistryRecordRequest {
+                        registryId = requireParentId(resource)
+                        recordId = requireId(resource)
+                    }
+                )
+            }
+            "registry" -> AgentRegistryClients(AgentCoreConfig(resource.region)).use { registryClients ->
+                registryClients.agentCoreRegistryAdmin().deleteRegistry(
+                    aws.sdk.kotlin.services.agentregistrycontrol.model.DeleteRegistryRequest {
+                        registryId = requireId(resource)
+                    }
                 )
             }
             "ecr-image", "ecr-repository", "iam-role", "log-group" -> deleteExternalResource(resource)

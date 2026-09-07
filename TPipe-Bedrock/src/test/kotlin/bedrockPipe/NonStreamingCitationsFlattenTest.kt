@@ -59,7 +59,7 @@ import org.junit.jupiter.api.Test
  * .hermes/plans/2026-07-28_152342-citation-reassembly.md):
  *
  * - The plan's `BedrockRuntimeClient({ region = "us-east-1" })` constructor
- *   call does not compile against 1.6.107: `BedrockRuntimeClient` is an
+ *   call is not available in the current generated surface: `BedrockRuntimeClient` is an
  *   interface, not a builder. We mirror the [FakeConverseClient] pattern
  *   shipped in [ResponseContentBlockHarvestTest] -- every unused API throws,
  *   so a regression in test wiring is loud rather than silent.

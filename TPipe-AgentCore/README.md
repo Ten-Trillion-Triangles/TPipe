@@ -5,9 +5,8 @@ on TPipe Core and TPipe-MCP and deliberately does not depend on TPipe-Bedrock.
 AgentCore is treated as a runtime, memory, tools, gateway, identity, policy,
 and evaluation surface; model-provider pipes remain in their provider modules.
 
-The module is pinned to `aws.sdk.kotlin` `1.6.107`, the last SDK line supported
-by the repository's Kotlin `2.3.21` boundary. Do not upgrade this module to the
-AWS Kotlin SDK `1.8.x` line as part of a compatibility-only change.
+The module uses the repository-wide `aws.sdk.kotlin` `1.8.47` generation and
+Smithy Kotlin `1.7.9`. TPipe source compatibility remains Kotlin 2.3.
 
 ## Runtime
 
@@ -55,4 +54,4 @@ remains the source-compatible lower-level adapter.
 ```
 
 The module's compatibility task fails if an AWS Kotlin SDK dependency resolves
-outside the pinned `1.6.107` line.
+outside the common version-catalog generation.

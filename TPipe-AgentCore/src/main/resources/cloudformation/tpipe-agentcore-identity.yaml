@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Optional AgentCore Identity resources for TPipe workloads.
+
+Parameters:
+  WorkloadIdentityName:
+    Type: String
+    Default: tpipe-agentcore-workload
+  OAuthProviderName:
+    Type: String
+    Default: tpipe-agentcore-oauth
+  ApiKeyProviderName:
+    Type: String
+    Default: tpipe-agentcore-api-key
+  ApiKeySecretId:
+    Type: String
+    Default: ''
+    Description: Existing Secrets Manager secret ID; the secret value is never placed in this template.
+  EnableOAuthProvider:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  EnableApiKeyProvider:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  OAuthEnabled: !Equals [!Ref EnableOAuthProvider, 'true']
+  ApiKeyEnabled: !And
+    - !Equals [!Ref EnableApiKeyProvider, 'true']
+    - !Not [!Equals [!Ref ApiKeySecretId, '']]
+
+Resources:
+  AgentCoreWorkloadIdentity:
+    Type: AWS::BedrockAgentCore::WorkloadIdentity
+    Properties:
+      Name: !Ref WorkloadIdentityName
+      Tags:
+        - Key: tpipe:component
+          Value: agentcore-identity
+
+  AgentCoreOAuth2CredentialProvider:
+    Condition: OAuthEnabled
+    Type: AWS::BedrockAgentCore::OAuth2CredentialProvider
+    Properties:
+      Name: !Ref OAuthProviderName
+      CredentialProviderVendor: CustomOauth2
+      Tags:
+        - Key: tpipe:component
+          Value: agentcore-identity
+
+  AgentCoreApiKeyCredentialProvider:
+    Condition: ApiKeyEnabled
+    Type: AWS::BedrockAgentCore::ApiKeyCredentialProvider
+    Properties:
+      Name: !Ref ApiKeyProviderName
+      ApiKeySecretSource: EXTERNAL
+      ApiKeySecretConfig:
+        JsonKey: api_key
+        SecretId: !Ref ApiKeySecretId
+      Tags:
+        - Key: tpipe:component
+          Value: agentcore-identity
+
+Outputs:
+  WorkloadIdentityName:
+    Description: Workload identity name used to request short-lived tokens.
+    Value: !Ref AgentCoreWorkloadIdentity
+  OAuthProviderArn:
+    Condition: OAuthEnabled
+    Description: OAuth provider ARN; client credentials remain service-managed.
+    Value: !GetAtt AgentCoreOAuth2CredentialProvider.CredentialProviderArn
+  ApiKeyProviderArn:
+    Condition: ApiKeyEnabled
+    Description: API-key provider ARN backed by the external credential reference.
+    Value: !GetAtt AgentCoreApiKeyCredentialProvider.CredentialProviderArn

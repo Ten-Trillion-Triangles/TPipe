@@ -5,6 +5,7 @@ import com.TTT.MCP.Client.McpRemoteClientConfig
 import com.TTT.Pipe.Pipe
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.PipeContextProtocol.getPcpContext
+import com.TTT.AgentCore.policy.AgentCoreTemporalPolicySession
 
 /**
  * Configuration for an AgentCore Gateway MCP endpoint.
@@ -12,11 +13,20 @@ import com.TTT.PipeContextProtocol.getPcpContext
  * @param endpoint Gateway MCP endpoint.
  * @param namespacePrefix Optional PCP namespace prefix.
  * @param mcp Base MCP client configuration.
+ * @param temporalPolicySession Optional AgentCore temporal-policy session header.
  */
 data class AgentCoreGatewayConfig(
     val endpoint: String,
     val namespacePrefix: String? = null,
-    val mcp: McpRemoteClientConfig = McpRemoteClientConfig(endpoint)
+    val mcp: McpRemoteClientConfig = McpRemoteClientConfig(endpoint),
+    val temporalPolicySession: AgentCoreTemporalPolicySession? = null
+)
+
+/** Convert AgentCore Gateway configuration into the generic MCP configuration. */
+fun AgentCoreGatewayConfig.toMcpRemoteClientConfig(): McpRemoteClientConfig = mcp.copy(
+    endpoint = endpoint,
+    namespacePrefix = namespacePrefix ?: mcp.namespacePrefix,
+    requestHeaders = mcp.requestHeaders + (temporalPolicySession?.asHeader().orEmpty())
 )
 
 /**
@@ -35,12 +45,7 @@ class AgentCoreGatewayConnector(
 {
     /** Create a connector from endpoint/auth configuration. */
     constructor(config: AgentCoreGatewayConfig) : this(
-        McpRemoteClient(
-            config.mcp.copy(
-                endpoint = config.endpoint,
-                namespacePrefix = config.namespacePrefix ?: config.mcp.namespacePrefix
-            )
-        ),
+        McpRemoteClient(config.toMcpRemoteClientConfig()),
         config.namespacePrefix ?: config.mcp.namespacePrefix
     )
 

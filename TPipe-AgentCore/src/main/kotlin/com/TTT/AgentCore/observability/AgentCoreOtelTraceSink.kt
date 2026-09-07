@@ -188,7 +188,7 @@ class AgentCoreOtelTraceSink(
             span.addEvent(event.eventType.name)
             if(event.error != null || isFailure(event.eventType))
             {
-                span.setStatus(StatusCode.ERROR, event.error?.message ?: event.eventType.name)
+                span.setStatus(StatusCode.ERROR, event.eventType.name)
             }
         }
 
@@ -234,7 +234,7 @@ class AgentCoreOtelTraceSink(
         setStableAttribute(span, "tpipe.model", model)
         setStableAttribute(span, "session.id", sessionId)
         event.metadata.forEach { (key, value) ->
-            if(!config.redactionPredicate(key))
+            if(!AgentCoreTraceAttributes.isSensitiveKey(key) && !config.redactionPredicate(key))
             {
                 val attribute = "tpipe.metadata.$key"
                 when(value)
