@@ -27,7 +27,7 @@ class RequestMetadataLiveTest
         pipe.useConverseApi()
         pipe.setRequestMetadata(mapOf(
             "tenant" to "tpipe-upgrade-test",
-            "experiment" to "bedrock-1.6.107",
+            "experiment" to "bedrock-1.8.47",
             "user_id" to "qa"
         ))
         kotlinx.coroutines.runBlocking { pipe.init() }

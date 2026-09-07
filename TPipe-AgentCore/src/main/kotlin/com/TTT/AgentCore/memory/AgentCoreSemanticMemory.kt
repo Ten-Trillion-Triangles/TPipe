@@ -5,6 +5,8 @@ import aws.sdk.kotlin.services.bedrockagentcore.model.CreateEventRequest
 import aws.sdk.kotlin.services.bedrockagentcore.model.CreateEventResponse
 import aws.sdk.kotlin.services.bedrockagentcore.model.GetMemoryRecordRequest
 import aws.sdk.kotlin.services.bedrockagentcore.model.GetMemoryRecordResponse
+import aws.sdk.kotlin.services.bedrockagentcore.model.IngestDataRequest
+import aws.sdk.kotlin.services.bedrockagentcore.model.IngestDataResponse
 import aws.sdk.kotlin.services.bedrockagentcore.model.ListMemoryRecordsRequest
 import aws.sdk.kotlin.services.bedrockagentcore.model.ListMemoryRecordsResponse
 import aws.sdk.kotlin.services.bedrockagentcore.model.RetrieveMemoryRecordsRequest
@@ -21,6 +23,16 @@ import com.TTT.AgentCore.AgentCoreClients
  */
 class AgentCoreSemanticMemory(private val client: BedrockAgentCoreClient)
 {
+    /** Ingest data directly into long-term semantic memory.
+     *
+     * This intentionally remains separate from [createEvent]: AgentCore's
+     * ingestion operation has different long-term-memory semantics.
+     *
+     * @param request Ingestion request using the AWS Smithy document model.
+     * @return The service response.
+     */
+    suspend fun ingestData(request: IngestDataRequest): IngestDataResponse = client.ingestData(request)
+
     /** Create an AgentCore Memory event for service-managed extraction.
      *
      * @param request Event request.

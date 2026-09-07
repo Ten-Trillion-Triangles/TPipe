@@ -5,3 +5,4 @@ typealias AgentCoreCodeInterpreterClient = com.TTT.AgentCore.tools.AgentCoreCode
 typealias AgentCoreCodeInterpreterSession = com.TTT.AgentCore.tools.AgentCoreCodeInterpreterSession
 typealias AgentCoreCodeInterpreterTools = com.TTT.AgentCore.tools.AgentCoreCodeInterpreterTools
 typealias AgentCoreCodeInterpreterToolsConfig = com.TTT.AgentCore.tools.AgentCoreCodeInterpreterToolsConfig
+typealias AgentCoreCodeInterpreterAdmin = com.TTT.AgentCore.tools.AgentCoreCodeInterpreterAdmin

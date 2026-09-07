@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Optional AgentCore Evaluations datasets, evaluators, and versioned configuration.
+
+Parameters:
+  DatasetName:
+    Type: String
+    Default: tpipe_agentcore_dataset
+  BundleName:
+    Type: String
+    Default: tpipe_agentcore_bundle
+  EvaluatorName:
+    Type: String
+    Default: tpipe_agentcore_evaluator
+  EvaluatorLambdaArn:
+    Type: String
+    Default: ''
+    Description: Existing evaluator Lambda ARN; no function is created by this template.
+  EvaluationRoleArn:
+    Type: String
+    Default: ''
+    Description: Existing IAM role ARN used by online evaluation.
+  EvaluationLogGroupName:
+    Type: String
+    Default: ''
+  EvaluationServiceName:
+    Type: String
+    Default: bedrock-agentcore
+  EnableEvaluationResources:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  EvaluationResourcesEnabled: !And
+    - !Equals [!Ref EnableEvaluationResources, 'true']
+    - !Not [!Equals [!Ref EvaluatorLambdaArn, '']]
+    - !Not [!Equals [!Ref EvaluationRoleArn, '']]
+    - !Not [!Equals [!Ref EvaluationLogGroupName, '']]
+
+Resources:
+  AgentCoreDataset:
+    Condition: EvaluationResourcesEnabled
+    Type: AWS::BedrockAgentCore::Dataset
+    Properties:
+      DatasetName: !Ref DatasetName
+      SchemaType: AGENTCORE_EVALUATION_SIMULATED_V1
+      Description: TPipe provider-neutral evaluation scenarios.
+
+  AgentCoreEvaluator:
+    Condition: EvaluationResourcesEnabled
+    Type: AWS::BedrockAgentCore::Evaluator
+    Properties:
+      EvaluatorName: !Ref EvaluatorName
+      Level: TRACE
+      Description: TPipe live-smoke trace evaluator.
+      EvaluatorConfig:
+        CodeBased:
+          LambdaConfig:
+            LambdaArn: !Ref EvaluatorLambdaArn
+            LambdaTimeoutInSeconds: 30
+
+  AgentCoreConfigurationBundle:
+    Condition: EvaluationResourcesEnabled
+    Type: AWS::BedrockAgentCore::ConfigurationBundle
+    Properties:
+      BundleName: !Ref BundleName
+      BranchName: mainline
+      CommitMessage: Initial TPipe AgentCore evaluation configuration.
+      Components:
+        tpipe:
+          Configuration:
+            mode: LOG_ONLY
+            owner: tpipe
+      Description: Versioned, caller-reviewed AgentCore evaluation settings.
+
+  AgentCoreOnlineEvaluationConfig:
+    Condition: EvaluationResourcesEnabled
+    Type: AWS::BedrockAgentCore::OnlineEvaluationConfig
+    Properties:
+      OnlineEvaluationConfigName: tpipe_agentcore_online
+      DataSourceConfig:
+        CloudWatchLogs:
+          LogGroupNames:
+            - !Ref EvaluationLogGroupName
+          ServiceNames:
+            - !Ref EvaluationServiceName
+      EvaluationExecutionRoleArn: !Ref EvaluationRoleArn
+      ExecutionStatus: DISABLED
+      Evaluators:
+        - EvaluatorId: !Ref AgentCoreEvaluator
+      Rule:
+        SamplingConfig:
+          SamplingPercentage: 100
+
+Outputs:
+  DatasetId:
+    Condition: EvaluationResourcesEnabled
+    Value: !GetAtt AgentCoreDataset.DatasetId
+  ConfigurationBundleId:
+    Condition: EvaluationResourcesEnabled
+    Value: !GetAtt AgentCoreConfigurationBundle.BundleId
+  EvaluatorId:
+    Condition: EvaluationResourcesEnabled
+    Value: !GetAtt AgentCoreEvaluator.EvaluatorId

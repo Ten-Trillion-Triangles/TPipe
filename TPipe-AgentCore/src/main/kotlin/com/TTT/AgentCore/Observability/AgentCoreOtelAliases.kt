@@ -4,3 +4,4 @@ package com.TTT.AgentCore.Observability
 typealias AgentCoreOtelConfig = com.TTT.AgentCore.observability.AgentCoreOtelConfig
 typealias AgentCoreOtelDropPolicy = com.TTT.AgentCore.observability.AgentCoreOtelDropPolicy
 typealias AgentCoreOtelTraceSink = com.TTT.AgentCore.observability.AgentCoreOtelTraceSink
+typealias AgentCoreTraceAttributes = com.TTT.AgentCore.observability.AgentCoreTraceAttributes

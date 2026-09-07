@@ -852,10 +852,10 @@ open class BedrockPipe : Pipe()
 
     /**
      * Pre-flight guardrail check using [invokeGuardrailChecks] (added in
-     * aws-sdk-kotlin bedrockruntime 1.6.107, operation introduced to support
+     * the current aws-sdk-kotlin bedrockruntime generation, an operation introduced to support
      * inline guardrail policy evaluation without invoking any model).
      *
-     * The 1.6.107 `InvokeGuardrailChecksRequest` has a fundamentally different
+     * The current `InvokeGuardrailChecksRequest` has a fundamentally different
      * shape than the older `ApplyGuardrailRequest`: it takes inline `checks`
      * (a policy config specifying which categories/types to evaluate) and
      * `messages` (a list of role+content messages), NOT the managed
@@ -879,7 +879,7 @@ open class BedrockPipe : Pipe()
      *         [setGuardrail].
      * @see setGuardrail to satisfy the precondition before calling this method.
      * @see applyGuardrailStandalone for managed-guardrail standalone evaluation.
-     * @since Requires aws-sdk-kotlin bedrockruntime 1.6.107 or later.
+     * @since Requires the current aws-sdk-kotlin bedrockruntime generation or later.
      */
     suspend fun applyGuardrailPrecheck(
         content: MultimodalContent

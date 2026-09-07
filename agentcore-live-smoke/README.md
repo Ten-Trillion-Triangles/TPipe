@@ -106,6 +106,46 @@ TPIPE_AGENTCORE_MANIFEST=build/agentcore-live-smoke/manifest.json \
 ./gradlew :agentcore-live-smoke:run
 ```
 
+The extended capability cases use these additional explicit inputs:
+
+```text
+TPIPE_AGENTCORE_INSTANCES_RUNTIME_ARN
+TPIPE_AGENTCORE_INSTANCES_SESSION_ID
+TPIPE_AGENTCORE_SHELL_RUNTIME_SESSION_ID
+TPIPE_AGENTCORE_SHELL_ID
+TPIPE_AGENTCORE_CAPACITY_PROVIDER_ID
+TPIPE_AGENTCORE_GATEWAY_IDENTIFIER
+TPIPE_AGENTCORE_GATEWAY_RULE_ID
+TPIPE_AGENTCORE_GATEWAY_RATE_LIMIT_ID
+TPIPE_AGENTCORE_MEMORY_NAMESPACE
+TPIPE_AGENTCORE_CONSENT_PORTAL_ID
+TPIPE_AGENTCORE_DATASET_ID
+TPIPE_AGENTCORE_CONFIGURATION_BUNDLE_ID
+TPIPE_AGENTCORE_RECOMMENDATION_ID
+TPIPE_AGENTCORE_AB_TEST_ID
+TPIPE_AGENTCORE_BROWSER_CUSTOM_IDENTIFIER
+TPIPE_AGENTCORE_BROWSER_PROFILE_IDENTIFIER
+TPIPE_AGENTCORE_CODE_INTERPRETER_CUSTOM_IDENTIFIER
+TPIPE_AGENTCORE_REGISTRY_ID
+TPIPE_AGENTCORE_REGISTRY_RECORD_ID
+TPIPE_AGENTCORE_PAYMENT_MANAGER_ID
+TPIPE_AGENTCORE_PAYMENT_CONNECTOR_ID
+TPIPE_AGENTCORE_PAYMENT_SESSION_ID
+```
+
+Select a subset with `TPIPE_AGENTCORE_CASES`, using IDs such as
+`runtime.command`, `runtime.shell`, `runtime.capacity-provider`,
+`gateway.rate-limit`, `gateway.rule`, `memory.ingest`,
+`identity.consent-portal`, `evaluation.dataset`,
+`evaluation.configuration-bundle`, `evaluation.recommendation`,
+`evaluation.ab-test`, `tools.browser-custom`, `tools.browser-profile`,
+`tools.code-interpreter-custom`, `registry.lifecycle`, and
+`payments.lifecycle`. Read-only cases require the corresponding exact
+resource identifiers. Durable writes, credential-provider lifecycle, temporal
+policy setup, payment execution, and capacity-session deletion remain
+`NOT_SAFELY_TESTABLE` unless a separately authorized disposable lifecycle and
+manifest cleanup proof are supplied.
+
 Missing optional service identifiers are reported as `BLOCKED`; the harness
 does not silently substitute an existing resource. OAuth/API-key provider
 cases are `NOT_SAFELY_TESTABLE` unless the deployment manifest records a

@@ -1,5 +1,6 @@
 package com.TTT.AgentCore.runtime
 
+import aws.sdk.kotlin.services.bedrockagentcore.model.CommandExecutionStatus
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
 import com.TTT.Util.serialize
@@ -11,6 +12,26 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
+
+/** One streamed Runtime command output or terminal event. */
+sealed interface AgentCoreRuntimeCommandEvent
+{
+    /** A stdout delta. */
+    data class Stdout(val text: String) : AgentCoreRuntimeCommandEvent
+    /** A stderr delta. */
+    data class Stderr(val text: String) : AgentCoreRuntimeCommandEvent
+    /** Terminal command state. */
+    data class Terminal(val exitCode: Int, val status: CommandExecutionStatus) : AgentCoreRuntimeCommandEvent
+}
+
+/** Aggregate command result returned after the generated stream terminates. */
+data class AgentCoreRuntimeCommandResult(
+    val stdout: String,
+    val stderr: String,
+    val exitCode: Int?,
+    val status: CommandExecutionStatus?,
+    val runtimeSessionId: String?
+)
 
 /**
  * HTTP invocation body accepted by the AgentCore runtime host.

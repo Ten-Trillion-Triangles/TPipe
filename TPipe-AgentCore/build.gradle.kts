@@ -30,13 +30,12 @@ dependencies {
     implementation(project(":"))
     implementation(project(":TPipe-MCP"))
 
-    // Keep AgentCore on the last AWS Kotlin SDK 1.6.x line. AWS SDK Kotlin
-    // 1.8.x requires Kotlin 2.4 and is intentionally outside this module's
-    // compatibility boundary.
-    implementation("aws.sdk.kotlin:bedrockagentcore:1.6.107")
-    implementation("aws.sdk.kotlin:bedrockagentcorecontrol:1.6.107")
-    implementation("aws.sdk.kotlin:aws-core:1.6.107")
-    implementation("aws.smithy.kotlin:http-client-engine-okhttp-jvm:1.6.15")
+    implementation("aws.sdk.kotlin:bedrockagentcore:${libs.versions.aws.sdk.kotlin.get()}")
+    implementation("aws.sdk.kotlin:bedrockagentcorecontrol:${libs.versions.aws.sdk.kotlin.get()}")
+    implementation("aws.sdk.kotlin:agentregistry:${libs.versions.aws.sdk.kotlin.get()}")
+    implementation("aws.sdk.kotlin:agentregistrycontrol:${libs.versions.aws.sdk.kotlin.get()}")
+    implementation("aws.sdk.kotlin:aws-core:${libs.versions.aws.sdk.kotlin.get()}")
+    implementation("aws.smithy.kotlin:http-client-engine-okhttp-jvm:${libs.versions.smithy.kotlin.get()}")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.9.0")
@@ -61,22 +60,29 @@ dependencies {
 }
 
 /**
- * Prevent accidental resolution of an AWS Kotlin SDK line that requires a
- * newer Kotlin compiler than the repository currently supports.
+ * Prevent accidental resolution of a mixed AWS Kotlin SDK generation.
  */
 val verifyAgentCoreAwsSdkCompatibility by tasks.registering {
     group = "verification"
-    description = "Verify AgentCore stays on the pinned AWS Kotlin SDK 1.6.107 line."
+    description = "Verify AgentCore resolves one common AWS Kotlin SDK generation."
     doLast {
-        val allowedVersion = "1.6.107"
+        val expectedVersion = libs.versions.aws.sdk.kotlin.get()
+        val expectedSmithyVersion = libs.versions.smithy.kotlin.get()
         val resolved = configurations.runtimeClasspath.get().resolvedConfiguration.resolvedArtifacts
             .map { it.moduleVersion.id }
             .filter { it.group.startsWith("aws.sdk.kotlin") }
-        val violations = resolved.filter { it.version != allowedVersion }
-        if (violations.isNotEmpty()) {
+        val violations = resolved.filter { it.version != expectedVersion }
+        val resolvedSmithy = configurations.runtimeClasspath.get().resolvedConfiguration.resolvedArtifacts
+            .map { it.moduleVersion.id }
+            .filter { it.group == "aws.smithy.kotlin" }
+        val smithyViolations = resolvedSmithy.filter { it.version != expectedSmithyVersion }
+        if (violations.isNotEmpty() || smithyViolations.isNotEmpty()) {
             throw GradleException(
-                "TPipe-AgentCore requires aws.sdk.kotlin $allowedVersion; resolved: " +
-                    violations.joinToString { "${it.group}:${it.name}:${it.version}" }
+                "TPipe-AgentCore requires aws.sdk.kotlin $expectedVersion and Smithy Kotlin " +
+                    "$expectedSmithyVersion; resolved violations: " +
+                    (violations + smithyViolations).joinToString {
+                        "${it.group}:${it.name}:${it.version}"
+                    }
             )
         }
     }

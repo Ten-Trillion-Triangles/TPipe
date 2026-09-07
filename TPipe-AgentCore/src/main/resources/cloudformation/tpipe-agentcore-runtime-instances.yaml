@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Optional EC2-backed AgentCore Runtime capacity provider for TPipe.
+
+Parameters:
+  CapacityProviderName:
+    Type: String
+    Default: tpipe_agentcore_instances
+  CapacityProviderOperatorRoleArn:
+    Type: String
+    Description: IAM role ARN used by the capacity-provider operator. This is an ARN, not a secret.
+  InstanceProfileArn:
+    Type: String
+    Description: Existing EC2 instance-profile ARN for the capacity provider.
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  InstanceType:
+    Type: String
+    Default: t4g.small
+  RootVolumeFreeSpaceGiB:
+    Type: Number
+    Default: 20
+    MinValue: 1
+  KmsKeyId:
+    Type: String
+    Default: ''
+    Description: Optional KMS key ID for EBS encryption.
+
+Conditions:
+  HasVolumeKmsKey: !Not [!Equals [!Ref KmsKeyId, '']]
+
+Resources:
+  AgentCoreCapacityProvider:
+    Type: AWS::BedrockAgentCore::CapacityProvider
+    Properties:
+      Name: !Ref CapacityProviderName
+      Description: TPipe-owned disposable Instances capacity provider.
+      PermissionsConfiguration:
+        CapacityProviderOperatorRoleArn: !Ref CapacityProviderOperatorRoleArn
+      ComputeConfiguration:
+        Ec2Configuration:
+          VpcConfiguration:
+            Subnets: !Ref SubnetIds
+            SecurityGroups: !Ref SecurityGroupIds
+          LaunchTemplateSource:
+            LaunchParameters:
+              InstanceProfileArn: !Ref InstanceProfileArn
+              OperatingSystem: AMAZON_LINUX_2023
+              InstanceRequirements:
+                AllowedInstanceTypes:
+                  - !Ref InstanceType
+          RootVolume:
+            Encrypted: true
+            FreeSpaceGiB: !Ref RootVolumeFreeSpaceGiB
+            VolumeType: gp3
+            KmsKeyId: !If [HasVolumeKmsKey, !Ref KmsKeyId, !Ref 'AWS::NoValue']
+          Volumes:
+            - EbsConfiguration:
+                Name: tpipe-agentcore-session
+                SizeGiB: !Ref RootVolumeFreeSpaceGiB
+                Encrypted: true
+                VolumeType: gp3
+                KmsKeyId: !If [HasVolumeKmsKey, !Ref KmsKeyId, !Ref 'AWS::NoValue']
+          LifecycleConfiguration:
+            IdleInstanceTimeout: 900
+            MaxLifetime: 28800
+      Tags:
+        - Key: tpipe:component
+          Value: agentcore-runtime-instances
+
+Outputs:
+  CapacityProviderArn:
+    Description: Capacity provider ARN for the SDK Runtime create/update capacityProviderConfiguration field.
+    Value: !GetAtt AgentCoreCapacityProvider.Arn
+  CapacityProviderId:
+    Description: Capacity provider ID.
+    Value: !GetAtt AgentCoreCapacityProvider.CapacityProviderId

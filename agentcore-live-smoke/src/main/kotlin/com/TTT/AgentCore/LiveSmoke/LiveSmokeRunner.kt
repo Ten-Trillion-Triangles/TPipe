@@ -2,15 +2,17 @@ package com.TTT.AgentCore.LiveSmoke
 
 import aws.sdk.kotlin.runtime.auth.credentials.DefaultChainCredentialsProvider
 import aws.sdk.kotlin.services.bedrockagentcore.model.*
-import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.GetOnlineEvaluationConfigRequest
+import aws.sdk.kotlin.services.bedrockagentcorecontrol.model.*
 import com.TTT.AgentCore.AgentCoreClients
 import com.TTT.AgentCore.AgentCoreConfig
 import com.TTT.AgentCore.evaluations.evaluationClient
 import com.TTT.AgentCore.evaluations.AgentCoreEvaluationPoller
 import com.TTT.AgentCore.evaluations.evaluationAdmin
+import com.TTT.AgentCore.identity.identityAdmin
 import com.TTT.AgentCore.gateway.AgentCoreGatewayCredentials
 import com.TTT.AgentCore.gateway.AgentCoreGatewayCredentialsProvider
 import com.TTT.AgentCore.gateway.AgentCoreGatewaySigV4Auth
+import com.TTT.AgentCore.gateway.gatewayAdmin
 import com.TTT.AgentCore.harness.AgentCoreHarnessAgent
 import com.TTT.AgentCore.harness.harnessClient
 import com.TTT.AgentCore.memory.AgentCoreMemoryBackend
@@ -22,6 +24,18 @@ import com.TTT.AgentCore.runtime.AgentCoreRuntimeClient
 import com.TTT.AgentCore.runtime.AgentCoreRuntimeClientConfig
 import com.TTT.AgentCore.runtime.AgentCoreRuntimeRequestSigner
 import com.TTT.AgentCore.runtime.AgentCoreRuntimeAgent
+import com.TTT.AgentCore.runtime.AgentCoreShellReconnectConfig
+import com.TTT.AgentCore.runtime.AgentCoreRuntimeShellClient
+import com.TTT.AgentCore.runtime.AgentCoreShellChannel
+import com.TTT.AgentCore.runtime.AgentCoreShellStatus
+import com.TTT.AgentCore.runtime.runtimeAdmin
+import com.TTT.AgentCore.registry.AgentRegistryClients
+import com.TTT.AgentCore.registry.agentCoreRegistryAdmin
+import com.TTT.AgentCore.payments.paymentAdmin
+import com.TTT.AgentCore.payments.paymentsClient
+import com.TTT.AgentCore.tools.browserAdmin
+import com.TTT.AgentCore.tools.browserProfileAdmin
+import com.TTT.AgentCore.tools.codeInterpreterAdmin
 import com.TTT.AgentCore.policy.AgentCorePolicyDecision
 import com.TTT.AgentCore.policy.AgentCorePolicyEvaluator
 import com.TTT.AgentCore.policy.AgentCorePolicyMode
@@ -104,18 +118,70 @@ class LiveSmokeRunner(
         if(isSelected("runtime.streaming")) cases += runOptional("runtime.streaming", config.httpEndpoint) { runtimeStreaming(it) }
         if(isSelected("runtime.websocket")) cases += runOptional("runtime.websocket", config.httpEndpoint) { runtimeWebSocket(it) }
         if(isSelected("runtime.sessions")) cases += runOptional("runtime.sessions", config.httpEndpoint) { runtimeSessions(it) }
+        if(isSelected("runtime.command")) cases += runRequired(
+            "runtime.command",
+            listOf(config.httpEndpoint, config.instancesRuntimeArn, config.instancesSessionId)
+        ) { values -> runtimeCommand(values[0], values[1], values[2]) }
+        if(isSelected("runtime.shell")) cases += runRequired(
+            "runtime.shell",
+            listOf(config.httpEndpoint, config.instancesRuntimeArn, config.shellRuntimeSessionId)
+        ) { values -> runtimeShell(values[0], values[1], values[2]) }
+        if(isSelected("runtime.capacity-provider")) cases += runOptional(
+            "runtime.capacity-provider",
+            config.capacityProviderId
+        ) { capacityProvider(it) }
+        if(isSelected("runtime.capacity-provider-session-delete")) cases += notSafelyTestable(
+            "runtime.capacity-provider-session-delete",
+            "Session deletion is destructive; configure an explicit disposable Instances session and invoke the cleanup controller."
+        )
         if(isSelected("runtime.p2p-adapter")) cases += runOptional("runtime.p2p-adapter", config.httpEndpoint) { runtimeP2pAdapter(it) }
         if(isSelected("runtime.agui")) cases += runOptional("runtime.agui", config.aguiEndpoint) { agui(it) }
         if(isSelected("mcp.pcp")) cases += runOptional("mcp.pcp", config.mcpEndpoint) { mcpAndPcp(it) }
         if(isSelected("gateway.sigv4")) cases += runOptional("gateway.sigv4", config.gatewayEndpoint) { gateway(it) }
         if(isSelected("memory.exact")) cases += runOptional("memory.exact", config.memoryId) { exactMemory(it) }
         if(isSelected("memory.semantic")) cases += runOptional("memory.semantic", config.memoryId) { semanticMemory(it) }
+        if(isSelected("memory.ingest")) cases += notSafelyTestable(
+            "memory.ingest",
+            "IngestData writes durable semantic memory; provide a disposable memory namespace and cleanup proof before enabling it."
+        )
+        if(isSelected("gateway.rate-limit")) cases += runRequired(
+            "gateway.rate-limit",
+            listOf(config.gatewayIdentifier, config.gatewayRateLimitId)
+        ) { values -> gatewayRateLimit(values[0], values[1]) }
+        if(isSelected("gateway.rule")) cases += runRequired(
+            "gateway.rule",
+            listOf(config.gatewayIdentifier, config.gatewayRuleId)
+        ) { values -> gatewayRule(values[0], values[1]) }
         if(isSelected("tools.browser")) cases += runOptional("tools.browser", config.browserIdentifier) { browser(it) }
         if(isSelected("tools.code-interpreter")) cases += runOptional("tools.code-interpreter", config.codeInterpreterIdentifier) { codeInterpreter(it) }
+        if(isSelected("tools.custom-filesystem")) cases += notSafelyTestable(
+            "tools.custom-filesystem",
+            "Custom Browser/Code Interpreter lifecycle is preview-sensitive; use the exact CloudFormation-owned identifier and cleanup manifest before enabling it."
+        )
+        if(isSelected("tools.browser-custom")) cases += runOptional(
+            "tools.browser-custom",
+            config.browserCustomIdentifier
+        ) { browserCustom(it) }
+        if(isSelected("tools.browser-profile")) cases += runOptional(
+            "tools.browser-profile",
+            config.browserProfileIdentifier
+        ) { browserProfile(it) }
+        if(isSelected("tools.code-interpreter-custom")) cases += runOptional(
+            "tools.code-interpreter-custom",
+            config.codeInterpreterCustomIdentifier
+        ) { codeInterpreterCustom(it) }
         if(isSelected("identity.workload-token")) cases += runOptional(
             "identity.workload-token",
             config.workloadName
         ) { workloadName -> identity(workloadName, config.identityVerificationEndpoint) }
+        if(isSelected("identity.lifecycle")) cases += notSafelyTestable(
+            "identity.lifecycle",
+            "Credential-provider creation can reference external secrets; live smoke does not create or delete credential material."
+        )
+        if(isSelected("identity.consent-portal")) cases += runOptional(
+            "identity.consent-portal",
+            config.consentPortalId
+        ) { consentPortal(it) }
         if(isSelected("harness.p2p")) cases += runOptional("harness.p2p", config.harnessArn) { harness(it) }
         if(isSelected("model.bedrock")) cases += runOptional("model.bedrock", config.modelId) { bedrockModel(it) }
         if(isSelected("evaluation.on-demand")) cases += runRequired(
@@ -131,6 +197,26 @@ class LiveSmokeRunner(
             )
         ) { values -> batchEvaluation(values[0], values[1], values[2]) }
         if(isSelected("evaluation.online")) cases += runOptional("evaluation.online", config.onlineEvaluationConfigId) { onlineEvaluation(it) }
+        if(isSelected("evaluation.dataset")) cases += runOptional(
+            "evaluation.dataset",
+            config.evaluationDatasetId
+        ) { evaluationDataset(it) }
+        if(isSelected("evaluation.insights")) cases += notSafelyTestable(
+            "evaluation.insights",
+            "Insights execution requires a caller-owned trace/evaluator contract and is not created by the smoke harness."
+        )
+        if(isSelected("evaluation.configuration-bundle")) cases += runOptional(
+            "evaluation.configuration-bundle",
+            config.evaluationConfigurationBundleId
+        ) { evaluationConfigurationBundle(it) }
+        if(isSelected("evaluation.recommendation")) cases += runOptional(
+            "evaluation.recommendation",
+            config.evaluationRecommendationId
+        ) { evaluationRecommendation(it) }
+        if(isSelected("evaluation.ab-test")) cases += runOptional(
+            "evaluation.ab-test",
+            config.evaluationAbTestId
+        ) { evaluationAbTest(it) }
         if(isSelected("credentials.oauth-api-key")) cases += notSafelyTestable(
             id = "credentials.oauth-api-key",
             message = "No disposable OAuth/API-key provider with an exact delete lifecycle was configured."
@@ -140,6 +226,18 @@ class LiveSmokeRunner(
             "policy.gateway",
             listOf(config.gatewayEndpoint, config.policyGatewayIdentifier, config.policyEngineId)
         ) { values -> policyGateway(values[0], values[1], values[2]) }
+        if(isSelected("policy.temporal")) cases += notSafelyTestable(
+            "policy.temporal",
+            "Temporal policy evaluation requires an explicit policy-session lifecycle and is not created by this smoke harness."
+        )
+        if(isSelected("registry.lifecycle")) cases += runRequired(
+            "registry.lifecycle",
+            listOf(config.registryId, config.registryRecordId)
+        ) { values -> registryLifecycle(values[0], values[1]) }
+        if(isSelected("payments.lifecycle")) cases += runRequired(
+            "payments.lifecycle",
+            listOf(config.paymentManagerId, config.paymentConnectorId)
+        ) { values -> paymentsLifecycle(values[0], values[1], config.paymentSessionId) }
         if(isSelected("observability.local-sink")) cases += runCase("observability.local-sink") { observability() }
         if(isSelected("capability.a2a"))
         {
@@ -157,11 +255,11 @@ class LiveSmokeRunner(
             region = config.region,
             startedAt = startedAt,
             finishedAt = Instant.now().toString(),
-            cleanupStatus = SmokeStatus.BLOCKED,
+            cleanupStatus = SmokeStatus.SKIPPED,
             cases = cases,
             notes = listOf(
                 "Resource creation and deletion are manifest-controlled by the deployment wrapper.",
-                "The report is BLOCKED until the wrapper confirms the post-run AWS rescan is clean."
+                "Cleanup status is SKIPPED until the deployment wrapper confirms the post-run AWS rescan is clean."
             )
         )
     }
@@ -178,6 +276,223 @@ class LiveSmokeRunner(
 
     /** Close the shared AgentCore SDK clients. */
     override fun close() = clients.close()
+
+    private suspend fun runtimeCommand(
+        endpoint: String,
+        runtimeArn: String,
+        runtimeSessionId: String
+    ): Map<String, String>
+    {
+        AgentCoreRuntimeClient(
+            AgentCoreRuntimeClientConfig(
+                endpoint = endpoint,
+                runtimeArn = runtimeArn,
+                requestSigner = runtimeSigner(endpoint)
+            ),
+            clients
+        ).use { client ->
+            var eventCount = 0
+            val result = client.executeCommand(
+                InvokeAgentRuntimeCommandRequest {
+                    agentRuntimeArn = runtimeArn
+                    this.runtimeSessionId = runtimeSessionId
+                    body {
+                        command = "printf 'TPipe_RUNTIME_COMMAND_SMOKE\\n'"
+                        timeout = 30
+                    }
+                }
+            ) { event ->
+                eventCount++
+            }
+            check(result.exitCode == null || result.exitCode == 0) {
+                "Runtime command exited with ${result.exitCode}."
+            }
+            return mapOf(
+                "eventCount" to eventCount.toString(),
+                "exitCode" to (result.exitCode?.toString() ?: "unknown"),
+                "status" to (result.status?.toString() ?: "unknown"),
+                "runtimeSessionId" to (result.runtimeSessionId ?: runtimeSessionId)
+            )
+        }
+    }
+
+    private suspend fun runtimeShell(
+        endpoint: String,
+        runtimeArn: String,
+        runtimeSessionId: String
+    ): Map<String, String>
+    {
+        AgentCoreRuntimeShellClient(
+            AgentCoreRuntimeClientConfig(
+                endpoint = endpoint,
+                runtimeArn = runtimeArn,
+                requestSigner = runtimeSigner(endpoint)
+            )
+        ).use { shellClient ->
+            val session = shellClient.open(
+                runtimeArn = runtimeArn,
+                runtimeSessionId = runtimeSessionId,
+                shellId = config.shellId,
+                reconnectConfig = AgentCoreShellReconnectConfig(maxAttempts = 2)
+            )
+            try
+            {
+                session.sendText("printf 'TPipe_RUNTIME_SHELL_SMOKE\\n'\\n")
+                var status: AgentCoreShellStatus? = null
+                var frames = 0
+                kotlinx.coroutines.withTimeout(30_000L) {
+                    while(status == null)
+                    {
+                        val frame = session.receive()
+                        frames++
+                        if(frame.channel == AgentCoreShellChannel.Status)
+                        {
+                            status = AgentCoreShellStatus.decode(frame.payload)
+                        }
+                    }
+                }
+                val resolvedStatus = requireNotNull(status)
+                check(resolvedStatus.exitCode == null || resolvedStatus.exitCode == 0) {
+                    "Runtime shell exited with ${resolvedStatus.exitCode}."
+                }
+                return mapOf(
+                    "frames" to frames.toString(),
+                    "status" to resolvedStatus.status,
+                    "exitCode" to (resolvedStatus.exitCode?.toString() ?: "unknown")
+                )
+            }
+            finally
+            {
+                runCatching { session.closeGracefully() }
+            }
+        }
+    }
+
+    private suspend fun capacityProvider(identifier: String): Map<String, String>
+    {
+        clients.runtimeAdmin().getCapacityProvider(
+            GetCapacityProviderRequest { capacityProviderId = identifier }
+        )
+        return mapOf("capacityProviderId" to identifier)
+    }
+
+    private suspend fun gatewayRateLimit(gatewayIdentifier: String, identifier: String): Map<String, String>
+    {
+        clients.gatewayAdmin().getRateLimit(
+            GetGatewayRateLimitRequest {
+                this.gatewayIdentifier = gatewayIdentifier
+                rateLimitId = identifier
+            }
+        )
+        return mapOf("rateLimitId" to identifier)
+    }
+
+    private suspend fun gatewayRule(gatewayIdentifier: String, identifier: String): Map<String, String>
+    {
+        clients.gatewayAdmin().getRule(
+            GetGatewayRuleRequest {
+                this.gatewayIdentifier = gatewayIdentifier
+                ruleId = identifier
+            }
+        )
+        return mapOf("ruleId" to identifier)
+    }
+
+    private suspend fun consentPortal(identifier: String): Map<String, String>
+    {
+        clients.identityAdmin().getConsentPortal(
+            GetConsentPortalRequest { consentPortalIdentifier = identifier }
+        )
+        return mapOf("consentPortalId" to identifier)
+    }
+
+    private suspend fun evaluationDataset(identifier: String): Map<String, String>
+    {
+        clients.evaluationAdmin().getDataset(GetDatasetRequest { datasetId = identifier })
+        return mapOf("datasetId" to identifier)
+    }
+
+    private suspend fun evaluationConfigurationBundle(identifier: String): Map<String, String>
+    {
+        clients.evaluationAdmin().getConfigurationBundle(
+            GetConfigurationBundleRequest { bundleId = identifier }
+        )
+        return mapOf("configurationBundleId" to identifier)
+    }
+
+    private suspend fun evaluationRecommendation(identifier: String): Map<String, String>
+    {
+        clients.evaluationClient().getRecommendation(
+            GetRecommendationRequest { recommendationId = identifier }
+        )
+        return mapOf("recommendationId" to identifier)
+    }
+
+    private suspend fun evaluationAbTest(identifier: String): Map<String, String>
+    {
+        clients.evaluationClient().getAbTest(GetAbTestRequest { abTestId = identifier })
+        return mapOf("abTestId" to identifier)
+    }
+
+    private suspend fun browserCustom(identifier: String): Map<String, String>
+    {
+        clients.browserAdmin().get(GetBrowserRequest { browserId = identifier })
+        return mapOf("browserIdentifier" to identifier)
+    }
+
+    private suspend fun browserProfile(identifier: String): Map<String, String>
+    {
+        clients.browserProfileAdmin().get(GetBrowserProfileRequest { profileId = identifier })
+        return mapOf("profileIdentifier" to identifier)
+    }
+
+    private suspend fun codeInterpreterCustom(identifier: String): Map<String, String>
+    {
+        clients.codeInterpreterAdmin().get(GetCodeInterpreterRequest { codeInterpreterId = identifier })
+        return mapOf("codeInterpreterIdentifier" to identifier)
+    }
+
+    private suspend fun registryLifecycle(registryId: String, recordId: String): Map<String, String>
+    {
+        AgentRegistryClients(AgentCoreConfig(config.region)).use { registryClients ->
+            val admin = registryClients.agentCoreRegistryAdmin()
+            admin.getRegistry(
+                aws.sdk.kotlin.services.agentregistrycontrol.model.GetRegistryRequest {
+                    this.registryId = registryId
+                }
+            )
+            admin.getRegistryRecord(
+                aws.sdk.kotlin.services.agentregistrycontrol.model.GetRegistryRecordRequest {
+                    this.registryId = registryId
+                    this.recordId = recordId
+                }
+            )
+        }
+        return mapOf("registryId" to registryId, "recordId" to recordId)
+    }
+
+    private suspend fun paymentsLifecycle(
+        managerId: String,
+        connectorId: String,
+        sessionId: String?
+    ): Map<String, String>
+    {
+        clients.paymentAdmin().getManager(GetPaymentManagerRequest { paymentManagerId = managerId })
+        clients.paymentAdmin().getConnector(
+            GetPaymentConnectorRequest {
+                paymentManagerId = managerId
+                paymentConnectorId = connectorId
+            }
+        )
+        sessionId?.let {
+            clients.paymentsClient().getSession(GetPaymentSessionRequest { paymentSessionId = it })
+        }
+        return buildMap {
+            put("paymentManagerId", managerId)
+            put("paymentConnectorId", connectorId)
+            sessionId?.let { put("paymentSessionId", it) }
+        }
+    }
 
     private suspend fun runtimeHttp(endpoint: String): Map<String, String>
     {
@@ -483,7 +798,7 @@ class LiveSmokeRunner(
                     PayloadType.Conversational(
                         Conversational {
                             role = Role.User
-                            content = Content.Text(
+                            content = aws.sdk.kotlin.services.bedrockagentcore.model.Content.Text(
                                 "Remember this AgentCore semantic smoke fact: $marker."
                             )
                         }
@@ -491,7 +806,7 @@ class LiveSmokeRunner(
                     PayloadType.Conversational(
                         Conversational {
                             role = Role.Assistant
-                            content = Content.Text(
+                            content = aws.sdk.kotlin.services.bedrockagentcore.model.Content.Text(
                                 "Acknowledged. The AgentCore smoke marker is $marker."
                             )
                         }
@@ -783,8 +1098,8 @@ class LiveSmokeRunner(
                 batchEvaluationName = "${config.runId}_batch"
                 clientToken = "${config.runId}_batch_token"
                 evaluators = listOf(Evaluator { this.evaluatorId = evaluatorId })
-                dataSourceConfig = DataSourceConfig.CloudWatchLogs(
-                    CloudWatchLogsSource {
+                dataSourceConfig = aws.sdk.kotlin.services.bedrockagentcore.model.DataSourceConfig.CloudWatchLogs(
+                    aws.sdk.kotlin.services.bedrockagentcore.model.CloudWatchLogsSource {
                         logGroupNames = listOf(logGroupName)
                         serviceNames = listOf(serviceName)
                     }
