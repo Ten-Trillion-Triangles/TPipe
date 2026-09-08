@@ -2,15 +2,20 @@
 
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.gradle.api.GradleException
+import org.gradle.api.artifacts.ExternalModuleDependency
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.GradleBuild
+import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.attributes.Category
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.authentication.http.BasicAuthentication
 import org.gradle.external.javadoc.StandardJavadocDocletOptions
+import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.kotlin.dsl.configure
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+
 
 /**
  * Support for GraalVM  Native is planned but not yet implemented. This will allow us to deploy this library
@@ -178,6 +183,8 @@ tasks.test {
 // facing published coord is `com.github.ten-trillion-triangles:TPipe:<version>`.
 // =====================================================================
 
+val bundleProjects = subprojects.filter { it.name != "agentcore-live-smoke" }
+
 publishing {
     publications {
         create<MavenPublication>("maven") {
@@ -189,7 +196,7 @@ publishing {
                 description.set("TPipe - Agent Operating Environment for LLM orchestration - Community tier")
                 packaging = "jar"
             }
-            artifact(tasks.named("shadowJar"))
+            from(components["shadow"])
             artifact(tasks.named("sourcesJar"))
             artifact(tasks.named("licenseJar"))
             artifact(tasks.named("javadocJar"))
@@ -223,15 +230,93 @@ publishing {
 // Aggregate TPipe bundle
 //================================================================================
 
-val bundleProjects = subprojects.filter { it.name != "agentcore-live-smoke" }
-val bundleRuntimeConfigurations = bundleProjects.mapNotNull {
-    it.configurations.findByName("runtimeClasspath")
+fun dependencyVersionParts(version: String): List<Int>
+{
+    return version.split(Regex("[^0-9]+"))
+        .filter { it.isNotEmpty() }
+        .map { it.toInt() }
 }
-val rootRuntimeConfiguration = configurations.getByName("runtimeClasspath")
+
+fun preferredAggregateDependencyVersion(current: String?, candidate: String): String
+{
+    if(current == null)
+    {
+        return candidate
+    }
+    val currentParts = dependencyVersionParts(current)
+    val candidateParts = dependencyVersionParts(candidate)
+    val partCount = maxOf(currentParts.size, candidateParts.size)
+    for(index in 0 until partCount)
+    {
+        val currentPart = currentParts.getOrElse(index) { 0 }
+        val candidatePart = candidateParts.getOrElse(index) { 0 }
+        if(candidatePart > currentPart)
+        {
+            return candidate
+        }
+        if(candidatePart < currentPart)
+        {
+            return current
+        }
+    }
+    return current
+}
+
+gradle.projectsEvaluated {
+    val shadowConfiguration = rootProject.configurations.getByName("shadow")
+    rootProject.configurations.findByName("compileClasspath")?.let { compileClasspath ->
+        compileClasspath.setExtendsFrom(
+            compileClasspath.extendsFrom.filterNot { it == shadowConfiguration }
+        )
+    }
+    val aggregateDependencies = linkedMapOf<Pair<String, String>, String>()
+    (listOf(rootProject) + bundleProjects).forEach { module ->
+        module.configurations.findByName("runtimeClasspath")?.allDependencies
+            ?.filterNot { dependency ->
+                dependency is ProjectDependency ||
+                    (dependency as? ExternalModuleDependency)
+                        ?.attributes
+                        ?.getAttribute(Category.CATEGORY_ATTRIBUTE)
+                        ?.name == Category.REGULAR_PLATFORM
+            }
+            ?.forEach { dependency ->
+                val group = dependency.group
+                    ?: throw GradleException("Aggregate dependency ${dependency.name} has no group")
+                val version = dependency.version
+                    ?: if(group == "org.jetbrains.kotlin")
+                    {
+                        libs.versions.kotlin.version.get()
+                    }
+                    else
+                    {
+                        throw GradleException(
+                            "Aggregate dependency $group:${dependency.name} has no version"
+                        )
+                    }
+                val key = group to dependency.name
+                aggregateDependencies[key] = preferredAggregateDependencyVersion(
+                    aggregateDependencies[key],
+                    version
+                )
+            }
+    }
+    aggregateDependencies.forEach { (coordinate, version) ->
+        shadowConfiguration.dependencies.add(
+            rootProject.dependencies.create("${coordinate.first}:${coordinate.second}:$version")
+        )
+    }
+}
+
+tasks.named<Jar>("jar")
+{
+    archiveClassifier.set("thin")
+}
 
 tasks.named<ShadowJar>("shadowJar")
 {
     dependsOn(bundleProjects.map { it.tasks.named("jar") })
+    archiveClassifier.set("")
+    archiveFileName.set("${project.name}-${project.version}.jar")
     from({
         zipTree(tasks.named<Jar>("jar").get().archiveFile)
     }) {
@@ -243,9 +328,55 @@ tasks.named<ShadowJar>("shadowJar")
         }
     }
     bundleProjects.forEach { module ->
-        from(module.tasks.named("jar"))
+        from(module.extensions.getByType<SourceSetContainer>().named("main").get().output)
     }
-    configurations = listOf(rootRuntimeConfiguration) + bundleRuntimeConfigurations
+    configurations = emptyList()
+}
+
+val aggregateDependencyBoundaryCheck = tasks.register("aggregateDependencyBoundaryCheck")
+{
+    group = "verification"
+    description = "Verifies the aggregate JAR does not embed third-party runtime classes."
+    dependsOn(tasks.named("shadowJar"), tasks.named("generatePomFileForMavenPublication"))
+    doLast {
+        val archive = tasks.named<ShadowJar>("shadowJar").get().archiveFile.get().asFile
+        val embeddedSerializationClasses = zipTree(archive)
+            .matching { include("kotlinx/serialization/**/*.class") }
+            .files
+        if(embeddedSerializationClasses.isNotEmpty())
+        {
+            throw GradleException(
+                "Aggregate JAR embeds kotlinx.serialization classes: " +
+                    embeddedSerializationClasses.joinToString()
+            )
+        }
+
+        val pom = layout.buildDirectory.file("publications/maven/pom-default.xml").get().asFile
+        val pomText = pom.readText()
+        val requiredDependencies = listOf(
+            "kotlinx-serialization-core-jvm",
+            "kotlinx-serialization-json-jvm"
+        )
+        val missingDependencies = requiredDependencies.filterNot { artifactId ->
+            pomText.contains("<artifactId>$artifactId</artifactId>")
+        }
+        if(missingDependencies.isNotEmpty())
+        {
+            throw GradleException(
+                "Aggregate POM is missing external serialization dependencies: " +
+                    missingDependencies.joinToString()
+            )
+        }
+        if(pomText.contains("<artifactId>TPipe-Codex</artifactId>"))
+        {
+            throw GradleException("Aggregate POM must not require bundled TPipe-Codex")
+        }
+    }
+}
+
+tasks.named("check")
+{
+    dependsOn(aggregateDependencyBoundaryCheck)
 }
 
 tasks.named<Jar>("sourcesJar")

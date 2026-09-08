@@ -5,6 +5,9 @@ import com.TTT.PipeContextProtocol.KotlinExecutor
 import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.PipeContextProtocol.PcpContext
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /** Verifies Kotlin 2.3.21 source and metadata compatibility with the artifact. */
 fun main() = runBlocking {
@@ -23,8 +26,13 @@ fun main() = runBlocking {
     check(execution.success) { execution.error ?: "consumer script failed" }
     check(execution.output == "Result: 5") { execution.output }
     check(hostValue.value == 5) { "Consumer binding was not mutated: ${hostValue.value}" }
+    val encoded = Json.encodeToString(SerializationCompatibilityValue("ok"))
+    check(Json.decodeFromString<SerializationCompatibilityValue>(encoded).value == "ok")
     println("Kotlin 2.3.21 consumer compatibility passed")
 }
+
+@Serializable
+data class SerializationCompatibilityValue(val value: String)
 
 class KotlinHostValue(var value: Int)
 {
