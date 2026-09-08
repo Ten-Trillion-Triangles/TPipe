@@ -36,7 +36,9 @@ to a run-owned ECR repository. Runtime containers receive no AWS credentials.
 `controller/aws_mcp_controller.py` is the control-plane adapter. Copy its
 source into the AWS MCP `run_script` call after replacing the explicit
 configuration constants with the current run ID, three pushed ARM64 image
-URIs, and the pinned CloudFormation template body. It performs a read-only
+URIs, the pinned runtime CloudFormation template body, and
+`agentcore-live-smoke/src/main/resources/cloudformation/tpipe-agentcore-live-fixtures.yaml`
+as `FIXTURE_TEMPLATE_BODY`. It performs a read-only
 preflight by default. Set `APPLY = True` only for the explicitly authorized
 run and select `MODE = "deploy"` or `MODE = "cleanup"`; its returned
 `created` resources must be written to the local `manifest.json` immediately.
@@ -48,11 +50,11 @@ Kotlin `LiveSmokeDeploymentController` adds the same checks and supplies the
 post-cleanup scan. AgentCore resources are deleted by
 `AgentCoreLiveSmokeCleanup` through the pinned SDK.
 
-The controller is intentionally separate from the runtime images. The AWS MCP
-connection performs control-plane operations, while the local smoke process may
-use the machine's existing AWS credential chain for signed data-plane calls,
-Bedrock, and ECR upload. Credentials and bearer tokens never enter a runtime
-image, trace, log, or report.
+The controller is intentionally separate from the runtime images. AWS
+control-plane provisioning, inventory, and teardown run through the AWS MCP
+admin connection. The Kotlin process uses TPipe's typed AgentCore SDK for
+data-plane assertions and receives only run-owned identifiers; it never prints
+or persists credentials, bearer tokens, API keys, or secret values.
 
 Run the same adapter with `MODE = "observability"`, supplying only owned log
 group names and the trace IDs returned by the smoke run. It queries service
@@ -63,13 +65,17 @@ evidence.
 
 ## Explicit live invocation
 
-The controller/deployment layer must first create three unique CloudFormation
-stacks from `TPipe-AgentCore/src/main/resources/cloudformation/tpipe-agentcore.yaml`,
-one each for `HTTP`, `MCP`, and `AGUI`, and write every successful create
-response to the run manifest. It must use the AWS MCP admin connection for
-control-plane calls. The JVM may use the machine's existing AWS credential
-chain for signed data-plane assertions, but no credential material is passed
-to a runtime image.
+The controller/deployment layer must first create one unique fixture
+CloudFormation stack from
+`agentcore-live-smoke/src/main/resources/cloudformation/tpipe-agentcore-live-fixtures.yaml`
+and three unique runtime stacks from
+`TPipe-AgentCore/src/main/resources/cloudformation/tpipe-agentcore.yaml`, one
+each for `HTTP`, `MCP`, and `AGUI`, and write every successful create response
+to the run manifest. It must use the AWS MCP admin connection for control-plane
+calls. The fixture stack owns the deterministic MCP/OAuth endpoint, generated
+Secrets Manager values, evaluator log group, dedicated VPC/subnet/security
+group, and capacity-provider IAM roles. The runtime image is never given
+credential material.
 
 After deployment, the AWS MCP controller must return the run-owned stack
 outputs and the deployment wrapper must construct the Kotlin
@@ -91,6 +97,8 @@ TPIPE_AGENTCORE_HTTP_RUNTIME_ARN=arn:...:runtime/... \
 TPIPE_AGENTCORE_MCP_RUNTIME_ARN=arn:...:runtime/... \
 TPIPE_AGENTCORE_AGUI_RUNTIME_ARN=arn:...:runtime/... \
 TPIPE_AGENTCORE_GATEWAY_ENDPOINT=https://... \
+TPIPE_AGENTCORE_GATEWAY_IDENTIFIER=... \
+TPIPE_AGENTCORE_GATEWAY_TARGET_ID=... \
 TPIPE_AGENTCORE_MEMORY_ID=... \
 TPIPE_AGENTCORE_MODEL_ID=... \
 TPIPE_AGENTCORE_EVALUATOR_ID=... \
@@ -101,6 +109,9 @@ TPIPE_AGENTCORE_ONLINE_EVALUATION_CONFIG_ID=... \
 TPIPE_AGENTCORE_POLICY_GATEWAY_ID=... \
 TPIPE_AGENTCORE_POLICY_ENGINE_ID=... \
 TPIPE_AGENTCORE_WORKLOAD_NAME=... \
+TPIPE_AGENTCORE_OAUTH2_CREDENTIAL_PROVIDER_NAME=... \
+TPIPE_AGENTCORE_API_KEY_CREDENTIAL_PROVIDER_NAME=... \
+TPIPE_AGENTCORE_RESOURCE_CREDENTIAL_PROVIDER_NAME=... \
 TPIPE_AGENTCORE_BROWSER_STABLE_URL=https://example.com \
 TPIPE_AGENTCORE_MANIFEST=build/agentcore-live-smoke/manifest.json \
 ./gradlew :agentcore-live-smoke:run
@@ -115,6 +126,7 @@ TPIPE_AGENTCORE_SHELL_RUNTIME_SESSION_ID
 TPIPE_AGENTCORE_SHELL_ID
 TPIPE_AGENTCORE_CAPACITY_PROVIDER_ID
 TPIPE_AGENTCORE_GATEWAY_IDENTIFIER
+TPIPE_AGENTCORE_GATEWAY_TARGET_ID
 TPIPE_AGENTCORE_GATEWAY_RULE_ID
 TPIPE_AGENTCORE_GATEWAY_RATE_LIMIT_ID
 TPIPE_AGENTCORE_MEMORY_NAMESPACE
@@ -131,6 +143,11 @@ TPIPE_AGENTCORE_REGISTRY_RECORD_ID
 TPIPE_AGENTCORE_PAYMENT_MANAGER_ID
 TPIPE_AGENTCORE_PAYMENT_CONNECTOR_ID
 TPIPE_AGENTCORE_PAYMENT_SESSION_ID
+TPIPE_AGENTCORE_OAUTH2_CREDENTIAL_PROVIDER_NAME
+TPIPE_AGENTCORE_API_KEY_CREDENTIAL_PROVIDER_NAME
+TPIPE_AGENTCORE_RESOURCE_CREDENTIAL_PROVIDER_NAME
+TPIPE_AGENTCORE_EVALUATION_INSIGHTS_LOG_GROUP
+TPIPE_AGENTCORE_POLICY_SESSION_ID
 ```
 
 Select a subset with `TPIPE_AGENTCORE_CASES`, using IDs such as
@@ -139,17 +156,20 @@ Select a subset with `TPIPE_AGENTCORE_CASES`, using IDs such as
 `identity.consent-portal`, `evaluation.dataset`,
 `evaluation.configuration-bundle`, `evaluation.recommendation`,
 `evaluation.ab-test`, `tools.browser-custom`, `tools.browser-profile`,
-`tools.code-interpreter-custom`, `registry.lifecycle`, and
-`payments.lifecycle`. Read-only cases require the corresponding exact
-resource identifiers. Durable writes, credential-provider lifecycle, temporal
-policy setup, payment execution, and capacity-session deletion remain
-`NOT_SAFELY_TESTABLE` unless a separately authorized disposable lifecycle and
-manifest cleanup proof are supplied.
+`tools.code-interpreter-custom`, `gateway.forwarding`,
+`credentials.oauth-api-key`, `policy.temporal`, `registry.lifecycle`,
+`evaluation.insights`, and `runtime.capacity-provider-session-delete`.
+Supported cases require the corresponding exact run-owned identifiers and
+report `BLOCKED` when their fixture is absent. The harness executes memory
+ingestion, credential token handling, temporal policy sessions, Gateway
+synchronization/PCP binding, Registry CRUD/approval/discovery, and Insights
+batches. Payments are omitted by explicit scope; A2A is the only
+`UNSUPPORTED` case.
 
 Missing optional service identifiers are reported as `BLOCKED`; the harness
-does not silently substitute an existing resource. OAuth/API-key provider
-cases are `NOT_SAFELY_TESTABLE` unless the deployment manifest records a
-disposable provider and exact delete operation. If
+does not silently substitute an existing resource. OAuth/API-key providers
+must be disposable, manifest-recorded resources with exact delete operations.
+If
 `TPIPE_AGENTCORE_IDENTITY_VERIFY_ENDPOINT` is omitted, the identity case
 starts a loopback verifier for the duration of the case, records only token
 fingerprints in memory, and stops it before returning.

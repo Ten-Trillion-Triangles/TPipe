@@ -45,6 +45,15 @@ Resources:
       DatasetName: !Ref DatasetName
       SchemaType: AGENTCORE_EVALUATION_SIMULATED_V1
       Description: TPipe provider-neutral evaluation scenarios.
+      Source:
+        InlineExamples:
+          Examples:
+            - scenario_id: tpipe-smoke-scenario
+              actor_profile:
+                context: "A synthetic AgentCore smoke-test actor."
+                goal: "Call the owned smoke tool and report its deterministic response."
+              input: "Invoke the smoke tool."
+              max_turns: 1
 
   AgentCoreEvaluator:
     Condition: EvaluationResourcesEnabled
@@ -87,7 +96,7 @@ Resources:
       EvaluationExecutionRoleArn: !Ref EvaluationRoleArn
       ExecutionStatus: DISABLED
       Evaluators:
-        - EvaluatorId: !Ref AgentCoreEvaluator
+        - EvaluatorId: !GetAtt AgentCoreEvaluator.EvaluatorId
       Rule:
         SamplingConfig:
           SamplingPercentage: 100
@@ -102,3 +111,6 @@ Outputs:
   EvaluatorId:
     Condition: EvaluationResourcesEnabled
     Value: !GetAtt AgentCoreEvaluator.EvaluatorId
+  OnlineEvaluationConfigId:
+    Condition: EvaluationResourcesEnabled
+    Value: !GetAtt AgentCoreOnlineEvaluationConfig.OnlineEvaluationConfigId

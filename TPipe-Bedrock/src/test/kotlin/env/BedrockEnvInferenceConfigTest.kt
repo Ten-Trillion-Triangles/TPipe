@@ -8,6 +8,31 @@ import java.io.File
 class BedrockEnvInferenceConfigTest
 {
     @Test
+    fun crossRegionGeographicInferenceProfileArnFallsBackToPortableProfileId()
+    {
+        val configuredArn =
+            "arn:aws:bedrock:us-east-2:521369004927:inference-profile/us.amazon.nova-lite-v1:0"
+
+        assertEquals(
+            "us.amazon.nova-lite-v1:0",
+            bedrockEnv.resolveInferenceProfileForRegion(configuredArn, "us-east-1"),
+            "A geographic inference profile ARN from another region must be portable to the configured region"
+        )
+    }
+
+    @Test
+    fun sameRegionAndCustomInferenceProfileArnsRemainUnchanged()
+    {
+        val sameRegionArn =
+            "arn:aws:bedrock:us-east-1:521369004927:inference-profile/us.amazon.nova-lite-v1:0"
+        val customArn =
+            "arn:aws:bedrock:us-east-2:521369004927:application-inference-profile/custom-profile"
+
+        assertEquals(sameRegionArn, bedrockEnv.resolveInferenceProfileForRegion(sameRegionArn, "us-east-1"))
+        assertEquals(customArn, bedrockEnv.resolveInferenceProfileForRegion(customArn, "us-east-1"))
+    }
+
+    @Test
     fun loadInferenceConfigUsesOverrideFile()
     {
         val tempConfig = File.createTempFile("tpipe-inference", ".txt")

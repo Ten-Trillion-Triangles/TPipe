@@ -18,10 +18,13 @@ class AgentCoreCloudFormationTemplateTest
         assertTrue(template.contains("Type: AWS::BedrockAgentCore::Policy"))
         assertTrue(template.contains("PolicyEngineConfiguration: !If"))
         assertTrue(template.contains("Mode: LOG_ONLY"))
+        assertTrue(template.contains("Default: 'permit(principal, action, resource is AgentCore::Gateway);'"))
+        assertTrue(!template.contains("Default: 'permit(principal, action, resource);'"))
         assertTrue(template.contains("Type: AWS::IAM::Role"))
         assertTrue(template.contains("- AGUI"))
         assertTrue(!template.contains("      - A2A"))
-        assertTrue(!template.contains("CapacityProviderConfiguration:"))
+        assertTrue(template.contains("CapacityProviderConfiguration: !If"))
+        assertTrue(template.contains("NetworkConfiguration: !If"))
         assertTrue(template.contains("EnableRuntimeLifecycle:"))
     }
 
@@ -74,6 +77,13 @@ class AgentCoreCloudFormationTemplateTest
                     !Regex("^        (SecurityGroups|Subnets):", RegexOption.MULTILINE).containsMatchIn(template),
                     name
                 )
+            }
+
+            if (name == "tpipe-agentcore-evaluations.yaml")
+            {
+                assertTrue(template.contains("Source:"), name)
+                assertTrue(template.contains("InlineExamples:"), name)
+                assertTrue(template.contains("Examples:"), name)
             }
         }
     }

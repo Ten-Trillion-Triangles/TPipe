@@ -92,6 +92,7 @@ fun interface McpRemoteRequestSigner {
  * @param namespacePrefix Optional PCP function-name prefix.
  * @param clientOptions MCP SDK client options.
  * @param requestSigner Dynamic request signer.
+ * @param requestObserver Optional non-secret request evidence callback invoked after authentication and signing.
  * @param requestTimeoutMillis Request timeout in milliseconds.
  * @param connectTimeoutMillis Connection timeout in milliseconds.
  * @param socketTimeoutMillis Socket timeout in milliseconds.
@@ -107,6 +108,7 @@ data class McpRemoteClientConfig(
     val namespacePrefix: String? = null,
     val clientOptions: ClientOptions = ClientOptions(),
     val requestSigner: McpRemoteRequestSigner? = null,
+    val requestObserver: ((method: String, url: String, headers: Map<String, String>) -> Unit)? = null,
     val requestTimeoutMillis: Long? = 60_000L,
     val connectTimeoutMillis: Long? = 10_000L,
     val socketTimeoutMillis: Long? = 60_000L,
@@ -442,6 +444,11 @@ class McpRemoteClient(
                 request.headers.append(name, value)
             }
         }
+        config.requestObserver?.invoke(
+            request.method.value,
+            request.url.buildString(),
+            request.headers.entries().associate { (name, values) -> name to values.joinToString(",") }
+        )
     }
 
     private fun addConfiguredHeaders(builder: HttpRequestBuilder)

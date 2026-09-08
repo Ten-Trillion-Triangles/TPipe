@@ -1,4 +1,5 @@
-FROM --platform=linux/arm64 eclipse-temurin:24-jre
+ARG TARGETPLATFORM
+FROM --platform=${TARGETPLATFORM} eclipse-temurin:24-jre
 
 WORKDIR /opt/tpipe
 COPY agentcore-live-smoke-all.jar /opt/tpipe/agentcore-live-smoke-all.jar

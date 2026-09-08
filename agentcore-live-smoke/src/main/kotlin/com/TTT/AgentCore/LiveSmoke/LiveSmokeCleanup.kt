@@ -49,6 +49,59 @@ data class SmokeCleanupResult(
     val blocked: String? = null
 )
 
+/** Stable resource ordering used for dependency-aware exact teardown. */
+object LiveSmokeCleanupOrdering
+{
+    private val dependencyRank = mapOf(
+        "lambda-url" to 120,
+        "ec2-instance" to 115,
+        "gateway-target" to 110,
+        "registry-record" to 110,
+        "runtime-endpoint" to 105,
+        "evaluator" to 100,
+        "online-evaluation-config" to 100,
+        "dataset-example" to 100,
+        "dataset-version" to 100,
+        "dataset" to 100,
+        "configuration-bundle-version" to 100,
+        "configuration-bundle" to 100,
+        "oauth2-credential-provider" to 100,
+        "api-key-credential-provider" to 100,
+        "consent-portal" to 100,
+        "secret" to 95,
+        "lambda-function" to 95,
+        "gateway" to 90,
+        "runtime" to 90,
+        "capacity-provider" to 90,
+        "memory" to 90,
+        "policy" to 90,
+        "policy-engine" to 90,
+        "workload-identity" to 90,
+        "registry" to 90,
+        "security-group" to 60,
+        "subnet" to 55,
+        "route-table" to 55,
+        "internet-gateway" to 50,
+        "instance-profile" to 45,
+        "iam-role" to 40,
+        "log-group" to 35,
+        "vpc" to 10,
+        "ecr-image" to 10,
+        "ecr-repository" to 5,
+        "cloudformation-stack" to 0
+    )
+
+    /** Sort exact manifest entries from dependents to dependencies. */
+    fun reverseDependencyOrder(resources: List<OwnedResource>): List<OwnedResource> = resources
+        .withIndex()
+        .sortedWith(
+            compareByDescending<IndexedValue<OwnedResource>> {
+                dependencyRank[it.value.type] ?: 50
+            }.thenByDescending { it.index }
+        )
+        .map { it.value }
+}
+
 /**
  * Deletes only resources recorded in a run manifest.
  *
@@ -71,7 +124,7 @@ class AgentCoreLiveSmokeCleanup(
         return try
         {
             stopSessions()
-            manifest.resources().asReversed().forEach { resource ->
+            LiveSmokeCleanupOrdering.reverseDependencyOrder(manifest.resources()).forEach { resource ->
                 manifest.deleteOwned(resource) {
                     deleteResource(resource)
                     deleted += resource.arn ?: resource.id ?: resource.name
@@ -216,7 +269,10 @@ class AgentCoreLiveSmokeCleanup(
                     }
                 )
             }
-            "ecr-image", "ecr-repository", "iam-role", "log-group" -> deleteExternalResource(resource)
+            "ecr-image", "ecr-repository", "iam-role", "log-group", "lambda-url",
+            "lambda-function", "secret", "ec2-instance", "security-group", "subnet", "route-table",
+            "internet-gateway", "vpc", "instance-profile", "dataset-example", "dataset-version",
+            "configuration-bundle-version" -> deleteExternalResource(resource)
             else -> error("Unknown manifest resource type '${resource.type}'.")
         }
     }

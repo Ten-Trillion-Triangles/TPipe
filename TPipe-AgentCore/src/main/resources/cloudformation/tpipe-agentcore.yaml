@@ -26,6 +26,10 @@ Parameters:
     AllowedValues:
       - PUBLIC
       - VPC
+  CapacityProviderArn:
+    Type: String
+    Default: ''
+    Description: Optional run-owned capacity provider ARN for an Instances runtime.
   EnableMemory:
     Type: String
     Default: 'false'
@@ -93,7 +97,7 @@ Parameters:
     Default: tpipe_agentcore_policy_example
   PolicyCedarStatement:
     Type: String
-    Default: 'permit(principal, action, resource);'
+    Default: 'permit(principal, action, resource is AgentCore::Gateway);'
   KmsKeyArn:
     Type: String
     Default: ''
@@ -239,8 +243,14 @@ Resources:
       RoleArn: !If [UseProvidedRuntimeRole, !Ref RuntimeRoleArn, !GetAtt AgentCoreRuntimeExecutionRole.Arn]
       # Use Sub so older cfn-lint schemas do not reject the service's AGUI value.
       ProtocolConfiguration: !Sub '${RuntimeProtocol}'
-      NetworkConfiguration:
-        NetworkMode: !Ref NetworkMode
+      NetworkConfiguration: !If
+        - CapacityProviderEnabled
+        - !Ref 'AWS::NoValue'
+        - NetworkMode: !Ref NetworkMode
+      CapacityProviderConfiguration: !If
+        - CapacityProviderEnabled
+        - CapacityProviderArn: !Ref CapacityProviderArn
+        - !Ref 'AWS::NoValue'
       AgentRuntimeArtifact:
         ContainerConfiguration:
           ContainerUri: !Ref RuntimeImageUri
@@ -325,6 +335,7 @@ Conditions:
   EvaluationsEnabled: !Equals [!Ref EnableEvaluations, 'true']
   HasKmsKey: !Not [!Equals [!Ref KmsKeyArn, '']]
   HasRuntimeLifecycle: !Equals [!Ref EnableRuntimeLifecycle, 'true']
+  CapacityProviderEnabled: !Not [!Equals [!Ref CapacityProviderArn, '']]
 
 Outputs:
   RuntimeName:

@@ -268,6 +268,43 @@ object bedrockEnv
      * @return The inference profile ID if configured, null if not found, empty string for direct calls
      */
     fun getInferenceProfileId(modelId: String): String? = modelToInferenceMap[modelId]
+
+    /**
+     * Resolves a configured inference-profile ARN for the region used by a pipe.
+     *
+     * Geographic Bedrock inference profiles can be addressed by their portable
+     * profile ID from any supported source region. A configured ARN, however,
+     * is tied to the region in which it was recorded. When that ARN belongs to
+     * another region, use its geographic profile ID so a pipe configured for a
+     * different source region does not send an invalid cross-region ARN.
+     * Custom application profiles remain unchanged because their ARN is not
+     * portable by this rule.
+     *
+     * @param inferenceProfileId Configured profile ID or ARN.
+     * @param region Region used by the Bedrock client.
+     * @return A region-compatible profile identifier when it can be resolved.
+     */
+    internal fun resolveInferenceProfileForRegion(inferenceProfileId: String, region: String): String
+    {
+        val arnParts = inferenceProfileId.split(":", limit = 6)
+        if(arnParts.size != 6 || arnParts[0] != "arn" || arnParts[2] != "bedrock") return inferenceProfileId
+        if(arnParts[3].equals(region, ignoreCase = true)) return inferenceProfileId
+
+        val resourcePrefix = "inference-profile/"
+        val resource = arnParts[5]
+        if(!resource.startsWith(resourcePrefix)) return inferenceProfileId
+
+        val profileId = resource.removePrefix(resourcePrefix)
+        return if(profileId.startsWith("us.") || profileId.startsWith("eu.") ||
+            profileId.startsWith("apac.") || profileId.startsWith("global."))
+        {
+            profileId
+        }
+        else
+        {
+            inferenceProfileId
+        }
+    }
     
     /**
      * Searches for models containing the specified query string (case-insensitive).

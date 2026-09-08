@@ -73,6 +73,18 @@ tasks.register("liveSmoke") {
     dependsOn(tasks.named("run"))
 }
 
+tasks.register<JavaExec>("consentPortalControl") {
+    group = "verification"
+    description = "Runs the narrowly scoped typed consent-portal control-plane fallback."
+    dependsOn(tasks.named("classes"))
+    dependsOn(":TPipe-MCP:classes")
+    mainClass.set("com.TTT.AgentCore.LiveSmoke.LiveSmokeConsentPortalControlKt")
+    val mcpClasses = project(":TPipe-MCP").layout.buildDirectory.dir("classes/kotlin/main")
+    val mcpResources = project(":TPipe-MCP").layout.buildDirectory.dir("resources/main")
+    classpath = sourceSets.main.get().runtimeClasspath.filter { !it.name.endsWith("-all.jar") } +
+        files(mcpClasses, mcpResources)
+}
+
 tasks.named<JavaExec>("run") {
     // TPipe-MCP's published jar is intentionally an all-in-one application
     // jar. Use its compiled classes here so its bundled older coroutine
@@ -80,7 +92,8 @@ tasks.named<JavaExec>("run") {
     dependsOn(":TPipe-MCP:classes")
     val mcpClasses = project(":TPipe-MCP").layout.buildDirectory.dir("classes/kotlin/main")
     val mcpResources = project(":TPipe-MCP").layout.buildDirectory.dir("resources/main")
-    classpath = classpath.filter { !it.name.endsWith("-all.jar") } +
+    classpath = sourceSets.main.get().runtimeClasspath.filter { !it.name.endsWith("-all.jar") } +
+        sourceSets.main.get().output +
         files(mcpClasses, mcpResources)
 }
 

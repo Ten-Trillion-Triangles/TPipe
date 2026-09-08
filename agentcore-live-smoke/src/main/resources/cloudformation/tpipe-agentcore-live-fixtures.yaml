@@ -1,0 +1,495 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Run-owned AgentCore live-smoke fixtures. Values are generated or returned as metadata only.
+
+Parameters:
+  RunId:
+    Type: String
+    AllowedPattern: '[A-Za-z][A-Za-z0-9_]{0,47}'
+
+Resources:
+  FixtureLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub '/aws/tpipe-agentcore/${RunId}'
+      RetentionInDays: 1
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  OAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Name: !Sub 'tpipe-smoke-oauth-${RunId}'
+      GenerateSecretString:
+        SecretStringTemplate: '{"client_id":"tpipe-smoke-client"}'
+        GenerateStringKey: client_secret
+        PasswordLength: 48
+        ExcludePunctuation: true
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  ConsentOAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Name: !Sub 'tpipe-smoke-consent-oauth-${RunId}'
+      GenerateSecretString:
+        SecretStringTemplate: '{"client_id":"tpipe-smoke-consent-client"}'
+        GenerateStringKey: client_secret
+        PasswordLength: 48
+        ExcludePunctuation: true
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  ApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Name: !Sub 'tpipe-smoke-api-key-${RunId}'
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: api_key
+        PasswordLength: 48
+        ExcludePunctuation: true
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  FixtureLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'tpipe-smoke-lambda-${RunId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: fixture-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt FixtureLogGroup.Arn
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  GatewayServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'tpipe-smoke-gateway-${RunId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: bedrock-agentcore.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: gateway-lambda-target
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:GetFunction
+                  - lambda:InvokeFunction
+                  - lambda:InvokeFunctionUrl
+                Resource: !GetAtt DeterministicMcpLambda.Arn
+        - PolicyName: gateway-policy-engine-smoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetGateway
+                  - bedrock-agentcore:GetGatewayTarget
+                  - bedrock-agentcore:ListGatewayTargets
+                  - bedrock-agentcore:GetPolicyEngine
+                  - bedrock-agentcore:GetPolicy
+                  - bedrock-agentcore:AuthorizeAction
+                  - bedrock-agentcore:PartiallyAuthorizeActions
+                  - bedrock-agentcore:UpdateGateway
+                  - bedrock-agentcore:InvokeGateway
+                Resource: '*'
+        - PolicyName: consent-portal-token-flow
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetOauth2CredentialProvider
+                  - bedrock-agentcore:ListOauth2CredentialProviders
+                Resource:
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:token-vault/default/oauth2credentialprovider/*'
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:token-vault/default'
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:CompleteResourceTokenAuth
+                  - bedrock-agentcore:GetResourceOauth2Token
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                Resource: '*'
+        - PolicyName: consent-portal-agentcore-secret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:bedrock-agentcore-identity!default/oauth2/*'
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/aws:secretsmanager:owningService: bedrock-agentcore-identity
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  EvaluationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'tpipe-smoke-evaluator-${RunId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: evaluation-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt FixtureLogGroup.Arn
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  EvaluationExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'tpipe-smoke-evaluation-execution-${RunId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: bedrock-agentcore.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: evaluation-execution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:GetFunction
+                  - lambda:InvokeFunction
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:FilterLogEvents
+                  - logs:GetLogEvents
+                  - logs:PutLogEvents
+                Resource: '*'
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  EvaluationLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'tpipe-smoke-evaluator-${RunId}'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt EvaluationLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          TPIPE_SMOKE_RUN: !Ref RunId
+      Code:
+        ZipFile: |
+          import json
+          import os
+
+          def handler(event, context):
+              payload = event if isinstance(event, dict) else {}
+              trace_id = payload.get("trace_id", os.environ.get("TPIPE_SMOKE_RUN", "unknown"))
+              print(json.dumps({"TPipeSmokeRun": os.environ.get("TPIPE_SMOKE_RUN"), "trace_id_present": bool(trace_id)}))
+              return {"score": 1.0, "label": "PASS", "trace_id_present": bool(trace_id)}
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  DeterministicMcpLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'tpipe-smoke-mcp-${RunId}'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt FixtureLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          TPIPE_SMOKE_RUN: !Ref RunId
+      Code:
+        ZipFile: |
+          import json
+          import uuid
+
+          def response(status, body):
+              return {
+                  "statusCode": status,
+                  "headers": {"content-type": "application/json"},
+                  "body": json.dumps(body),
+              }
+
+          def redirect_response(location):
+              return {
+                  "statusCode": 302,
+                  "headers": {"location": location, "cache-control": "no-store"},
+                  "body": "",
+              }
+
+          def handler(event, context):
+              path = event.get("rawPath", "/")
+              headers = {str(key).lower(): value for key, value in (event.get("headers") or {}).items()}
+              iam_authorizer = ((event.get("requestContext") or {}).get("authorizer") or {}).get("iam")
+              sigv4_present = (bool(headers.get("authorization")) and bool(headers.get("x-amz-date"))) or bool(iam_authorizer)
+              print(json.dumps({"smokePath": path, "hasDomain": bool((event.get("requestContext") or {}).get("domainName")), "sigv4Present": sigv4_present}))
+              if path == "/.well-known/openid-configuration":
+                  base = "https://" + (event.get("requestContext", {}).get("domainName") or "")
+                  return response(200, {
+                      "issuer": base,
+                      "authorization_endpoint": base + "/authorize",
+                      "token_endpoint": base + "/token",
+                      "response_types_supported": ["code"],
+                      "grant_types_supported": ["authorization_code", "client_credentials"],
+                      "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+                  })
+              if path == "/token":
+                  return response(200, {"access_token": uuid.uuid4().hex, "token_type": "Bearer", "expires_in": 30, "scope": "openid"})
+              if path == "/authorize":
+                  query = event.get("queryStringParameters") or {}
+                  redirect_uri = query.get("redirect_uri", "")
+                  state = query.get("state", "")
+                  separator = "&" if "?" in redirect_uri else "?"
+                  return redirect_response(
+                      redirect_uri + separator + "code=" + uuid.uuid4().hex + "&state=" + state
+                  )
+              raw_body = event.get("body") or "{}"
+              if event.get("isBase64Encoded"):
+                  import base64
+                  raw_body = base64.b64decode(raw_body).decode("utf-8")
+              try:
+                  request = json.loads(raw_body)
+              except Exception:
+                  return response(400, {"jsonrpc": "2.0", "error": {"code": -32700, "message": "parse error"}})
+              method = request.get("method")
+              if method == "initialize":
+                  return response(200, {"jsonrpc": "2.0", "id": request.get("id"), "result": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "tpipe-live-smoke", "version": "1"}}})
+              if method == "notifications/initialized":
+                  return {"statusCode": 202, "body": ""}
+              if method == "tools/list":
+                  return response(200, {"jsonrpc": "2.0", "id": request.get("id"), "result": {"tools": [{"name": "smoke_echo", "description": "Returns a deterministic smoke marker.", "inputSchema": {"type": "object", "properties": {"message": {"type": "string"}}, "required": ["message"]}}, {"name": "smoke_approve", "description": "Records the approval event for temporal policy smoke.", "inputSchema": {"type": "object", "properties": {}}}, {"name": "smoke_forbidden", "description": "Protected policy smoke tool.", "inputSchema": {"type": "object", "properties": {}}}]}})
+              if method == "tools/call":
+                  args = ((request.get("params") or {}).get("arguments") or {})
+                  name = (request.get("params") or {}).get("name")
+                  value = "SMOKE_APPROVE:true" if name == "smoke_approve" else ("SMOKE_FORBIDDEN" if name == "smoke_forbidden" else "SMOKE_ECHO:" + str(args.get("message", "")))
+                  value += ";SIGV4:present" if sigv4_present else ";SIGV4:missing"
+                  return response(200, {"jsonrpc": "2.0", "id": request.get("id"), "result": {"content": [{"type": "text", "text": value}]}})
+              return response(200, {"jsonrpc": "2.0", "id": request.get("id"), "result": {}})
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  DeterministicMcpUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: AWS_IAM
+      TargetFunctionArn: !GetAtt DeterministicMcpLambda.Arn
+      Cors:
+        AllowOrigins: ['*']
+        AllowMethods: [POST, GET]
+        AllowHeaders: ['*']
+
+  DeterministicMcpUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunctionUrl
+      FunctionName: !Ref DeterministicMcpLambda
+      Principal: '*'
+      FunctionUrlAuthType: AWS_IAM
+
+  FixtureVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.253.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'tpipe-smoke-vpc-${RunId}'
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  FixtureSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref FixtureVpc
+      CidrBlock: 10.253.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'tpipe-smoke-subnet-${RunId}'
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  FixtureInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub 'tpipe-smoke-igw-${RunId}'
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  FixtureVpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref FixtureInternetGateway
+      VpcId: !Ref FixtureVpc
+
+  FixtureRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref FixtureVpc
+      Tags:
+        - Key: Name
+          Value: !Sub 'tpipe-smoke-route-${RunId}'
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  FixtureDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: FixtureVpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref FixtureRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref FixtureInternetGateway
+
+  FixtureSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref FixtureRouteTable
+      SubnetId: !Ref FixtureSubnet
+
+  FixtureSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Isolated AgentCore capacity smoke security group
+      VpcId: !Ref FixtureVpc
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub 'tpipe-smoke-sg-${RunId}'
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  CapacityOperatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'tpipe-smoke-capacity-operator-${RunId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: bedrock-agentcore.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: capacity-operator
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                Resource: '*'
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  CapacityInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'tpipe-smoke-capacity-instance-${RunId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: TPipeSmokeRun
+          Value: !Ref RunId
+
+  CapacityInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub 'tpipe-smoke-capacity-profile-${RunId}'
+      Roles: [!Ref CapacityInstanceRole]
+
+Outputs:
+  McpEndpoint:
+    Value: !GetAtt DeterministicMcpUrl.FunctionUrl
+  OAuthSecretArn:
+    Value: !Ref OAuthSecret
+  ConsentOAuthSecretArn:
+    Value: !Ref ConsentOAuthSecret
+  ApiKeySecretArn:
+    Value: !Ref ApiKeySecret
+  LogGroupName:
+    Value: !Ref FixtureLogGroup
+  VpcId:
+    Value: !Ref FixtureVpc
+  SubnetId:
+    Value: !Ref FixtureSubnet
+  SecurityGroupId:
+    Value: !Ref FixtureSecurityGroup
+  CapacityOperatorRoleArn:
+    Value: !GetAtt CapacityOperatorRole.Arn
+  CapacityInstanceProfileArn:
+    Value: !GetAtt CapacityInstanceProfile.Arn
+  GatewayServiceRoleArn:
+    Value: !GetAtt GatewayServiceRole.Arn
+  McpFunctionArn:
+    Value: !GetAtt DeterministicMcpLambda.Arn
+  EvaluationLambdaArn:
+    Value: !GetAtt EvaluationLambda.Arn
+  EvaluationExecutionRoleArn:
+    Value: !GetAtt EvaluationExecutionRole.Arn

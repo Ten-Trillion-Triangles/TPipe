@@ -6,10 +6,14 @@ import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.StandardCopyOption
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * File-system helpers dedicated to `.bank` and `.todo` persistence.
@@ -22,6 +26,7 @@ import java.util.UUID
 internal object MemoryPersistence
 {
     private const val lockSuffix = ".lck"
+    private val processLocks = ConcurrentHashMap<Path, ReentrantLock>()
 
     /**
      * Read a memory file while holding the shared lock for its sidecar lock file.
@@ -121,18 +126,48 @@ internal object MemoryPersistence
      */
     internal fun <T> withLock(targetPath: Path, shared: Boolean, block: () -> T): T
     {
+        val normalizedTargetPath = targetPath.toAbsolutePath().normalize()
+        val processLock = processLocks.computeIfAbsent(normalizedTargetPath) { ReentrantLock() }
+        return processLock.withLock {
+            withFileLock(normalizedTargetPath, shared, block)
+        }
+    }
+
+    /**
+     * Hold the sidecar lock without acquiring the in-process lock.
+     *
+     * This is used by the administrative persistence facade after it has acquired
+     * the per-file process lock for a complete checked transaction.
+     */
+    internal fun <T> withFileLock(targetPath: Path, shared: Boolean, block: () -> T): T
+    {
         val lockPath = targetPath.resolveSibling("${targetPath.fileName}${lockSuffix}")
         ensureParentDirectory(lockPath)
+        if(Files.isSymbolicLink(lockPath)) throw IllegalStateException("Memory sidecar lock must not be a symbolic link")
 
         FileChannel.open(
             lockPath,
             StandardOpenOption.CREATE,
             StandardOpenOption.READ,
-            StandardOpenOption.WRITE
+            StandardOpenOption.WRITE,
+            LinkOption.NOFOLLOW_LINKS
         ).use { fileChannel ->
             fileChannel.lock(0L, Long.MAX_VALUE, shared).use {
                 return block()
             }
+        }
+    }
+
+    /**
+     * Run a complete administrative transaction while sharing the same in-process
+     * coordination as ordinary ContextBank persistence.
+     */
+    internal fun <T> withExclusiveTransaction(targetPath: Path, block: () -> T): T
+    {
+        val normalizedTargetPath = targetPath.toAbsolutePath().normalize()
+        val processLock = processLocks.computeIfAbsent(normalizedTargetPath) { ReentrantLock() }
+        return processLock.withLock {
+            withFileLock(normalizedTargetPath, shared = false, block)
         }
     }
 
@@ -209,26 +244,56 @@ internal object MemoryPersistence
     }
 
     /**
-     * Best-effort directory sync after a write or delete so replacement metadata is flushed when the platform allows it.
-     *
-     * @param directoryPath Parent directory of the managed file.
+     * Replace a file only when the file system guarantees an atomic move.
      */
-    private fun forceDirectorySync(directoryPath: Path?)
+    internal fun moveTempFileAtomically(tempPath: Path, targetPath: Path)
+    {
+        Files.move(
+            tempPath,
+            targetPath,
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE
+        )
+    }
+
+    /**
+     * Write a uniquely-created temporary sibling and flush its bytes.
+     */
+    internal fun writeAdministrativeTempFile(targetPath: Path, content: String): Path
+    {
+        val tempPath = targetPath.resolveSibling("${targetPath.fileName}.${UUID.randomUUID()}.tmp")
+        try
+        {
+            FileChannel.open(
+                tempPath,
+                StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.WRITE
+            ).use { fileChannel ->
+                val contentBuffer = ByteBuffer.wrap(content.toByteArray())
+                while(contentBuffer.hasRemaining()) fileChannel.write(contentBuffer)
+                fileChannel.force(true)
+            }
+            return tempPath
+        }
+        catch(exception: Exception)
+        {
+            Files.deleteIfExists(tempPath)
+            throw exception
+        }
+    }
+
+    /** Force the parent directory metadata to durable storage after a namespace mutation. */
+    internal fun forceDirectorySync(directoryPath: Path?): Boolean
     {
         if(directoryPath == null || !Files.exists(directoryPath))
         {
-            return
+            return false
         }
-
-        try
-        {
+        return runCatching {
             FileChannel.open(directoryPath, StandardOpenOption.READ).use { fileChannel ->
                 fileChannel.force(true)
             }
-        }
-        catch(_: Exception)
-        {
-            // Directory fsync support varies by platform; atomic replace and lock discipline remain the hard contract.
-        }
+            true
+        }.getOrDefault(false)
     }
 }

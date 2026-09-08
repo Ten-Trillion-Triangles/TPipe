@@ -187,8 +187,10 @@ publishing {
             pom {
                 name.set("TPipe (Community)")
                 description.set("TPipe - Agent Operating Environment for LLM orchestration - Community tier")
+                packaging = "jar"
             }
-            from(components["java"])
+            artifact(tasks.named("shadowJar"))
+            artifact(tasks.named("sourcesJar"))
             artifact(tasks.named("licenseJar"))
             artifact(tasks.named("javadocJar"))
         }
@@ -214,6 +216,51 @@ publishing {
             name = "CompatibilityRepository"
             url = uri(layout.buildDirectory.dir("compatibility-maven"))
         }
+    }
+}
+
+//================================================================================
+// Aggregate TPipe bundle
+//================================================================================
+
+val bundleProjects = subprojects.filter { it.name != "agentcore-live-smoke" }
+val bundleRuntimeConfigurations = bundleProjects.mapNotNull {
+    it.configurations.findByName("runtimeClasspath")
+}
+val rootRuntimeConfiguration = configurations.getByName("runtimeClasspath")
+
+tasks.named<ShadowJar>("shadowJar")
+{
+    dependsOn(bundleProjects.map { it.tasks.named("jar") })
+    from({
+        zipTree(tasks.named<Jar>("jar").get().archiveFile)
+    }) {
+        include("META-INF/com.TTT_TPipe.kotlin_module")
+        eachFile {
+            if (path == "META-INF/com.TTT_TPipe.kotlin_module") {
+                path = "META-INF/TPipe.kotlin_module"
+            }
+        }
+    }
+    bundleProjects.forEach { module ->
+        from(module.tasks.named("jar"))
+    }
+    configurations = listOf(rootRuntimeConfiguration) + bundleRuntimeConfigurations
+}
+
+tasks.named<Jar>("sourcesJar")
+{
+    duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.EXCLUDE
+    bundleProjects.forEach { module ->
+        from(module.file("src/main/kotlin"))
+        from(module.file("src/main/java"))
+    }
+}
+
+tasks.named<org.jetbrains.dokka.gradle.DokkaTask>("dokkaJavadoc")
+{
+    dokkaSourceSets.configureEach {
+        sourceRoots.from(bundleProjects.map { it.file("src/main/kotlin") })
     }
 }
 

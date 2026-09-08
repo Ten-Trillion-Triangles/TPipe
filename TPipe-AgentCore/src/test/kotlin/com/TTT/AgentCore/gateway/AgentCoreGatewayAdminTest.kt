@@ -28,10 +28,10 @@ class AgentCoreGatewayAdminTest
         val client = proxyClient { calls++ }
         val request = CreateGatewayRateLimitRequest {
             gatewayIdentifier = "gateway"
-            dimensionKeys = listOf("tenant")
+            dimensionKeys = listOf("targetName")
             entries = listOf(
                 LimitEntry {
-                    dimensions = mapOf("tenant" to "acme")
+                    dimensions = mapOf("targetName" to "acme")
                     requests = listOf(RateConfig {
                         period = Period.Second
                         rate = -1.0
@@ -52,10 +52,47 @@ class AgentCoreGatewayAdminTest
         val admin = AgentCoreGatewayAdmin(proxyClient {})
 
         assertFailsWith<IllegalArgumentException> {
-            admin.validateRateLimitDimensions(listOf("tenant", "tenant"))
+            admin.validateRateLimitDimensions(listOf("targetName", "targetName"))
         }
         assertFailsWith<IllegalArgumentException> {
-            admin.validateRateLimitDimensions((1..11).map { "dimension-$it" })
+            admin.validateRateLimitDimensions((1..11).map { "targetName$it" })
+        }
+        assertFailsWith<IllegalArgumentException> {
+            admin.validateRateLimitDimensions(listOf("tenant"))
+        }
+    }
+
+    @Test
+    fun rejectsInvalidGatewayRateLimitClientTokens()
+    {
+        val admin = AgentCoreGatewayAdmin(proxyClient {})
+        val request = CreateGatewayRateLimitRequest {
+            gatewayIdentifier = "gateway"
+            clientToken = "token_with_underscore"
+            dimensionKeys = listOf("targetName")
+            entries = listOf(
+                LimitEntry {
+                    dimensions = mapOf("targetName" to "*")
+                    requests = listOf(RateConfig { period = Period.Second; rate = 1.0 })
+                }
+            )
+        }
+
+        assertFailsWith<IllegalArgumentException> { admin.validateRateLimit(request) }
+
+        val shortTokenRequest = CreateGatewayRateLimitRequest {
+            gatewayIdentifier = "gateway"
+            clientToken = "a".repeat(32)
+            dimensionKeys = listOf("targetName")
+            entries = listOf(
+                LimitEntry {
+                    dimensions = mapOf("targetName" to "*")
+                    requests = listOf(RateConfig { period = Period.Second; rate = 1.0 })
+                }
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            admin.validateRateLimit(shortTokenRequest)
         }
     }
 

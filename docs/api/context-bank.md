@@ -833,3 +833,12 @@ println("Cache hit rate: ${stats.cacheHitRate}")
 ## Next Steps
 
 - [ContextLock API](context-lock.md) - Continue into context access control.
+
+## LocalContextPersistence
+
+TPipe exposes a separate local persisted-document facade for administrative tools such as Apex's saved-memory editor. It reads already-persisted `.bank` documents from the configured lorebook directory without loading them into `ContextBank`, invoking retrieval or write-back bindings, consulting remote persistence, or removing developer-owned bindings.
+
+The facade pins its root at construction, enumerates regular nested `.bank` files in deterministic order, rejects traversal and symbolic-link escapes, and uses the same per-file sidecar locking discipline as ordinary memory persistence. Use `listSavedPagesPage(query, page, pageSize)` for filtered metadata pagination, `readSavedPage(relativePath)` for lazy raw-document reads, and the checked replacement/deletion methods with the current revision for optimistic concurrency.
+
+Malformed pages remain visible with their original bytes and an invalid result so an administrator can inspect or repair them. Replacements validate the complete proposed document before an atomic commit; conflicts, missing pages, unreadable pages, and storage failures remain distinct typed outcomes. The facade never creates backups or trash entries.
+

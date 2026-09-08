@@ -10,19 +10,25 @@ import com.TTT.AgentCore.evaluations.AgentCoreEvaluationPoller
 import com.TTT.AgentCore.evaluations.evaluationAdmin
 import com.TTT.AgentCore.identity.identityAdmin
 import com.TTT.AgentCore.gateway.AgentCoreGatewayCredentials
+import com.TTT.AgentCore.gateway.AgentCoreGatewayAdmin
 import com.TTT.AgentCore.gateway.AgentCoreGatewayCredentialsProvider
 import com.TTT.AgentCore.gateway.AgentCoreGatewaySigV4Auth
+import com.TTT.AgentCore.gateway.AgentCoreGatewayConfig
+import com.TTT.AgentCore.gateway.AgentCoreGatewayConnector
 import com.TTT.AgentCore.gateway.gatewayAdmin
 import com.TTT.AgentCore.harness.AgentCoreHarnessAgent
 import com.TTT.AgentCore.harness.harnessClient
 import com.TTT.AgentCore.memory.AgentCoreMemoryBackend
 import com.TTT.AgentCore.memory.AgentCoreMemoryConfig
 import com.TTT.AgentCore.memory.semanticMemory
+import com.TTT.AgentCore.policy.AgentCoreTemporalPolicySession
 import com.TTT.AgentCore.observability.AgentCoreOtelConfig
 import com.TTT.AgentCore.observability.AgentCoreOtelTraceSink
 import com.TTT.AgentCore.runtime.AgentCoreRuntimeClient
 import com.TTT.AgentCore.runtime.AgentCoreRuntimeClientConfig
 import com.TTT.AgentCore.runtime.AgentCoreRuntimeRequestSigner
+import com.TTT.AgentCore.runtime.AgentCoreRuntimeJson
+import com.TTT.AgentCore.runtime.AgentCoreInvocationRequest
 import com.TTT.AgentCore.runtime.AgentCoreRuntimeAgent
 import com.TTT.AgentCore.runtime.AgentCoreShellReconnectConfig
 import com.TTT.AgentCore.runtime.AgentCoreRuntimeShellClient
@@ -30,7 +36,13 @@ import com.TTT.AgentCore.runtime.AgentCoreShellChannel
 import com.TTT.AgentCore.runtime.AgentCoreShellStatus
 import com.TTT.AgentCore.runtime.runtimeAdmin
 import com.TTT.AgentCore.registry.AgentRegistryClients
+import com.TTT.AgentCore.registry.AgentRegistryAdmin
 import com.TTT.AgentCore.registry.agentCoreRegistryAdmin
+import com.TTT.AgentCore.registry.registryDiscovery
+import com.TTT.AgentCore.registry.mcpDescriptor
+import com.TTT.AgentCore.identity.identityProvider
+import com.TTT.AgentCore.identity.asSecretToken
+import com.TTT.AgentCore.identity.asSecretTokenOrNull
 import com.TTT.AgentCore.payments.paymentAdmin
 import com.TTT.AgentCore.payments.paymentsClient
 import com.TTT.AgentCore.tools.browserAdmin
@@ -58,6 +70,11 @@ import com.TTT.MCP.Client.McpRemoteClient
 import com.TTT.MCP.Client.McpRemoteClientConfig
 import com.TTT.PipeContextProtocol.FunctionRegistry
 import aws.smithy.kotlin.runtime.content.Document
+import aws.sdk.kotlin.services.bedrockagentcore.model.ContentSource
+import aws.sdk.kotlin.services.bedrockagentcore.model.IngestDataRequest
+import aws.sdk.kotlin.services.bedrockagentcore.model.IngestPayloadType
+import aws.sdk.kotlin.services.bedrockagentcore.model.Conversational
+import aws.sdk.kotlin.services.bedrockagentcore.model.Role
 import bedrockPipe.BedrockMultimodalPipe
 import io.opentelemetry.api.OpenTelemetry
 import io.opentelemetry.sdk.OpenTelemetrySdk
@@ -69,6 +86,7 @@ import io.opentelemetry.sdk.trace.export.SpanExporter
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpSend
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.plugins.plugin
@@ -85,16 +103,23 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeout
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.security.MessageDigest
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import java.net.URI
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.system.exitProcess
 
@@ -130,20 +155,25 @@ class LiveSmokeRunner(
             "runtime.capacity-provider",
             config.capacityProviderId
         ) { capacityProvider(it) }
-        if(isSelected("runtime.capacity-provider-session-delete")) cases += notSafelyTestable(
+        if(isSelected("runtime.capacity-provider-session-delete")) cases += runRequired(
             "runtime.capacity-provider-session-delete",
-            "Session deletion is destructive; configure an explicit disposable Instances session and invoke the cleanup controller."
-        )
+            listOf(config.instancesRuntimeArn, config.instancesSessionId, config.capacityProviderId)
+        ) { values -> capacityProviderSessionDelete(values[0], values[1]) }
+        if(isSelected("runtime.instances")) cases += runRequired(
+            "runtime.instances",
+            listOf(config.instancesEndpoint, config.instancesRuntimeArn)
+        ) { values -> runtimeInstances(values[0], values[1]) }
         if(isSelected("runtime.p2p-adapter")) cases += runOptional("runtime.p2p-adapter", config.httpEndpoint) { runtimeP2pAdapter(it) }
         if(isSelected("runtime.agui")) cases += runOptional("runtime.agui", config.aguiEndpoint) { agui(it) }
         if(isSelected("mcp.pcp")) cases += runOptional("mcp.pcp", config.mcpEndpoint) { mcpAndPcp(it) }
         if(isSelected("gateway.sigv4")) cases += runOptional("gateway.sigv4", config.gatewayEndpoint) { gateway(it) }
+        if(isSelected("gateway.forwarding")) cases += runRequired(
+            "gateway.forwarding",
+            listOf(config.gatewayEndpoint, config.gatewayIdentifier, config.gatewayTargetId)
+        ) { values -> gatewayForwarding(values[0], values[1], values[2]) }
         if(isSelected("memory.exact")) cases += runOptional("memory.exact", config.memoryId) { exactMemory(it) }
         if(isSelected("memory.semantic")) cases += runOptional("memory.semantic", config.memoryId) { semanticMemory(it) }
-        if(isSelected("memory.ingest")) cases += notSafelyTestable(
-            "memory.ingest",
-            "IngestData writes durable semantic memory; provide a disposable memory namespace and cleanup proof before enabling it."
-        )
+        if(isSelected("memory.ingest")) cases += runOptional("memory.ingest", config.memoryId) { ingestMemory(it) }
         if(isSelected("gateway.rate-limit")) cases += runRequired(
             "gateway.rate-limit",
             listOf(config.gatewayIdentifier, config.gatewayRateLimitId)
@@ -154,10 +184,10 @@ class LiveSmokeRunner(
         ) { values -> gatewayRule(values[0], values[1]) }
         if(isSelected("tools.browser")) cases += runOptional("tools.browser", config.browserIdentifier) { browser(it) }
         if(isSelected("tools.code-interpreter")) cases += runOptional("tools.code-interpreter", config.codeInterpreterIdentifier) { codeInterpreter(it) }
-        if(isSelected("tools.custom-filesystem")) cases += notSafelyTestable(
+        if(isSelected("tools.custom-filesystem")) cases += runRequired(
             "tools.custom-filesystem",
-            "Custom Browser/Code Interpreter lifecycle is preview-sensitive; use the exact CloudFormation-owned identifier and cleanup manifest before enabling it."
-        )
+            listOf(config.browserCustomIdentifier, config.browserProfileIdentifier, config.codeInterpreterCustomIdentifier)
+        ) { values -> customFilesystem(values[0], values[1], values[2]) }
         if(isSelected("tools.browser-custom")) cases += runOptional(
             "tools.browser-custom",
             config.browserCustomIdentifier
@@ -174,14 +204,19 @@ class LiveSmokeRunner(
             "identity.workload-token",
             config.workloadName
         ) { workloadName -> identity(workloadName, config.identityVerificationEndpoint) }
-        if(isSelected("identity.lifecycle")) cases += notSafelyTestable(
+        if(isSelected("identity.lifecycle")) cases += runRequired(
             "identity.lifecycle",
-            "Credential-provider creation can reference external secrets; live smoke does not create or delete credential material."
-        )
-        if(isSelected("identity.consent-portal")) cases += runOptional(
+            listOf(config.oauth2CredentialProviderName, config.apiKeyCredentialProviderName)
+        ) { values -> credentialLifecycle(values[0], values[1]) }
+        if(isSelected("identity.consent-portal")) cases += runRequired(
             "identity.consent-portal",
-            config.consentPortalId
-        ) { consentPortal(it) }
+            listOf(
+                config.consentPortalId,
+                config.consentOauth2CredentialProviderName,
+                config.workloadName,
+                config.consentCallbackUrl
+            )
+        ) { values -> consentPortal(values[0], values[1], values[2], values[3]) }
         if(isSelected("harness.p2p")) cases += runOptional("harness.p2p", config.harnessArn) { harness(it) }
         if(isSelected("model.bedrock")) cases += runOptional("model.bedrock", config.modelId) { bedrockModel(it) }
         if(isSelected("evaluation.on-demand")) cases += runRequired(
@@ -201,10 +236,10 @@ class LiveSmokeRunner(
             "evaluation.dataset",
             config.evaluationDatasetId
         ) { evaluationDataset(it) }
-        if(isSelected("evaluation.insights")) cases += notSafelyTestable(
+        if(isSelected("evaluation.insights")) cases += runRequired(
             "evaluation.insights",
-            "Insights execution requires a caller-owned trace/evaluator contract and is not created by the smoke harness."
-        )
+            listOf(config.evaluationInsightsLogGroup, config.evaluationServiceName)
+        ) { values -> insightsBatchEvaluation(values[0], values[1]) }
         if(isSelected("evaluation.configuration-bundle")) cases += runOptional(
             "evaluation.configuration-bundle",
             config.evaluationConfigurationBundleId
@@ -217,27 +252,28 @@ class LiveSmokeRunner(
             "evaluation.ab-test",
             config.evaluationAbTestId
         ) { evaluationAbTest(it) }
-        if(isSelected("credentials.oauth-api-key")) cases += notSafelyTestable(
-            id = "credentials.oauth-api-key",
-            message = "No disposable OAuth/API-key provider with an exact delete lifecycle was configured."
-        )
+        if(isSelected("credentials.oauth-api-key")) cases += runRequired(
+            "credentials.oauth-api-key",
+            listOf(
+                config.oauth2CredentialProviderName,
+                config.resourceCredentialProviderName,
+                config.workloadName
+            )
+        ) { values -> credentialDataPlane(values[0], values[1], values[2]) }
         if(isSelected("policy.local-adapter")) cases += runCase("policy.local-adapter") { policyAdapter() }
         if(isSelected("policy.gateway")) cases += runRequired(
             "policy.gateway",
             listOf(config.gatewayEndpoint, config.policyGatewayIdentifier, config.policyEngineId)
         ) { values -> policyGateway(values[0], values[1], values[2]) }
-        if(isSelected("policy.temporal")) cases += notSafelyTestable(
+        if(isSelected("policy.temporal")) cases += runRequired(
             "policy.temporal",
-            "Temporal policy evaluation requires an explicit policy-session lifecycle and is not created by this smoke harness."
-        )
+            listOf(config.gatewayEndpoint, config.policyGatewayIdentifier, config.policyEngineId)
+        ) { values -> temporalPolicy(values[0], values[1], values[2]) }
         if(isSelected("registry.lifecycle")) cases += runRequired(
             "registry.lifecycle",
             listOf(config.registryId, config.registryRecordId)
         ) { values -> registryLifecycle(values[0], values[1]) }
-        if(isSelected("payments.lifecycle")) cases += runRequired(
-            "payments.lifecycle",
-            listOf(config.paymentManagerId, config.paymentConnectorId)
-        ) { values -> paymentsLifecycle(values[0], values[1], config.paymentSessionId) }
+        // Payments are intentionally omitted from this run by explicit user scope.
         if(isSelected("observability.local-sink")) cases += runCase("observability.local-sink") { observability() }
         if(isSelected("capability.a2a"))
         {
@@ -376,6 +412,57 @@ class LiveSmokeRunner(
         return mapOf("capacityProviderId" to identifier)
     }
 
+    private suspend fun capacityProviderSessionDelete(
+        runtimeArn: String,
+        sessionId: String
+    ): Map<String, String>
+    {
+        val capacityProviderId = requireNotNull(config.capacityProviderId)
+        AgentCoreRuntimeClient(
+            AgentCoreRuntimeClientConfig(
+                endpoint = config.httpEndpoint ?: "https://bedrock-agentcore.${config.region}.amazonaws.com",
+                runtimeArn = runtimeArn,
+                requestSigner = runtimeSigner(
+                    config.httpEndpoint ?: "https://bedrock-agentcore.${config.region}.amazonaws.com"
+                )
+            ),
+            clients
+        ).use { client ->
+            var response = client.deleteCapacityProviderSession(
+                DeleteCapacityProviderSessionRequest {
+                    this.capacityProviderId = capacityProviderId
+                    this.sessionId = sessionId
+                }
+            )
+            check(LiveSmokeAssertions.isCapacitySessionDeletionTerminal(response.status)) {
+                "Capacity-provider session deletion returned unexpected status '${response.status.value}'."
+            }
+            val deadline = System.nanoTime() + 120_000_000_000L
+            while(response.status != CapacityProviderSessionStatus.Deleted && System.nanoTime() < deadline)
+            {
+                delay(2_000L)
+                response = client.deleteCapacityProviderSession(
+                    DeleteCapacityProviderSessionRequest {
+                        this.capacityProviderId = capacityProviderId
+                        this.sessionId = sessionId
+                    }
+                )
+                check(LiveSmokeAssertions.isCapacitySessionDeletionTerminal(response.status)) {
+                    "Capacity-provider session deletion returned unexpected status '${response.status.value}'."
+                }
+            }
+            check(response.status == CapacityProviderSessionStatus.Deleted) {
+                "Capacity-provider session did not reach Deleted before the polling deadline."
+            }
+            return mapOf(
+                "capacityProviderId" to capacityProviderId,
+                "sessionId" to sessionId,
+                "deleted" to "true",
+                "status" to response.status.value
+            )
+        }
+    }
+
     private suspend fun gatewayRateLimit(gatewayIdentifier: String, identifier: String): Map<String, String>
     {
         clients.gatewayAdmin().getRateLimit(
@@ -398,12 +485,150 @@ class LiveSmokeRunner(
         return mapOf("ruleId" to identifier)
     }
 
-    private suspend fun consentPortal(identifier: String): Map<String, String>
+    private suspend fun consentPortal(
+        portalIdentifier: String,
+        providerName: String,
+        workloadName: String,
+        callbackUrl: String
+    ): Map<String, String>
     {
-        clients.identityAdmin().getConsentPortal(
-            GetConsentPortalRequest { consentPortalIdentifier = identifier }
-        )
-        return mapOf("consentPortalId" to identifier)
+        val callback = URI(callbackUrl)
+        val loopbackCallback = callback.scheme == "http" && callback.host == "127.0.0.1"
+        require(loopbackCallback || callback.scheme == "https") {
+            "Consent callback must be either a run-local HTTP loopback URL or a run-owned HTTPS callback."
+        }
+        val callbackResult = CompletableDeferred<LiveSmokeOAuthCallback>()
+        val server = if(loopbackCallback)
+        {
+            HttpServer.create(InetSocketAddress(callback.host, callback.port), 0).also { localServer ->
+                localServer.createContext(callback.path.ifBlank { "/" }) { exchange ->
+                    try
+                    {
+                        val query = exchange.requestURI.rawQuery.orEmpty()
+                        val result = LiveSmokeAssertions.parseOAuthCallback(
+                            "${callbackUrl.substringBefore('?')}${if(query.isBlank()) "" else "?$query"}",
+                            expectedState = "${config.runId}-consent-state"
+                        )
+                        callbackResult.complete(result)
+                        val body = "Authorization received. You may close this tab."
+                            .toByteArray(StandardCharsets.UTF_8)
+                        exchange.sendResponseHeaders(200, body.size.toLong())
+                        exchange.responseBody.use { it.write(body) }
+                    }
+                    catch(exception: Throwable)
+                    {
+                        callbackResult.completeExceptionally(exception)
+                        exchange.sendResponseHeaders(400, 0)
+                    }
+                    finally
+                    {
+                        exchange.close()
+                    }
+                }
+                localServer.start()
+            }
+        }
+        else null
+        var authorizationUrlPath: Path? = null
+        var step = "getWorkloadAccessToken"
+        try
+        {
+            val workloadToken = clients.identityProvider().getWorkloadAccessTokenForUserId(
+                GetWorkloadAccessTokenForUserIdRequest {
+                    userId = config.consentUserId
+                    this.workloadName = workloadName
+                }
+            ).asSecretToken()
+            step = "getResourceOauth2Token.authorization"
+            val pending = clients.identityProvider().getResourceOauth2Token(
+                GetResourceOauth2TokenRequest {
+                    resourceCredentialProviderName = providerName
+                    workloadIdentityToken = workloadToken.value()
+                    oauth2Flow = Oauth2FlowType.UserFederation
+                    resourceOauth2ReturnUrl = callbackUrl
+                    customState = "${config.runId}-consent-state"
+                    scopes = listOf("openid")
+                    forceAuthentication = true
+                }
+            )
+            val authorizationUrl = requireNotNull(pending.authorizationUrl) {
+                "Consent flow did not return an authorization URL."
+            }
+            val sessionUri = requireNotNull(pending.sessionUri) {
+                "Consent flow did not return a session URI."
+            }
+            val urlPath = Path.of(
+                System.getenv("TPIPE_AGENTCORE_CONSENT_AUTH_URL_FILE")
+                    ?: config.outputPath.resolveSibling("consent-auth-url.txt").toString()
+            )
+            authorizationUrlPath = urlPath
+            Files.writeString(
+                urlPath,
+                authorizationUrl,
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE
+            )
+            val callbackValue = if(loopbackCallback)
+            {
+                withTimeout(180_000L) { callbackResult.await() }
+            }
+            else
+            {
+                val completionPath = Path.of(
+                    System.getenv("TPIPE_AGENTCORE_CONSENT_COMPLETION_FILE")
+                        ?: error("TPIPE_AGENTCORE_CONSENT_COMPLETION_FILE is required for an HTTPS consent callback.")
+                )
+                withTimeout(180_000L)
+                {
+                    while(!Files.exists(completionPath)) delay(250L)
+                    val value = LiveSmokeAssertions.parseOAuthCallback(
+                        Files.readString(completionPath, StandardCharsets.UTF_8),
+                        expectedState = "${config.runId}-consent-state"
+                    )
+                    Files.deleteIfExists(completionPath)
+                    value
+                }
+            }
+            step = "completeResourceTokenAuth"
+            clients.identityProvider().completeResourceTokenAuth(
+                CompleteResourceTokenAuthRequest {
+                    this.sessionUri = sessionUri
+                    userIdentifier = UserIdentifier.UserId(config.consentUserId)
+                }
+            )
+            step = "getResourceOauth2Token.delegated"
+            val delegated = clients.identityProvider().getResourceOauth2Token(
+                GetResourceOauth2TokenRequest {
+                    resourceCredentialProviderName = providerName
+                    workloadIdentityToken = workloadToken.value()
+                    oauth2Flow = Oauth2FlowType.UserFederation
+                    resourceOauth2ReturnUrl = callbackUrl
+                    customState = callbackValue.state
+                    this.sessionUri = sessionUri
+                    scopes = listOf("openid")
+                }
+            ).asSecretTokenOrNull()
+            check(delegated != null && delegated.toString() == "[REDACTED]") {
+                "Consent flow did not return a redacted delegated token."
+            }
+            return mapOf(
+                "consentPortalId" to portalIdentifier,
+                "callbackReceived" to "true",
+                "delegatedTokenRedacted" to "true",
+                "authorizationUrlRecorded" to "false"
+            )
+        }
+        catch(exception: Throwable)
+        {
+            throw IllegalStateException("Consent flow failed at $step: ${exception.message}", exception)
+        }
+        finally
+        {
+            authorizationUrlPath?.let { Files.deleteIfExists(it) }
+            server?.stop(0)
+        }
     }
 
     private suspend fun evaluationDataset(identifier: String): Map<String, String>
@@ -456,19 +681,74 @@ class LiveSmokeRunner(
     {
         AgentRegistryClients(AgentCoreConfig(config.region)).use { registryClients ->
             val admin = registryClients.agentCoreRegistryAdmin()
-            admin.getRegistry(
+            val registry = admin.getRegistry(
                 aws.sdk.kotlin.services.agentregistrycontrol.model.GetRegistryRequest {
                     this.registryId = registryId
                 }
             )
-            admin.getRegistryRecord(
+            admin.listRegistries()
+            admin.updateRegistry(
+                aws.sdk.kotlin.services.agentregistrycontrol.model.UpdateRegistryRequest {
+                    this.registryId = registryId
+                    description = aws.sdk.kotlin.services.agentregistrycontrol.model.UpdatedDescription {
+                        optionalValue = "${config.runId} registry smoke update"
+                    }
+                }
+            )
+            awaitRegistryReady(admin, registryId)
+            val record = admin.getRegistryRecord(
                 aws.sdk.kotlin.services.agentregistrycontrol.model.GetRegistryRecordRequest {
                     this.registryId = registryId
                     this.recordId = recordId
                 }
             )
+            admin.listRegistryRecords(
+                aws.sdk.kotlin.services.agentregistrycontrol.model.ListRegistryRecordsRequest {
+                    this.registryId = registryId
+                }
+            )
+            val descriptor = mcpDescriptor(
+                data = """{"name":"tpipe/smoke-server","title":"TPipe AgentCore live smoke MCP server","description":"${config.runId} run-owned MCP descriptor","version":"1.0.0"}""",
+                dataSchemaVersion = "2025-12-11"
+            )
+            check(descriptor.mcpServer != null) { "MCP descriptor helper did not build the MCP union." }
+            admin.updateRegistryRecord(
+                aws.sdk.kotlin.services.agentregistrycontrol.model.UpdateRegistryRecordRequest {
+                    this.registryId = registryId
+                    this.recordId = recordId
+                    description = aws.sdk.kotlin.services.agentregistrycontrol.model.UpdatedDescription {
+                        optionalValue = "${config.runId} record smoke update"
+                    }
+                }
+            )
+            awaitRegistryRecordDraft(admin, registryId, recordId)
+            admin.submitRegistryRecordForApproval(registryId, recordId)
+            admin.updateRegistryRecordStatus(
+                registryId = registryId,
+                recordId = recordId,
+                status = aws.sdk.kotlin.services.agentregistrycontrol.model.RegistryRecordStatus.Approved,
+                statusReason = "${config.runId} smoke approval"
+            )
+            val discovery = registryClients.registryDiscovery()
+            val discoverable = discovery.list(registryId, maxResults = 100)
+            check(discoverable.registryRecords.any { it.recordId == recordId }) {
+                "Approved registry record was not discoverable through the data plane."
+            }
+            val batch = discovery.batchGet(registryId, listOf(recordId))
+            check(batch.errors.isEmpty() && batch.registryRecords.any { it.recordId == recordId }) {
+                "Approved registry record was not returned by data-plane batch get."
+            }
+            check(registry.registryId == registryId && record.recordId == recordId) {
+                "Registry lifecycle response identity changed during the smoke run."
+            }
         }
-        return mapOf("registryId" to registryId, "recordId" to recordId)
+        return mapOf(
+            "registryId" to registryId,
+            "recordId" to recordId,
+            "controlCrud" to "create-update-list-get-submit-approve",
+            "dataPlaneDiscovery" to "approved",
+            "descriptor" to "mcp"
+        )
     }
 
     private suspend fun paymentsLifecycle(
@@ -494,9 +774,52 @@ class LiveSmokeRunner(
         }
     }
 
-    private suspend fun runtimeHttp(endpoint: String): Map<String, String>
+    private suspend fun runtimeInstances(endpoint: String, runtimeArn: String): Map<String, String>
     {
-        val runtimeArn = config.httpRuntimeArn ?: config.runtimeArn
+        val runtimeEndpoint = LiveSmokeAssertions.runtimeInvocationEndpoint(runtimeArn)
+        val explicitSessionId = sessionId("instances")
+        // The first Instances invocation may provision a managed instance. Use
+        // the TPipe HTTP data-plane client with a bounded long timeout so that
+        // cold provisioning is not confused with a transport failure. The
+        // typed SDK response stream is owned by the SDK callback and is not
+        // safe to consume after that callback returns.
+        signedHttpClient(runtimeSigner(endpoint), requestTimeoutMillis = 180_000L).use { httpClient ->
+            AgentCoreRuntimeClient(
+                AgentCoreRuntimeClientConfig(
+                    endpoint = endpoint,
+                    invocationPath = runtimePath("/invocations", includeQualifier = true, runtimeArn = runtimeEndpoint.runtimeArn),
+                    websocketPath = runtimePath("/ws", includeQualifier = false, runtimeArn = runtimeEndpoint.runtimeArn),
+                    pingPath = runtimePath("/ping", includeQualifier = false, runtimeArn = runtimeEndpoint.runtimeArn),
+                    runtimeArn = runtimeEndpoint.runtimeArn,
+                    qualifier = runtimeEndpoint.qualifier,
+                    requestSigner = runtimeSigner(endpoint)
+                ),
+                httpClient
+            ).use { client ->
+                val response = client.invoke(
+                    AgentCoreInvocationRequest(input = "smoke-http", sessionId = explicitSessionId)
+                )
+                check(response.output.contains("SMOKE_OK")) { "Unexpected Instances runtime output." }
+                check(response.outputContent?.text?.contains("SMOKE_OK") == true) {
+                    "Instances runtime response did not contain the canonical output schema."
+                }
+                check(response.sessionId.isNotBlank()) {
+                    "Instances runtime returned no explicit session identity."
+                }
+                return mapOf(
+                    "runtimeType" to "Instances",
+                    "explicitSession" to "true",
+                    "sessionId" to response.sessionId,
+                    "runtimeArn" to runtimeEndpoint.runtimeArn,
+                    "qualifier" to runtimeEndpoint.qualifier
+                )
+            }
+        }
+    }
+
+    private suspend fun runtimeHttp(endpoint: String, runtimeArnOverride: String? = null): Map<String, String>
+    {
+        val runtimeArn = runtimeArnOverride ?: config.httpRuntimeArn ?: config.runtimeArn
         runtimeClient(endpoint, runtimeArn).use { client ->
             val pingStatus = if(runtimeArn == null)
             {
@@ -721,6 +1044,62 @@ class LiveSmokeRunner(
         }
     }
 
+    private suspend fun gatewayForwarding(
+        endpoint: String,
+        gatewayIdentifier: String,
+        targetId: String
+    ): Map<String, String>
+    {
+        requireOwnedResource("gateway", gatewayIdentifier)
+        requireOwnedResource("gateway-target", targetId)
+        val admin = clients.gatewayAdmin()
+        val target = admin.getTarget(
+            GetGatewayTargetRequest {
+                this.gatewayIdentifier = gatewayIdentifier
+                this.targetId = targetId
+            }
+        )
+        val sync = admin.synchronize(
+            SynchronizeGatewayTargetsRequest {
+                this.gatewayIdentifier = gatewayIdentifier
+                targetIdList = listOf(targetId)
+            }
+        )
+        awaitGatewayTargetReady(admin, gatewayIdentifier, targetId)
+        AgentCoreGatewayConnector(
+            AgentCoreGatewayConfig(
+                endpoint = endpoint,
+                namespacePrefix = "gateway__",
+                mcp = McpRemoteClientConfig(
+                    endpoint = endpoint,
+                    namespacePrefix = "gateway__",
+                    requestSigner = gatewaySigner(endpoint)
+                )
+            )
+        ).use { connector ->
+            connector.createPcpContext()
+            val tools = connector.mcpClient().listTools()
+            val echo = tools.firstOrNull { it.name.endsWith("smoke_echo") }
+            checkNotNull(echo) { "Gateway forwarding did not discover smoke_echo." }
+            val exposedName = LiveSmokeAssertions.namespacedPcpFunctionName("gateway__", echo.name)
+            check(FunctionRegistry.getSignature(exposedName) != null) {
+                "Gateway forwarding did not bind ${echo.name} to PCP as $exposedName."
+            }
+            val result = connector.mcpClient().callTool(echo.name, mapOf("message" to "forwarded"))
+            check(result.contains("SMOKE_ECHO:forwarded")) { "Gateway forwarding returned an unexpected result." }
+            check(result.contains("SIGV4:present")) { "Gateway did not forward a verifiable SigV4 request to the owned target." }
+            return mapOf(
+                "gatewayIdentifier" to gatewayIdentifier,
+                "targetId" to targetId,
+                "targetStatus" to target.status.toString(),
+                "synchronizedTargets" to sync.targets.orEmpty().size.toString(),
+                "tool" to echo.name,
+                "pcpBound" to "true",
+                "sigv4" to "lambda"
+            )
+        }
+    }
+
     private suspend fun exactMemory(memoryId: String): Map<String, String>
     {
         val backend = AgentCoreMemoryBackend(
@@ -835,6 +1214,151 @@ class LiveSmokeRunner(
             "Semantic Memory did not return the unique marker."
         }
         return mapOf("memoryId" to memoryId, "eventId" to eventId, "retrieved" to "true")
+    }
+
+    private suspend fun ingestMemory(memoryId: String): Map<String, String>
+    {
+        val marker = "${config.runId}-ingest-marker"
+        val response = clients.semanticMemory().ingestData(
+            IngestDataRequest {
+                this.memoryId = memoryId
+                actorId = config.runId
+                sessionId = "${config.runId}-ingest-session"
+                source = ContentSource.Inline(
+                    aws.sdk.kotlin.services.bedrockagentcore.model.InlineMemoryContent {
+                        payload = listOf(
+                            IngestPayloadType.Conversational(
+                                Conversational {
+                                    role = Role.User
+                                    content = aws.sdk.kotlin.services.bedrockagentcore.model.Content.Text(marker)
+                                }
+                            )
+                        )
+                    }
+                )
+            }
+        )
+        check(response.sessionId?.isNotBlank() == true) { "IngestData returned no session id." }
+        return mapOf("memoryId" to memoryId, "sessionId" to response.sessionId, "marker" to marker)
+    }
+
+    private suspend fun customFilesystem(
+        browserIdentifier: String,
+        profileIdentifier: String,
+        codeInterpreterIdentifier: String
+    ): Map<String, String>
+    {
+        clients.browserAdmin().get(GetBrowserRequest { browserId = browserIdentifier })
+        clients.browserProfileAdmin().get(GetBrowserProfileRequest { profileId = profileIdentifier })
+        clients.codeInterpreterAdmin().get(
+            GetCodeInterpreterRequest { codeInterpreterId = codeInterpreterIdentifier }
+        )
+        return mapOf(
+            "browserIdentifier" to browserIdentifier,
+            "profileIdentifier" to profileIdentifier,
+            "codeInterpreterIdentifier" to codeInterpreterIdentifier,
+            "filesystem" to "run-owned-custom-resources"
+        )
+    }
+
+    private suspend fun credentialLifecycle(
+        oauthProviderName: String,
+        apiKeyProviderName: String
+    ): Map<String, String>
+    {
+        val admin = clients.identityAdmin()
+        val oauth = admin.getOauth2CredentialProvider(
+            GetOauth2CredentialProviderRequest { name = oauthProviderName }
+        )
+        val apiKey = admin.getApiKeyCredentialProvider(
+            GetApiKeyCredentialProviderRequest { name = apiKeyProviderName }
+        )
+        val oauthList = admin.listOauth2CredentialProviders(ListOauth2CredentialProvidersRequest {})
+        val apiKeyList = admin.listApiKeyCredentialProviders(ListApiKeyCredentialProvidersRequest {})
+        config.apiKeySecretArn?.let { secretArn ->
+            admin.updateApiKeyCredentialProvider(
+                UpdateApiKeyCredentialProviderRequest {
+                    name = apiKeyProviderName
+                    apiKeySecretSource = SecretSourceType.External
+                    apiKeySecretConfig {
+                        secretId = secretArn
+                        jsonKey = "api_key"
+                    }
+                }
+            )
+        }
+        check(oauth.name == oauthProviderName && apiKey.name == apiKeyProviderName) {
+            "Credential provider identity changed during the lifecycle check."
+        }
+        return mapOf(
+            "oauthProviderName" to oauthProviderName,
+            "apiKeyProviderName" to apiKeyProviderName,
+            "oauthStatus" to oauth.status.toString(),
+            "oauthProviders" to oauthList.credentialProviders.size.toString(),
+            "apiKeyProviders" to apiKeyList.credentialProviders.size.toString(),
+            "apiKeyUpdated" to (config.apiKeySecretArn != null).toString(),
+            "secretValuesReturned" to "false"
+        )
+    }
+
+    private suspend fun credentialDataPlane(
+        oauthProviderName: String,
+        apiKeyProviderName: String,
+        workloadName: String
+    ): Map<String, String>
+    {
+        val workloadToken = clients.identityProvider().getWorkloadAccessToken(
+            GetWorkloadAccessTokenRequest { this.workloadName = workloadName }
+        ).asSecretToken()
+        check(workloadToken.redacted() == "[REDACTED]") { "Workload token was not redacted." }
+        val apiKey = clients.identityProvider().getResourceApiKey(
+            GetResourceApiKeyRequest {
+                resourceCredentialProviderName = apiKeyProviderName
+                workloadIdentityToken = workloadToken.value()
+            }
+        ).asSecretToken()
+        check(apiKey.toString() == "[REDACTED]") { "API-key credential was not redacted." }
+        val oauthToken = clients.identityProvider().getResourceOauth2Token(
+            GetResourceOauth2TokenRequest {
+                resourceCredentialProviderName = oauthProviderName
+                workloadIdentityToken = workloadToken.value()
+                oauth2Flow = Oauth2FlowType.M2M
+                scopes = listOf("tpipe-smoke/smoke")
+            }
+        ).asSecretTokenOrNull()
+        check(oauthToken != null && oauthToken.redacted() == "[REDACTED]") {
+            "OAuth credential provider returned no redacted access token."
+        }
+        var tokenLoads = 0
+        val cached = com.TTT.AgentCore.identity.AgentCoreTokenProvider(
+            loader = {
+                tokenLoads++
+                clients.identityProvider().getResourceOauth2Token(
+                    GetResourceOauth2TokenRequest {
+                        resourceCredentialProviderName = oauthProviderName
+                        workloadIdentityToken = workloadToken.value()
+                        oauth2Flow = Oauth2FlowType.M2M
+                        scopes = listOf("tpipe-smoke/smoke")
+                    }
+                ).asSecretTokenOrNull()?.value()
+                    ?: error("OAuth cache loader returned no token.")
+            },
+            tokenLifetimeMillis = 50L
+        )
+        cached.headers("credential-smoke")
+        cached.headers("credential-smoke")
+        delay(75L)
+        cached.headers("credential-smoke")
+        check(tokenLoads >= 2) { "OAuth resource-token cache did not refresh after expiry." }
+        return mapOf(
+            "oauthProviderName" to oauthProviderName,
+            "apiKeyProviderName" to apiKeyProviderName,
+            "workloadName" to workloadName,
+            "tokenRedacted" to (workloadToken.toString() == "[REDACTED]").toString(),
+            "apiKeyRedacted" to (apiKey.toString() == "[REDACTED]").toString(),
+            "oauthAccessTokenRedacted" to (oauthToken.toString() == "[REDACTED]").toString(),
+            "oauthTokenLoads" to tokenLoads.toString()
+        )
     }
 
     private suspend fun browser(identifier: String): Map<String, String>
@@ -1064,6 +1588,7 @@ class LiveSmokeRunner(
 
     private suspend fun onDemandEvaluation(evaluatorId: String, traceId: String): Map<String, String>
     {
+        val now = System.currentTimeMillis() * 1_000_000L
         val response = clients.evaluationClient().evaluate(
             EvaluateRequest {
                 this.evaluatorId = evaluatorId
@@ -1071,11 +1596,12 @@ class LiveSmokeRunner(
                 evaluationInput = EvaluationInput.SessionSpans(
                     listOf(
                         Document.Map(
-                            mapOf(
-                                "trace_id" to Document.String(traceId),
-                                "span_id" to Document.String("${config.runId}-span"),
-                                "name" to Document.String("agentcore-live-smoke"),
-                                "status" to Document.String("OK")
+                            LiveSmokeEvaluationFixtures.syntheticSessionSpanFields(
+                                traceId = traceId,
+                                spanId = "${config.runId}-span",
+                                sessionId = "${config.runId}-session",
+                                startTimeUnixNano = now,
+                                endTimeUnixNano = now + 1_000_000L
                             )
                         )
                     )
@@ -1096,7 +1622,7 @@ class LiveSmokeRunner(
         val started = client.startBatch(
             StartBatchEvaluationRequest {
                 batchEvaluationName = "${config.runId}_batch"
-                clientToken = "${config.runId}_batch_token"
+                clientToken = LiveSmokeEvaluationFixtures.clientToken(config.runId, "batch-token")
                 evaluators = listOf(Evaluator { this.evaluatorId = evaluatorId })
                 dataSourceConfig = aws.sdk.kotlin.services.bedrockagentcore.model.DataSourceConfig.CloudWatchLogs(
                     aws.sdk.kotlin.services.bedrockagentcore.model.CloudWatchLogsSource {
@@ -1141,6 +1667,65 @@ class LiveSmokeRunner(
         )
     }
 
+    private suspend fun insightsBatchEvaluation(
+        logGroupName: String,
+        serviceName: String
+    ): Map<String, String>
+    {
+        val client = clients.evaluationClient()
+        val started = client.startBatch(
+            StartBatchEvaluationRequest {
+                batchEvaluationName = "${config.runId}_insights_batch"
+                clientToken = LiveSmokeEvaluationFixtures.clientToken(config.runId, "insights-token")
+                insights = listOf(
+                    com.TTT.AgentCore.evaluations.AgentCoreEvaluationInsights.failureAnalysis(),
+                    com.TTT.AgentCore.evaluations.AgentCoreEvaluationInsights.userIntent(),
+                    com.TTT.AgentCore.evaluations.AgentCoreEvaluationInsights.executionSummary()
+                )
+                dataSourceConfig = aws.sdk.kotlin.services.bedrockagentcore.model.DataSourceConfig.CloudWatchLogs(
+                    aws.sdk.kotlin.services.bedrockagentcore.model.CloudWatchLogsSource {
+                        logGroupNames = listOf(logGroupName)
+                        serviceNames = listOf(serviceName)
+                    }
+                )
+                tags = mapOf("TPipeSmokeRun" to config.runId)
+            }
+        )
+        val completed = try
+        {
+            AgentCoreEvaluationPoller.await(
+                timeoutMillis = 120_000L,
+                initialDelayMillis = 1_000L,
+                maxDelayMillis = 5_000L,
+                load = {
+                    client.getBatch(
+                        GetBatchEvaluationRequest { batchEvaluationId = started.batchEvaluationId }
+                    )
+                },
+                isTerminal = { response ->
+                    response.status.value in setOf("COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED", "STOPPED")
+                }
+            )
+        }
+        catch(exception: Throwable)
+        {
+            runCatching {
+                client.stopBatch(
+                    StopBatchEvaluationRequest { batchEvaluationId = started.batchEvaluationId }
+                )
+            }
+            throw exception
+        }
+        check(completed.status == BatchEvaluationStatus.Completed) {
+            "Insights batch evaluation ended with ${completed.status.value}: ${completed.errorDetails.orEmpty()}"
+        }
+        return mapOf(
+            "batchEvaluationId" to started.batchEvaluationId,
+            "insights" to "failure-analysis,user-intent,execution-summary",
+            "status" to completed.status.value
+        )
+    }
+
     private suspend fun onlineEvaluation(identifier: String): Map<String, String>
     {
         val response = clients.evaluationAdmin().execute {
@@ -1156,6 +1741,126 @@ class LiveSmokeRunner(
             "status" to response.status.value,
             "executionStatus" to response.executionStatus.value
         )
+    }
+
+    private suspend fun temporalPolicy(
+        endpoint: String,
+        gatewayIdentifier: String,
+        policyEngineIdentifier: String
+    ): Map<String, String>
+    {
+        requireOwnedResource("gateway", gatewayIdentifier)
+        requireOwnedResource("policy-engine", policyEngineIdentifier)
+        val policyEngineArn = requireOwnedPolicyEngineArn(policyEngineIdentifier)
+        val sessionId = config.policySessionId ?: java.util.UUID.randomUUID().toString()
+        val freshSessionId = java.util.UUID.randomUUID().toString()
+        val policy = clients.policyAdmin()
+        val temporalRequestCount = AtomicInteger()
+        val temporalHeaderCount = AtomicInteger()
+        policy.bindGateway(
+            AgentCoreGatewayPolicyBinding(
+                gatewayIdentifier = gatewayIdentifier,
+                policyEngineIdentifier = policyEngineArn,
+                mode = AgentCorePolicyMode.ENFORCE
+            )
+        )
+        try
+        {
+            AgentCoreGatewayConnector(
+                AgentCoreGatewayConfig(
+                    endpoint = endpoint,
+                    namespacePrefix = "temporal__",
+                    mcp = McpRemoteClientConfig(
+                        endpoint = endpoint,
+                        namespacePrefix = "temporal__",
+                        requestSigner = gatewaySigner(endpoint),
+                        requestObserver = { _, _, headers ->
+                            temporalRequestCount.incrementAndGet()
+                            if(headers.keys.any {
+                                    it.equals(AgentCoreTemporalPolicySession.HEADER_NAME, ignoreCase = true)
+                                })
+                            {
+                                temporalHeaderCount.incrementAndGet()
+                            }
+                        }
+                    ),
+                    temporalPolicySession = AgentCoreTemporalPolicySession(sessionId)
+                )
+            ).use { connector ->
+                val tools = connector.mcpClient().listTools()
+                val echoTool = tools.firstOrNull { it.name.endsWith("smoke_echo") }
+                val approveTool = tools.firstOrNull { it.name.endsWith("smoke_approve") }
+                val forbiddenTool = tools.firstOrNull { it.name.endsWith("smoke_forbidden") }
+                checkNotNull(echoTool) { "Temporal policy gateway did not expose smoke_echo." }
+                checkNotNull(approveTool) { "Temporal policy gateway did not expose smoke_approve." }
+                checkNotNull(forbiddenTool) { "Temporal policy gateway did not expose smoke_forbidden." }
+                check(runCatching { connector.mcpClient().callTool(forbiddenTool.name, emptyMap()) }.isFailure) {
+                    "Temporal policy allowed the protected tool before approval."
+                }
+                val approval = connector.mcpClient().callTool(approveTool.name, emptyMap())
+                check(approval.contains("SMOKE_APPROVE:true")) { "Approval tool did not record approval." }
+                val allowed = connector.mcpClient().callTool(forbiddenTool.name, emptyMap())
+                check(allowed.contains("SMOKE_FORBIDDEN")) {
+                    "Temporal policy rejected the protected tool after approval."
+                }
+                val echo = connector.mcpClient().callTool(echoTool.name, mapOf("message" to "temporal"))
+                check(echo.contains("SMOKE_ECHO:temporal")) { "Temporal policy rejected the echo tool." }
+                check(temporalRequestCount.get() > 0 && temporalHeaderCount.get() == temporalRequestCount.get()) {
+                    "Temporal policy session header was not present on every signed MCP request."
+                }
+            }
+            AgentCoreGatewayConnector(
+                AgentCoreGatewayConfig(
+                    endpoint = endpoint,
+                    namespacePrefix = "temporal-fresh__",
+                    mcp = McpRemoteClientConfig(
+                        endpoint = endpoint,
+                        namespacePrefix = "temporal-fresh__",
+                        requestSigner = gatewaySigner(endpoint),
+                        requestObserver = { _, _, headers ->
+                            temporalRequestCount.incrementAndGet()
+                            if(headers.keys.any {
+                                    it.equals(AgentCoreTemporalPolicySession.HEADER_NAME, ignoreCase = true)
+                                })
+                            {
+                                temporalHeaderCount.incrementAndGet()
+                            }
+                        }
+                    ),
+                    temporalPolicySession = AgentCoreTemporalPolicySession(freshSessionId)
+                )
+            ).use { connector ->
+                val tools = connector.mcpClient().listTools()
+                val forbiddenTool = tools.firstOrNull { it.name.endsWith("smoke_forbidden") }
+                checkNotNull(forbiddenTool) { "Fresh temporal policy session did not expose protected tool." }
+                check(runCatching { connector.mcpClient().callTool(forbiddenTool.name, emptyMap()) }.isFailure) {
+                    "Protected tool was allowed in a fresh temporal policy session."
+                }
+            }
+            return mapOf(
+                "gatewayIdentifier" to gatewayIdentifier,
+                "policyEngineId" to policyEngineIdentifier,
+                "policySessionHeader" to AgentCoreTemporalPolicySession.HEADER_NAME,
+                "sameSession" to sessionId,
+                "freshSession" to freshSessionId,
+                "approvalBeforeProtectedCall" to "true",
+                "sameSessionAllowedAfterApproval" to "true",
+                "freshSessionDenied" to "true",
+                "headerOnEveryRequest" to "true"
+            )
+        }
+        finally
+        {
+            runCatching {
+                policy.bindGateway(
+                    AgentCoreGatewayPolicyBinding(
+                        gatewayIdentifier = gatewayIdentifier,
+                        policyEngineIdentifier = policyEngineArn,
+                        mode = AgentCorePolicyMode.LOG_ONLY
+                    )
+                )
+            }
+        }
     }
 
     private fun policyAdapter(): Map<String, String>
@@ -1184,6 +1889,7 @@ class LiveSmokeRunner(
     {
         requireOwnedResource("gateway", gatewayIdentifier)
         requireOwnedResource("policy-engine", policyEngineIdentifier)
+        val policyEngineArn = requireOwnedPolicyEngineArn(policyEngineIdentifier)
         val policy = clients.policyAdmin()
         val client = McpRemoteClient(
             McpRemoteClientConfig(
@@ -1197,7 +1903,7 @@ class LiveSmokeRunner(
             policy.bindGateway(
                 AgentCoreGatewayPolicyBinding(
                     gatewayIdentifier = gatewayIdentifier,
-                    policyEngineIdentifier = policyEngineIdentifier,
+                    policyEngineIdentifier = policyEngineArn,
                     mode = AgentCorePolicyMode.LOG_ONLY
                 )
             )
@@ -1219,7 +1925,7 @@ class LiveSmokeRunner(
             policy.bindGateway(
                 AgentCoreGatewayPolicyBinding(
                     gatewayIdentifier = gatewayIdentifier,
-                    policyEngineIdentifier = policyEngineIdentifier,
+                    policyEngineIdentifier = policyEngineArn,
                     mode = AgentCorePolicyMode.ENFORCE
                 )
             )
@@ -1235,7 +1941,7 @@ class LiveSmokeRunner(
                 policy.bindGateway(
                     AgentCoreGatewayPolicyBinding(
                         gatewayIdentifier = gatewayIdentifier,
-                        policyEngineIdentifier = policyEngineIdentifier,
+                        policyEngineIdentifier = policyEngineArn,
                         mode = AgentCorePolicyMode.LOG_ONLY
                     )
                 )
@@ -1251,6 +1957,101 @@ class LiveSmokeRunner(
         }) {
             "Refusing to mutate non-manifest $type '$identifier'."
         }
+    }
+
+    /** Resolve an exact manifest policy engine ID to the ARN required by Gateway binding. */
+    private fun requireOwnedPolicyEngineArn(identifier: String): String
+    {
+        val resource = manifest.resources().firstOrNull {
+            it.type == "policy-engine" && (it.id == identifier || it.arn == identifier)
+        }
+        checkNotNull(resource) { "Refusing to bind non-manifest policy-engine '$identifier'." }
+        return resource.arn ?: error("Manifest policy-engine '${resource.name}' has no ARN.")
+    }
+
+    /** Poll asynchronous Gateway target synchronization before MCP discovery. */
+    private suspend fun awaitGatewayTargetReady(
+        admin: AgentCoreGatewayAdmin,
+        gatewayIdentifier: String,
+        targetId: String,
+        timeoutMillis: Long = 180_000L
+    )
+    {
+        val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
+        var status: String? = null
+        while(System.nanoTime() < deadline)
+        {
+            status = runCatching {
+                admin.getTarget(
+                    GetGatewayTargetRequest {
+                        this.gatewayIdentifier = gatewayIdentifier
+                        this.targetId = targetId
+                    }
+                ).status?.toString()
+            }.getOrNull()
+            if(LiveSmokeAssertions.isGatewayTargetReady(status)) return
+            check(status !in setOf("FAILED", "SYNCHRONIZE_UNSUCCESSFUL", "UPDATE_UNSUCCESSFUL")) {
+                "Gateway target synchronization failed: $status"
+            }
+            delay(2_000L)
+        }
+        error("Gateway target did not become READY after synchronization: $status")
+    }
+
+    /** Poll a Registry update before issuing child reads or approval mutations. */
+    private suspend fun awaitRegistryReady(
+        admin: AgentRegistryAdmin,
+        registryId: String,
+        timeoutMillis: Long = 120_000L
+    )
+    {
+        val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
+        var status: String? = null
+        while(System.nanoTime() < deadline)
+        {
+            status = runCatching {
+                admin.getRegistry(
+                    aws.sdk.kotlin.services.agentregistrycontrol.model.GetRegistryRequest {
+                        this.registryId = registryId
+                    }
+                ).status?.toString()
+            }.getOrNull()
+            if(LiveSmokeAssertions.isRegistryReady(status)) return
+            check(status !in setOf("CREATE_FAILED", "UPDATE_FAILED")) {
+                "Registry update failed: $status"
+            }
+            delay(2_000L)
+        }
+        error("Registry did not become READY after update: $status")
+    }
+
+    /** Poll a record after content updates before submitting it for approval. */
+    private suspend fun awaitRegistryRecordDraft(
+        admin: AgentRegistryAdmin,
+        registryId: String,
+        recordId: String,
+        timeoutMillis: Long = 120_000L
+    )
+    {
+        val deadline = System.nanoTime() + timeoutMillis * 1_000_000L
+        var status: String? = null
+        while(System.nanoTime() < deadline)
+        {
+            status = runCatching {
+                admin.getRegistryRecord(
+                    aws.sdk.kotlin.services.agentregistrycontrol.model.GetRegistryRecordRequest {
+                        this.registryId = registryId
+                        this.recordId = recordId
+                    }
+                ).status?.toString()
+            }.getOrNull()
+            if(LiveSmokeAssertions.isRegistryRecordDraft(status)) return
+            check(status !in setOf("FAILED", "UPDATE_FAILED", "DEPRECATED")) {
+                "Registry record update failed: $status"
+            }
+            delay(2_000L)
+        }
+        error("Registry record did not become DRAFT after update: $status")
     }
 
     /** Poll AgentCore Memory until an eventually consistent result is visible. */
@@ -1411,8 +2212,20 @@ class LiveSmokeRunner(
         }
     }
 
-    private fun signedHttpClient(signer: AgentCoreRuntimeRequestSigner?): HttpClient =
-        HttpClient(CIO) { install(WebSockets) }.also { client ->
+    private fun signedHttpClient(
+        signer: AgentCoreRuntimeRequestSigner?,
+        requestTimeoutMillis: Long? = null
+    ): HttpClient =
+        HttpClient(CIO) {
+            install(WebSockets)
+            requestTimeoutMillis?.let { timeout ->
+                install(HttpTimeout) {
+                    this.requestTimeoutMillis = timeout
+                    this.socketTimeoutMillis = timeout
+                    this.connectTimeoutMillis = 30_000L
+                }
+            }
+        }.also { client ->
             signer ?: return@also
             client.plugin(HttpSend).intercept { request ->
                 val body = when(val content = request.body)
@@ -1536,18 +2349,6 @@ class LiveSmokeRunner(
             )
         }
         return runCase(id) { block(values) }
-    }
-
-    private fun notSafelyTestable(id: String, message: String): SmokeCaseResult
-    {
-        val now = Instant.now().toString()
-        return SmokeCaseResult(
-            id = id,
-            status = SmokeStatus.NOT_SAFELY_TESTABLE,
-            startedAt = now,
-            finishedAt = now,
-            message = message
-        )
     }
 
     private suspend fun runCase(id: String, block: suspend () -> Map<String, String>): SmokeCaseResult

@@ -1359,7 +1359,7 @@ open class BedrockPipe : Pipe()
             {
                 // Use inference profile ARN instead of direct model ID
                 // This enables provisioned throughput for better performance
-                model = inferenceId
+                model = bedrockEnv.resolveInferenceProfileForRegion(inferenceId, region)
             }
         }
 

@@ -130,6 +130,9 @@ class AgentCoreGatewayAdmin(private val client: BedrockAgentCoreControlClient)
     {
         require(dimensions.size in 1..10) { "Gateway rate limits require 1 to 10 dimensions." }
         require(dimensions.all { it.isNotBlank() }) { "Gateway rate-limit dimensions must not be blank." }
+        require(dimensions.all(::isSupportedRateLimitDimension)) {
+            "Gateway rate-limit dimensions must use an AgentCore-supported dimension key."
+        }
         require(dimensions.distinct().size == dimensions.size) {
             "Gateway rate-limit dimensions must be unique."
         }
@@ -145,6 +148,7 @@ class AgentCoreGatewayAdmin(private val client: BedrockAgentCoreControlClient)
         validateRateLimitDimensions(request.dimensionKeys.orEmpty())
         validateRateLimitEntries(request.entries, request.dimensionKeys.orEmpty())
         validateOptionalIdentifier(request.rateLimitId, "rate-limit")
+        validateOptionalClientToken(request.clientToken)
         validateOptionalDescription(request.description)
     }
 
@@ -278,6 +282,30 @@ class AgentCoreGatewayAdmin(private val client: BedrockAgentCoreControlClient)
         require(identifier == null || identifier.length in 2..64) {
             "Gateway $label identifiers must be between 2 and 64 characters."
         }
+    }
+
+    private fun validateOptionalClientToken(clientToken: String?)
+    {
+        require(clientToken == null || clientToken.length in 33..256) {
+            "Gateway client tokens must be between 33 and 256 characters."
+        }
+        require(clientToken == null || clientToken.matches(CLIENT_TOKEN_PATTERN)) {
+            "Gateway client tokens must contain only alphanumeric characters and hyphens."
+        }
+    }
+
+    private fun isSupportedRateLimitDimension(dimension: String): Boolean =
+        dimension == "targetName" ||
+            dimension == "toolName" ||
+            dimension == "qualifiedModelId" ||
+            dimension == "$.context.iam.principal" ||
+            dimension == "$.context.iam.sourceIdentity" ||
+            dimension.matches(JWT_DIMENSION_PATTERN)
+
+    private companion object
+    {
+        val CLIENT_TOKEN_PATTERN = Regex("[A-Za-z0-9](?:-*[A-Za-z0-9]){0,256}")
+        val JWT_DIMENSION_PATTERN = Regex("\\$\\.context\\.jwt\\.[a-zA-Z_][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9_]")
     }
 }
 
