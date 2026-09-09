@@ -2,6 +2,7 @@
 
 ## Table of Contents
 - [Overview](#overview)
+- [Opt-in Access Sandboxing](#opt-in-access-sandboxing)
 - [Public Properties](#public-properties)
 - [Public Functions](#public-functions)
   - [Current Context Access](#current-context-access)
@@ -26,8 +27,9 @@ object ContextBank
 
 `ContextAccess` adds a provider-neutral authority layer without changing the
 existing `ContextWindow`, `TodoList`, or persistence payloads. With no active
-scope, direct `ContextBank` calls retain their legacy behavior. A host can
-enroll a resource with versioned sidecar metadata and then install a scope:
+scope, direct `ContextBank` calls retain their legacy behavior. A trusted host
+can enroll a resource with versioned sidecar metadata and then install a scope.
+The complete authority model is documented in [Context Access API](context-access.md).
 
 ```kotlin
 ContextBank.registerResourceMetadata(
@@ -55,8 +57,9 @@ ContextAccess.withCoroutineScope(scope) {
 The access checks cover reads, writes, creation, deletion, enumeration, todo
 operations, retrieval/writeback hooks, remote persistence, and retained
 mutable references. Protected denials throw `ContextAccessDeniedException`
-before the underlying callback or backend is invoked. A missing sidecar means
-legacy-shared access; corrupt, unsupported, or orphaned sidecars fail closed.
+before the underlying callback or backend is invoked. `LEGACY_COMPATIBLE` scopes
+preserve missing-sidecar behavior. `REQUIRE_ENROLLMENT` scopes deny missing
+metadata. Corrupt, unsupported, or orphaned sidecars fail closed.
 The optional `ContextResourceMetadataBackend` capability enables secured remote
 access without adding methods to the existing `ContextPersistenceBackend`
 interface.

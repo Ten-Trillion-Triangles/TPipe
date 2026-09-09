@@ -165,6 +165,7 @@ Integration guides for different AI providers:
 #### Context Management APIs
 - [ContextWindow API](docs/api/context-window.md) - Memory and context operations
 - [ContextBank API](docs/api/context-bank.md) - Global context management
+- [Context Access API](docs/api/context-access.md) - Scoped memory authority, enrollment, and secure introspection
 - [ContextLock API](docs/api/context-lock.md) - Context access control and security
 - [MiniBank API](docs/api/minibank.md) - Multi-page context handling
 - [ConverseHistory API](docs/api/converse-history.md) - Conversation management
@@ -215,6 +216,7 @@ println(result.text)
 - **Global context sharing** across applications via ContextBank
 - **Remote memory hosting** for distributed agent systems with MemoryServer and MemoryClient
 - **Memory introspection** for autonomous agents with controlled memory access
+- **Scoped ContextAccess authority** with metadata enrollment, attenuation, and secure introspection tools
 - **Retrieval functions** for lazy-loading context from databases and APIs
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Developer-in-the-loop integration** with code and AI-powered validation

@@ -34,16 +34,26 @@ Memory introspection allows autonomous agents to query and manipulate TPipe's me
 
 `MemoryIntrospection` is a compatibility leash for PCP memory tools. For a
 stronger, host-controlled boundary around direct `ContextBank` access, use
-`ContextAccess`. It is provider-neutral and opt-in:
+`ContextAccess` [see Context Access API](../api/context-access.md). It is
+provider-neutral and opt-in:
 
 ```kotlin
+ContextBank.registerResourceMetadata(
+    "private-page",
+    ContextResourceMetadata(
+        resourceKind = ContextResourceKind.CONTEXT_WINDOW,
+        resourceId = "resource-17",
+        boundaryId = "workspace-3"
+    )
+)
+
 val scope = ContextAccess.issueRootScope(
     ExecutionPrincipal("agent-1"),
     ContextAccessRights(
-        readableResources = setOf(ContextResourceSelector.Resource("private-page")),
-        writableResources = setOf(ContextResourceSelector.Resource("private-page")),
-        enumerableResources = setOf(ContextResourceSelector.Resource("private-page"))
-    )
+        readableResources = setOf(ContextResourceSelector.Resource("resource-17")),
+        enumerableResources = setOf(ContextResourceSelector.Boundary("workspace-3"))
+    ),
+    ContextAccessEnforcementMode.REQUIRE_ENROLLMENT
 )
 
 ContextAccess.withCoroutineScope(scope) {
@@ -51,15 +61,22 @@ ContextAccess.withCoroutineScope(scope) {
 }
 ```
 
+Expected result: the enrolled `private-page` context window is returned when
+the sidecar is valid and the scope grants `READ` for `resource-17`.
+
 Hosts enroll a page, todo list, or banked context with
 `ContextBank.registerResourceMetadata(...)`. Enrollment is stored in a
-versioned per-resource sidecar. A missing sidecar deliberately preserves the
-legacy shared behavior; a corrupt or unsupported sidecar fails closed. The
-sidecar contains only an opaque resource identifier and optional opaque
-boundary identifier, not a changed `ContextWindow` or `TodoList` payload.
+versioned per-resource sidecar. `LEGACY_COMPATIBLE` scopes preserve missing
+sidecar behavior; `REQUIRE_ENROLLMENT` scopes deny missing metadata. Corrupt or
+unsupported sidecars fail closed. The sidecar contains only an opaque resource
+identifier and optional opaque boundary identifier, not a changed
+`ContextWindow` or `TodoList` payload.
 
 Nested scopes are intersections, so child code can remove rights but cannot
-restore or broaden them. `withCoroutineScope` carries the authority across
+restore or broaden them. Exact resource selectors match opaque resource IDs;
+boundary selectors match opaque boundary IDs. Child delegation requires
+`delegable = true`, and trusted containment resolution can attenuate a boundary
+grant to an exact resource. `withCoroutineScope` carries the authority across
 dispatcher changes, and pipeline, manifold, and local P2P execution paths
 reinstall the active scope at their boundaries. Authority is not serialized in
 `P2PRequest`; a remote host must establish its own local scope.

@@ -5,6 +5,7 @@ import com.TTT.Context.Persistence.ContextPersistenceBackend
 import com.TTT.Context.Persistence.ContextResourceMetadataBackend
 import com.TTT.Pipe.DummyPipe
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -112,6 +113,98 @@ class ContextAccessSandboxingTest
         val loaded = ContextBank.getContextFromBankSuspend(privateKey, skipRemote = true)
 
         assertEquals(listOf("private value"), loaded.contextElements)
+    }
+
+    @Test
+    fun failClosedPolicyDeniesAccessWhenExecutionScopeIsLost() = runBlocking {
+        seedProtectedPage(privateKey, "private-resource", "private value")
+        ContextAccess.setUnscopedPolicy(ContextAccessUnscopedPolicy.DENY)
+
+        try
+        {
+            ContextAccess.withCoroutineScope(strictScopeFor("private-resource")) {
+                val detached = CoroutineScope(Dispatchers.Default).async {
+                    assertNull(ContextAccess.currentScope())
+                    assertFailsWith<ContextAccessDeniedException> {
+                        ContextBank.getContextFromBankSuspend(privateKey, skipRemote = true)
+                    }
+                    Unit
+                }
+                detached.await()
+            }
+            Unit
+        }
+        finally
+        {
+            ContextAccess.setUnscopedPolicy(ContextAccessUnscopedPolicy.LEGACY_ALLOWED)
+        }
+    }
+
+    @Test
+    fun failClosedPolicyDeniesEnumerationWithoutAnExecutionScope() = runBlocking {
+        seedProtectedPage(privateKey, "private-resource", "private value")
+        ContextAccess.setUnscopedPolicy(ContextAccessUnscopedPolicy.DENY)
+
+        try
+        {
+            assertFailsWith<ContextAccessDeniedException> {
+                ContextBank.getPageKeysSuspend(skipRemote = true)
+            }
+            Unit
+        }
+        finally
+        {
+            ContextAccess.setUnscopedPolicy(ContextAccessUnscopedPolicy.LEGACY_ALLOWED)
+        }
+    }
+
+    @Test
+    fun failClosedPolicyDeniesUnscopedMutationBeforeWriteback() = runBlocking {
+        seedProtectedPage(privateKey, "private-resource", "private value")
+        var writeBackInvocations = 0
+        ContextBank.registerWriteBackFunction(privateKey) { _, _ ->
+            writeBackInvocations += 1
+            true
+        }
+        ContextAccess.setUnscopedPolicy(ContextAccessUnscopedPolicy.DENY)
+
+        try
+        {
+            assertFailsWith<ContextAccessDeniedException> {
+                ContextBank.emplaceSuspend(
+                    privateKey,
+                    ContextWindow().apply { contextElements.add("updated value") },
+                    StorageMode.MEMORY_ONLY,
+                    skipRemote = true
+                )
+            }
+            assertEquals(0, writeBackInvocations)
+        }
+        finally
+        {
+            ContextAccess.setUnscopedPolicy(ContextAccessUnscopedPolicy.LEGACY_ALLOWED)
+        }
+    }
+
+    @Test
+    fun failClosedPolicyDoesNotRemoveNoScopeMetadataAdministrationCompatibility() = runBlocking {
+        seedProtectedPage(privateKey, "private-resource", "private value")
+        ContextAccess.setUnscopedPolicy(ContextAccessUnscopedPolicy.DENY)
+
+        try
+        {
+            assertEquals(
+                "private-resource",
+                ContextBank.getResourceMetadataSuspend(
+                    privateKey,
+                    ContextResourceKind.CONTEXT_WINDOW
+                )?.resourceId
+            )
+        }
+        finally
+        {
+            ContextAccess.setUnscopedPolicy(ContextAccessUnscopedPolicy.LEGACY_ALLOWED)
+        }
     }
 
     @Test

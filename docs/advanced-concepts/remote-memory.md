@@ -9,6 +9,7 @@
 - [Operations](#operations)
 - [Versioning and Conflict Resolution](#versioning-and-conflict-resolution)
 - [Security](#security)
+- [Context Access Metadata](#context-access-metadata)
 - [Performance Considerations](#performance-considerations)
 - [Complete Example](#complete-example)
 
@@ -121,6 +122,12 @@ The MemoryServer exposes the following REST endpoints:
 - `GET /context/lock/page/{pageKey}/state` - Check if page is locked
 - `POST /context/lock/` - Add lock
 - `DELETE /context/lock/` - Remove lock
+
+**Context Access Metadata:**
+- `GET /context/metadata/{kind}/{key}` - Retrieve resource authorization metadata
+- `POST /context/metadata/{kind}/{key}` - Store resource authorization metadata
+- `DELETE /context/metadata/{kind}/{key}` - Delete resource authorization metadata
+- `GET /context/metadata/{kind}/{key}/exists` - Check payload presence without retrieving the payload
 
 ## Client Configuration
 
@@ -363,6 +370,21 @@ suspend fun secureAccess()
 }
 ```
 
+## Context Access Metadata
+
+Remote secured access uses the optional `ContextResourceMetadataBackend`
+capability. TPipe's remote backend implements metadata reads, metadata writes,
+metadata deletion, and payload-presence checks without returning protected
+values. Remote secured creation and enumeration require this capability. The
+complete selector, enrollment, attenuation, and denial contract is documented
+in [Context Access API](../api/context-access.md).
+
+When `P2PRegistry.globalAuthMechanism` is configured, the memory server checks
+the `Authorization` header for every route under `/context`, including metadata
+routes. Unauthorized requests return HTTP `401` with `MemoryErrorType.auth`.
+Metadata failures use the typed `MemoryErrorResponse` contract described in
+[Context Access API](../api/context-access.md#http-endpoints).
+
 ## Performance Considerations
 
 ### Caching
@@ -487,6 +509,7 @@ suspend fun main()
 ## See Also
 
 - [ContextBank API](../api/context-bank.md) - Complete ContextBank API reference
+- [Context Access API](../api/context-access.md) - Scoped authority and resource metadata
 - [ContextLock API](../api/context-lock.md) - Lock management and security
 - [Memory Introspection](memory-introspection.md) - Agent memory access control
 - [P2P Overview](p2p/p2p-overview.md) - Agent-to-agent communication

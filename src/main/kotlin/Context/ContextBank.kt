@@ -241,7 +241,11 @@ object ContextBank
         skipRemote: Boolean
     )
     {
-        val scope = ContextAccess.currentScope() ?: return
+        val scope = ContextAccess.requireScopeOrNull(
+            operation,
+            kind,
+            key
+        ) ?: return
         val metadata = resourceMetadataOrNull(kind, key, mode, skipRemote, operation)
         if(metadata == null)
         {
@@ -357,7 +361,11 @@ object ContextBank
         skipRemote: Boolean
     )
     {
-        val scope = ContextAccess.currentScope() ?: return
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.WRITE,
+            ContextResourceKind.CONTEXT_WINDOW,
+            key
+        ) ?: return
         val metadata = resourceMetadataOrNull(
             ContextResourceKind.CONTEXT_WINDOW,
             key,
@@ -456,7 +464,11 @@ object ContextBank
         skipRemote: Boolean
     )
     {
-        val scope = ContextAccess.currentScope() ?: return
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.WRITE,
+            ContextResourceKind.TODO_LIST,
+            key
+        ) ?: return
         val metadata = resourceMetadataOrNull(
             ContextResourceKind.TODO_LIST,
             key,
@@ -554,8 +566,13 @@ object ContextBank
         skipRemote: Boolean
     )
     {
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.CREATE,
+            kind,
+            key
+        )
         validateCreationMetadata(kind, key, metadata)
-        val scope = ContextAccess.currentScope() ?: return
+        if(scope == null) return
         if(!scope.allows(ContextAccessOperation.CREATE, metadata))
         {
             throw ContextAccessDeniedException(
@@ -746,7 +763,12 @@ object ContextBank
         key: String
     )
     {
-        if(ContextAccess.currentScope() != null)
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.READ,
+            kind,
+            key
+        )
+        if(scope != null)
         {
             throw ContextAccessDeniedException(
                 ContextAccessOperation.READ,
@@ -767,7 +789,11 @@ object ContextBank
         kind: ContextResourceKind
     )
     {
-        val scope = ContextAccess.currentScope() ?: return
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.ENUMERATE,
+            kind,
+            "<enumeration>"
+        ) ?: return
         if(!scope.hasEnumerationAuthority())
         {
             throw ContextAccessDeniedException(
@@ -806,7 +832,11 @@ object ContextBank
         forceRemote: Boolean = false
     ): List<String>
     {
-        val scope = ContextAccess.currentScope() ?: return keys
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.ENUMERATE,
+            kind,
+            "<enumeration>"
+        ) ?: return keys
         return keys.distinct().filter { key ->
             val mode = if(forceRemote) StorageMode.REMOTE else getStorageMode(key)
             val metadata = resourceMetadataOrNull(
@@ -995,7 +1025,11 @@ object ContextBank
      */
     private suspend fun authorizedContextEvictionKeys(): Set<String>?
     {
-        if(ContextAccess.currentScope() == null) return null
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.DELETE,
+            ContextResourceKind.CONTEXT_WINDOW,
+            "<eviction>"
+        ) ?: return null
 
         val candidates = storageMetadata.values
             .filter { it.storageMode == StorageMode.DISK_WITH_CACHE && bank.containsKey(it.key) }
@@ -1032,7 +1066,11 @@ object ContextBank
      */
     private suspend fun authorizedTodoEvictionKeys(): Set<String>?
     {
-        if(ContextAccess.currentScope() == null) return null
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.DELETE,
+            ContextResourceKind.TODO_LIST,
+            "<eviction>"
+        ) ?: return null
 
         val candidates = storageMetadata.values
             .filter { it.storageMode == StorageMode.DISK_WITH_CACHE && todoList.containsKey(it.key) }
@@ -1232,7 +1270,8 @@ object ContextBank
      */
     fun emplace(key: String, window: ContextWindow, mode: StorageMode, skipRemote: Boolean = false)
     {
-        if(ContextAccess.currentScope() != null)
+        if(ContextAccess.currentScope() != null ||
+            ContextAccess.currentUnscopedPolicy() == ContextAccessUnscopedPolicy.DENY)
         {
             ContextAccess.runBlockingWithCurrentScope {
                 emplaceSuspend(key, window, mode, skipRemote, useWriteBack = false)
@@ -1320,7 +1359,12 @@ object ContextBank
         useWriteBack: Boolean = true
     )
     {
-        val storedWindow = if(ContextAccess.currentScope() == null) window else window.deepCopy()
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.WRITE,
+            ContextResourceKind.CONTEXT_WINDOW,
+            key
+        )
+        val storedWindow = if(activeScope == null) window else window.deepCopy()
         val writeBackFunction = if(useWriteBack) writeBackFunctions[key] else null
         if(writeBackFunction != null)
         {
@@ -1426,7 +1470,12 @@ object ContextBank
         require(metadata.resourceKind == ContextResourceKind.CONTEXT_WINDOW)
         require(key.isNotBlank()) { "Context resource key must not be blank." }
         validateCreationMetadata(ContextResourceKind.CONTEXT_WINDOW, key, metadata)
-        val storedWindow = if(ContextAccess.currentScope() == null) window else window.deepCopy()
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.CREATE,
+            ContextResourceKind.CONTEXT_WINDOW,
+            key
+        )
+        val storedWindow = if(activeScope == null) window else window.deepCopy()
 
         getPageMutex(key).withLock {
             authorizeCreate(
@@ -1655,12 +1704,17 @@ object ContextBank
      */
     internal suspend fun contextWindowExistsForWriteLeashSuspend(key: String): Boolean
     {
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.WRITE,
+            ContextResourceKind.CONTEXT_WINDOW,
+            key
+        )
         val mode = getStorageMode(key)
         if(shouldUseRemotePersistence(mode, skipRemote = false))
         {
             return getPageMutex(key).withLock {
                 val backend = remotePersistenceBackendOrNull()
-                if(ContextAccess.currentScope() != null)
+                if(activeScope != null)
                 {
                     try
                     {
@@ -1836,7 +1890,12 @@ object ContextBank
      */
     fun evictFromMemory(key: String): Boolean
     {
-        if(ContextAccess.currentScope() != null)
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.DELETE,
+            ContextResourceKind.CONTEXT_WINDOW,
+            key
+        )
+        if(activeScope != null)
         {
             ContextAccess.runBlockingWithCurrentScope {
                 authorize(
@@ -1871,7 +1930,12 @@ object ContextBank
      */
     fun evictAllFromMemory()
     {
-        if(ContextAccess.currentScope() != null)
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.DELETE,
+            ContextResourceKind.CONTEXT_WINDOW,
+            "<eviction>"
+        )
+        if(activeScope != null)
         {
             ContextAccess.runBlockingWithCurrentScope {
                 bank.keys.forEach { key ->
@@ -2399,6 +2463,11 @@ object ContextBank
      */
     suspend fun getPageKeysSuspend(skipRemote: Boolean = false) : List<String>
     {
+        ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.ENUMERATE,
+            ContextResourceKind.CONTEXT_WINDOW,
+            "<enumeration>"
+        )
         val localKeys = (bank.keys + retrievalFunctions.keys).distinct()
         if(!skipRemote &&
             (TPipeConfig.useRemoteMemoryGlobally ||
@@ -2430,7 +2499,11 @@ object ContextBank
      */
     internal fun requireEnumerationAccess(kind: ContextResourceKind)
     {
-        val scope = ContextAccess.currentScope() ?: return
+        val scope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.ENUMERATE,
+            kind,
+            "<enumeration>"
+        ) ?: return
         if(!scope.hasEnumerationAuthority())
         {
             throw ContextAccessDeniedException(
@@ -2463,6 +2536,11 @@ object ContextBank
      */
     suspend fun getTodoListKeysSuspend(skipRemote: Boolean = false) : List<String>
     {
+        ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.ENUMERATE,
+            ContextResourceKind.TODO_LIST,
+            "<enumeration>"
+        )
         val localKeys = todoList.keys.toList()
         if(!skipRemote &&
             (TPipeConfig.useRemoteMemoryGlobally ||
@@ -2827,7 +2905,12 @@ object ContextBank
         skipRemote: Boolean = false
     )
     {
-        var todoListToEmplace = if(ContextAccess.currentScope() == null) todoList else todoList.deepCopy()
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.WRITE,
+            ContextResourceKind.TODO_LIST,
+            key
+        )
+        var todoListToEmplace = if(activeScope == null) todoList else todoList.deepCopy()
         if(shouldUseRemotePersistence(mode, skipRemote))
         {
             getTodoMutex(key).withLock {
@@ -2933,7 +3016,12 @@ object ContextBank
         require(metadata.resourceKind == ContextResourceKind.TODO_LIST)
         require(key.isNotBlank()) { "Context resource key must not be blank." }
         validateCreationMetadata(ContextResourceKind.TODO_LIST, key, metadata)
-        val storedTodoList = if(ContextAccess.currentScope() == null) todoList else todoList.deepCopy()
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.CREATE,
+            ContextResourceKind.TODO_LIST,
+            key
+        )
+        val storedTodoList = if(activeScope == null) todoList else todoList.deepCopy()
 
         getTodoMutex(key).withLock {
             authorizeCreate(ContextResourceKind.TODO_LIST, key, metadata, mode, skipRemote)
@@ -3129,7 +3217,12 @@ object ContextBank
      */
     fun evictTodoListFromMemory(key: String): Boolean
     {
-        if(ContextAccess.currentScope() != null)
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.DELETE,
+            ContextResourceKind.TODO_LIST,
+            key
+        )
+        if(activeScope != null)
         {
             ContextAccess.runBlockingWithCurrentScope {
                 authorize(
@@ -3164,7 +3257,12 @@ object ContextBank
      */
     fun evictAllTodoListsFromMemory()
     {
-        if(ContextAccess.currentScope() != null)
+        val activeScope = ContextAccess.requireScopeOrNull(
+            ContextAccessOperation.DELETE,
+            ContextResourceKind.TODO_LIST,
+            "<eviction>"
+        )
+        if(activeScope != null)
         {
             ContextAccess.runBlockingWithCurrentScope {
                 todoList.keys.forEach { key ->

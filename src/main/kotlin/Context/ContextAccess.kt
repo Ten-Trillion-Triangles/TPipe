@@ -53,6 +53,16 @@ enum class ContextAccessEnforcementMode
     REQUIRE_ENROLLMENT
 }
 
+/** Controls how ContextBank handles data operations that have no active scope. */
+enum class ContextAccessUnscopedPolicy
+{
+    /** Preserve TPipe's historical unrestricted behavior when no scope is active. */
+    LEGACY_ALLOWED,
+
+    /** Reject ContextBank data operations that do not have an active scope. */
+    DENY
+}
+
 /**
  * Opaque resource selectors used by an access scope.
  *
@@ -225,7 +235,8 @@ enum class ContextAccessDenialReason
     MISSING_PERMISSION,
     METADATA_UNAVAILABLE,
     INVALID_METADATA,
-    UNSAFE_REFERENCE
+    UNSAFE_REFERENCE,
+    UNSCOPED_EXECUTION
 }
 
 /**
@@ -260,6 +271,63 @@ class ContextAccessDeniedException(
 object ContextAccess
 {
     private val scopeThreadLocal = ThreadLocal<ContextAccessScope>()
+
+    @Volatile
+    private var unscopedPolicy = ContextAccessUnscopedPolicy.LEGACY_ALLOWED
+
+    /**
+     * Return the process-level policy for ContextBank operations without a scope.
+     *
+     * @return The active unscoped-access policy.
+     */
+    fun currentUnscopedPolicy(): ContextAccessUnscopedPolicy = unscopedPolicy
+
+    /**
+     * Configure the process-level behavior for ContextBank operations without a scope.
+     *
+     * The default is [ContextAccessUnscopedPolicy.LEGACY_ALLOWED], so existing
+     * applications do not need to enroll resources or install scopes. A host
+     * that opts into sandboxing can set [ContextAccessUnscopedPolicy.DENY] so a
+     * lost scope cannot silently fall back to unrestricted ContextBank access.
+     *
+     * @param policy Policy to apply when [currentScope] is `null`.
+     */
+    fun setUnscopedPolicy(policy: ContextAccessUnscopedPolicy)
+    {
+        unscopedPolicy = policy
+    }
+
+    /**
+     * Resolve the active scope for a ContextBank operation.
+     *
+     * A missing scope is normally a legacy-compatible condition. When a host
+     * has explicitly selected [ContextAccessUnscopedPolicy.DENY], it becomes a
+     * typed denial before ContextBank can inspect payload or invoke a callback.
+     *
+     * @param operation Operation that would be performed.
+     * @param resourceKind Kind of resource that would be accessed.
+     * @param resourceKey Key of the resource that would be accessed.
+     * @return The active scope, or `null` in legacy-compatible mode.
+     * @throws ContextAccessDeniedException When no scope is active under the deny policy.
+     */
+    internal fun requireScopeOrNull(
+        operation: ContextAccessOperation,
+        resourceKind: ContextResourceKind,
+        resourceKey: String
+    ): ContextAccessScope?
+    {
+        val scope = currentScope()
+        if(scope == null && unscopedPolicy == ContextAccessUnscopedPolicy.DENY)
+        {
+            throw ContextAccessDeniedException(
+                operation,
+                resourceKind,
+                resourceKey,
+                ContextAccessDenialReason.UNSCOPED_EXECUTION
+            )
+        }
+        return scope
+    }
 
     /**
      * Create a trusted root scope.
