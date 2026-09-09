@@ -164,6 +164,13 @@ object ContextBank
      * Resolve authorization metadata for a resource without touching its
      * value. Unscoped callers deliberately skip this lookup to preserve the
      * historical ContextBank path and its performance characteristics.
+     *
+     * @param kind [ContextResourceKind] whose metadata is requested.
+     * @param key ContextBank key for the resource.
+     * @param mode [StorageMode] used to locate the resource.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     * @param operation [ContextAccessOperation] that will consume the metadata.
+     * @return Valid resource metadata, or `null` when no sidecar is enrolled.
      */
     private suspend fun resourceMetadataOrNull(
         kind: ContextResourceKind,
@@ -219,7 +226,12 @@ object ContextBank
 
     /**
      * Enforce the active scope before a value, callback, or backend is read.
-     * Missing metadata intentionally means that the resource is legacy-shared.
+     *
+     * @param kind Kind of resource being accessed.
+     * @param key ContextBank key for the resource.
+     * @param operation [ContextAccessOperation] being authorized.
+     * @param mode [StorageMode] used to locate the resource.
+     * @param skipRemote Whether to bypass configured remote persistence.
      */
     private suspend fun authorize(
         kind: ContextResourceKind,
@@ -230,7 +242,20 @@ object ContextBank
     )
     {
         val scope = ContextAccess.currentScope() ?: return
-        val metadata = resourceMetadataOrNull(kind, key, mode, skipRemote, operation) ?: return
+        val metadata = resourceMetadataOrNull(kind, key, mode, skipRemote, operation)
+        if(metadata == null)
+        {
+            if(scope.enforcementMode == ContextAccessEnforcementMode.REQUIRE_ENROLLMENT)
+            {
+                throw ContextAccessDeniedException(
+                    operation,
+                    kind,
+                    key,
+                    ContextAccessDenialReason.METADATA_UNAVAILABLE
+                )
+            }
+            return
+        }
         if(!scope.allows(operation, metadata))
         {
             throw ContextAccessDeniedException(operation, kind, key)
@@ -254,6 +279,10 @@ object ContextBank
      * Confirm remote resource presence on the metadata plane before allowing a
      * protected value operation. A missing presence capability fails closed so
      * an orphaned remote sidecar cannot authorize an operation.
+     *
+     * @param kind [ContextResourceKind] being checked.
+     * @param key ContextBank key for the resource.
+     * @param operation [ContextAccessOperation] being authorized.
      */
     private suspend fun requireRemoteResourceExists(
         kind: ContextResourceKind,
@@ -294,7 +323,13 @@ object ContextBank
         }
     }
 
-    /** Check that local authorization metadata is attached to a live resource. */
+    /**
+     * Check that local authorization metadata is attached to a live resource.
+     *
+     * @param kind [ContextResourceKind] being checked.
+     * @param key ContextBank key for the resource.
+     * @return `true` when a payload, file, or retrieval binding exists.
+     */
     private fun resourceExistsLocally(kind: ContextResourceKind, key: String): Boolean
     {
         return when(kind)
@@ -311,6 +346,10 @@ object ContextBank
     /**
      * Enforce write access for a page mutation. A newly-created local page may
      * use CREATE, while updates require WRITE. Legacy pages remain shared.
+     *
+     * @param key ContextBank key being mutated.
+     * @param mode [StorageMode] used to locate the resource.
+     * @param skipRemote Whether to bypass configured remote persistence.
      */
     private suspend fun authorizeContextMutation(
         key: String,
@@ -325,7 +364,26 @@ object ContextBank
             mode,
             skipRemote,
             ContextAccessOperation.WRITE
-        ) ?: return
+        )
+        if(metadata == null)
+        {
+            if(scope.enforcementMode == ContextAccessEnforcementMode.LEGACY_COMPATIBLE)
+            {
+                return
+            }
+            val exists = resourceExistsForAuthorization(
+                ContextResourceKind.CONTEXT_WINDOW,
+                key,
+                mode,
+                skipRemote
+            )
+            throw ContextAccessDeniedException(
+                if(exists == false) ContextAccessOperation.CREATE else ContextAccessOperation.WRITE,
+                ContextResourceKind.CONTEXT_WINDOW,
+                key,
+                ContextAccessDenialReason.METADATA_UNAVAILABLE
+            )
+        }
 
         // Refuse before consulting the value backend when the caller has no
         // possible mutation right. The presence check itself is metadata-plane
@@ -387,6 +445,10 @@ object ContextBank
     /**
      * Enforce write access for a todo-list mutation. Todo creation is treated
      * as CREATE when no local todo value or file exists.
+     *
+     * @param key ContextBank key being mutated.
+     * @param mode [StorageMode] used to locate the resource.
+     * @param skipRemote Whether to bypass configured remote persistence.
      */
     private suspend fun authorizeTodoMutation(
         key: String,
@@ -401,7 +463,26 @@ object ContextBank
             mode,
             skipRemote,
             ContextAccessOperation.WRITE
-        ) ?: return
+        )
+        if(metadata == null)
+        {
+            if(scope.enforcementMode == ContextAccessEnforcementMode.LEGACY_COMPATIBLE)
+            {
+                return
+            }
+            val exists = resourceExistsForAuthorization(
+                ContextResourceKind.TODO_LIST,
+                key,
+                mode,
+                skipRemote
+            )
+            throw ContextAccessDeniedException(
+                if(exists == false) ContextAccessOperation.CREATE else ContextAccessOperation.WRITE,
+                ContextResourceKind.TODO_LIST,
+                key,
+                ContextAccessDenialReason.METADATA_UNAVAILABLE
+            )
+        }
 
         if(!scope.allows(ContextAccessOperation.CREATE, metadata) &&
             !scope.allows(ContextAccessOperation.WRITE, metadata))
@@ -456,7 +537,163 @@ object ContextBank
         }
     }
 
-    /** Select the only possible mutation operation when presence cannot be classified. */
+    /**
+     * Authorize a typed create operation against proposed resource metadata.
+     *
+     * @param kind Kind of resource being created.
+     * @param key ContextBank key for the new resource.
+     * @param metadata Proposed authorization metadata.
+     * @param mode [StorageMode] used to store the resource.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     */
+    private fun authorizeCreate(
+        kind: ContextResourceKind,
+        key: String,
+        metadata: ContextResourceMetadata,
+        mode: StorageMode,
+        skipRemote: Boolean
+    )
+    {
+        validateCreationMetadata(kind, key, metadata)
+        val scope = ContextAccess.currentScope() ?: return
+        if(!scope.allows(ContextAccessOperation.CREATE, metadata))
+        {
+            throw ContextAccessDeniedException(
+                ContextAccessOperation.CREATE,
+                kind,
+                key
+            )
+        }
+        if(shouldUseRemotePersistence(mode, skipRemote) &&
+            remotePersistenceBackendOrNull() !is ContextResourceMetadataBackend)
+        {
+            throw ContextAccessDeniedException(
+                ContextAccessOperation.CREATE,
+                kind,
+                key,
+                ContextAccessDenialReason.METADATA_UNAVAILABLE
+            )
+        }
+    }
+
+    /**
+     * Reject metadata that this TPipe build cannot safely interpret.
+     *
+     * @param kind Kind of resource being created.
+     * @param key ContextBank key for the new resource.
+     * @param metadata Proposed metadata to validate.
+     */
+    private fun validateCreationMetadata(
+        kind: ContextResourceKind,
+        key: String,
+        metadata: ContextResourceMetadata
+    )
+    {
+        if(metadata.schemaVersion != ContextResourceMetadata.CURRENT_SCHEMA_VERSION)
+        {
+            throw ContextAccessDeniedException(
+                ContextAccessOperation.CREATE,
+                kind,
+                key,
+                ContextAccessDenialReason.INVALID_METADATA
+            )
+        }
+    }
+
+    /**
+     * Reject creation when either a payload or an enrollment sidecar exists.
+     *
+     * @param kind Kind of resource being created.
+     * @param key ContextBank key for the new resource.
+     * @param mode [StorageMode] used to check for an existing payload.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     */
+    private suspend fun ensureResourceDoesNotExist(
+        kind: ContextResourceKind,
+        key: String,
+        mode: StorageMode,
+        skipRemote: Boolean
+    )
+    {
+        val existingMetadata = try
+        {
+            if(shouldUseRemotePersistence(mode, skipRemote))
+            {
+                requireMetadataBackendForCreation(kind, key).getResourceMetadata(kind, key)
+            }
+            else
+            {
+                LocalContextResourceMetadataStore.getResourceMetadata(kind, key)
+            }
+        }
+        catch(exception: ContextAccessDeniedException)
+        {
+            throw ContextAccessDeniedException(
+                ContextAccessOperation.CREATE,
+                kind,
+                key,
+                exception.reason
+            )
+        }
+
+        if(existingMetadata != null &&
+            (existingMetadata.schemaVersion != ContextResourceMetadata.CURRENT_SCHEMA_VERSION ||
+                existingMetadata.resourceKind != kind))
+        {
+            throw ContextAccessDeniedException(
+                ContextAccessOperation.CREATE,
+                kind,
+                key,
+                ContextAccessDenialReason.INVALID_METADATA
+            )
+        }
+
+        val resourceExists = resourceExistsForAuthorization(kind, key, mode, skipRemote)
+        if(existingMetadata != null || resourceExists == true)
+        {
+            throw IllegalStateException(
+                "Context resource '$key' already exists and cannot be created again."
+            )
+        }
+        if(shouldUseRemotePersistence(mode, skipRemote) && resourceExists == null)
+        {
+            throw ContextAccessDeniedException(
+                ContextAccessOperation.CREATE,
+                kind,
+                key,
+                ContextAccessDenialReason.METADATA_UNAVAILABLE
+            )
+        }
+    }
+
+    /**
+     * Resolve a remote metadata capability required for enrolled creation.
+     *
+     * @param kind Kind of resource being created.
+     * @param key ContextBank key for the new resource.
+     * @return The configured metadata-capable persistence backend.
+     */
+    private fun requireMetadataBackendForCreation(
+        kind: ContextResourceKind,
+        key: String
+    ): ContextResourceMetadataBackend
+    {
+        return remotePersistenceBackendOrNull() as? ContextResourceMetadataBackend
+            ?: throw ContextAccessDeniedException(
+                ContextAccessOperation.CREATE,
+                kind,
+                key,
+                ContextAccessDenialReason.METADATA_UNAVAILABLE
+            )
+    }
+
+    /**
+     * Select the only possible mutation operation when presence cannot be classified.
+     *
+     * @param scope Scope whose mutation rights are being inspected.
+     * @param metadata Resource metadata used to compare CREATE and WRITE rights.
+     * @return CREATE when only creation is possible; otherwise WRITE.
+     */
     private fun mutationFailureOperation(
         scope: ContextAccessScope,
         metadata: ContextResourceMetadata
@@ -473,7 +710,37 @@ object ContextBank
         }
     }
 
-    /** Reject APIs that would let a secured caller retain a mutable reference. */
+    /**
+     * Resolve resource presence without retrieving a protected value.
+     *
+     * @param kind Kind of resource being checked.
+     * @param key ContextBank key for the resource.
+     * @param mode [StorageMode] used to locate the resource.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     * @return `true` or `false` when presence is known, otherwise `null`.
+     */
+    private suspend fun resourceExistsForAuthorization(
+        kind: ContextResourceKind,
+        key: String,
+        mode: StorageMode,
+        skipRemote: Boolean
+    ): Boolean?
+    {
+        if(shouldUseRemotePersistence(mode, skipRemote))
+        {
+            return (remotePersistenceBackendOrNull() as? ContextResourceMetadataBackend)
+                ?.resourceExists(kind, key)
+        }
+        return resourceExistsLocally(kind, key)
+    }
+
+    /**
+     * Reject APIs that would let a secured caller retain a mutable reference.
+     *
+     * @param kind Resource kind whose reference was requested.
+     * @param key ContextBank storage key.
+     * @throws ContextAccessDeniedException When a scope is active.
+     */
     private fun rejectUnsafeReference(
         kind: ContextResourceKind,
         key: String
@@ -493,6 +760,8 @@ object ContextBank
     /**
      * Reject a secured remote enumeration before the remote key listing is
      * requested when the backend cannot expose authorization metadata.
+     *
+     * @param kind [ContextResourceKind] being enumerated.
      */
     private fun requireRemoteMetadataCapabilityForEnumeration(
         kind: ContextResourceKind
@@ -523,6 +792,12 @@ object ContextBank
     /**
      * Filter keys without exposing protected resources that the current scope
      * cannot enumerate. Legacy keys with no sidecar remain visible.
+     *
+     * @param keys Candidate keys returned by local or remote storage.
+     * @param kind [ContextResourceKind] represented by [keys].
+     * @param skipRemote Whether to bypass configured remote persistence.
+     * @param forceRemote Whether every key should use remote storage metadata.
+     * @return Keys visible to the active scope.
      */
     private suspend fun filterVisibleKeys(
         keys: List<String>,
@@ -541,7 +816,15 @@ object ContextBank
                 skipRemote,
                 ContextAccessOperation.ENUMERATE
             )
-            metadata == null || scope.allows(ContextAccessOperation.ENUMERATE, metadata)
+            if(metadata == null)
+            {
+                scope.enforcementMode == ContextAccessEnforcementMode.LEGACY_COMPATIBLE
+            }
+            else
+            {
+                resourceExistsForAuthorization(kind, key, mode, skipRemote) == true &&
+                    scope.allows(ContextAccessOperation.ENUMERATE, metadata)
+            }
         }
     }
 
@@ -707,6 +990,8 @@ object ContextBank
      * writes, so it must not inherit unrestricted process-wide authority. The
      * metadata checks happen before taking [cacheMutex]; this keeps sidecar I/O
      * out of the global cache critical section.
+     *
+     * @return Authorized cached page keys, or `null` when no scope is active.
      */
     private suspend fun authorizedContextEvictionKeys(): Set<String>?
     {
@@ -740,7 +1025,11 @@ object ContextBank
         return authorized
     }
 
-    /** Resolve the todo keys that a scoped caller may remove from the cache. */
+    /**
+     * Resolve the todo keys that a scoped caller may remove from the cache.
+     *
+     * @return Authorized cached todo keys, or `null` when no scope is active.
+     */
     private suspend fun authorizedTodoEvictionKeys(): Set<String>?
     {
         if(ContextAccess.currentScope() == null) return null
@@ -787,34 +1076,43 @@ object ContextBank
 
     /**
      * Enforce cache eviction policy while holding [cacheMutex].
+     *
+     * @param authorizedKeys Optional keys that the active scope may evict.
      */
     private fun enforceEvictionPolicyLocked(authorizedKeys: Set<String>? = null)
     {
         if(cacheConfig.evictionPolicy == EvictionPolicy.MANUAL)
-            {
+        {
             return
-            }
+        }
 
         while(bank.size > cacheConfig.maxEntries)
+        {
+            if(evictLeastValuableLocked(authorizedKeys) == 0L)
             {
-            if(evictLeastValuableLocked(authorizedKeys) == 0L) break
+                break
             }
+        }
 
         var totalBytes = bank.values.sumOf { estimateSize(it) }
 
         while(totalBytes > cacheConfig.maxMemoryBytes && bank.isNotEmpty())
-            {
+        {
             val evictedSize = evictLeastValuableLocked(authorizedKeys)
-            if(evictedSize == 0L) break
-            totalBytes -= evictedSize
+            if(evictedSize == 0L)
+            {
+                break
             }
+            totalBytes -= evictedSize
+        }
     }
 
     /**
      * Evict the least valuable entry from memory based on configured eviction policy.
      * Only evicts entries with DISK_WITH_CACHE storage mode.
      *
-     * @return Size in bytes of the evicted entry, or 0 if nothing was evicted
+     * @param authorizedKeys Optional keys that the active scope may evict.
+     * @return Size in bytes of the evicted entry, or 0 if nothing was evicted.
      */
     private fun evictLeastValuableLocked(authorizedKeys: Set<String>? = null): Long
     {
@@ -824,24 +1122,24 @@ object ContextBank
             .filter { authorizedKeys == null || it.key in authorizedKeys }
 
         if(candidates.isEmpty())
-            {
+        {
             return 0L
-            }
+        }
 
         val toEvict = when(cacheConfig.evictionPolicy)
-            {
+        {
             EvictionPolicy.LRU -> candidates.minByOrNull { it.lastAccessed }
             EvictionPolicy.LFU -> candidates.minByOrNull { it.accessCount }
             EvictionPolicy.FIFO -> candidates.minByOrNull { it.key }
             else -> null
-            }
+        }
 
         if(toEvict != null)
-            {
+        {
             val size = estimateSize(bank[toEvict.key])
             bank.remove(toEvict.key)
             return size
-            }
+        }
 
         return 0L
     }
@@ -864,6 +1162,8 @@ object ContextBank
      * Retrieve the existing banked context window reference.
      * This is a blocking compatibility wrapper and should not be used from coroutine-heavy internal code.
      * Use [getBankedContextWindowSuspend] internally instead.
+     *
+     * @return The current banked context window reference.
      */
     fun getBankedContextWindow() : ContextWindow
     {
@@ -874,6 +1174,8 @@ object ContextBank
 
     /**
      * Get a copy of the existing banked context window.
+     *
+     * @return A copy of the banked context window.
      */
     fun copyBankedContextWindow() : ContextWindow?
     {
@@ -907,6 +1209,9 @@ object ContextBank
     /**
      * Retrieve the raw shared banked context window reference.
      * This is unsafe unless the caller guarantees exclusive access.
+     *
+     * @return The shared banked context window reference.
+     * @throws ContextAccessDeniedException When called from a secured scope.
      */
     fun getBankedContextWindowReference() : ContextWindow
     {
@@ -1005,6 +1310,7 @@ object ContextBank
      * @param window Context window to store.
      * @param mode Storage mode controlling memory and disk persistence behavior.
      * @param skipRemote If true, skip remote delegation even if configured.
+     * @param useWriteBack If true, invoke a writeback callback registered for the key.
      */
     suspend fun emplaceSuspend(
         key: String,
@@ -1068,6 +1374,141 @@ object ContextBank
         }
 
         updateMetadata(key, mode)
+
+        if(mode == StorageMode.DISK_WITH_CACHE)
+        {
+            enforceEvictionPolicy()
+        }
+    }
+
+    /**
+     * Create a new ContextWindow and enroll it with authorization metadata.
+     *
+     * This is the preferred creation path for secured callers. Existing
+     * [emplace] APIs remain available for legacy-compatible updates.
+     *
+     * @param key Storage key for the new [ContextWindow].
+     * @param metadata [ContextResourceMetadata] to enroll with the resource.
+     * @param window Initial [ContextWindow] payload.
+     * @param mode [StorageMode] controlling memory, disk, or remote storage.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     */
+    fun createContextWindow(
+        key: String,
+        metadata: ContextResourceMetadata,
+        window: ContextWindow,
+        mode: StorageMode = StorageMode.MEMORY_ONLY,
+        skipRemote: Boolean = false
+    )
+    {
+        ContextAccess.runBlockingWithCurrentScope {
+            createContextWindowSuspend(key, metadata, window, mode, skipRemote)
+        }
+    }
+
+    /**
+     * Suspend-safe creation of an enrolled [ContextWindow].
+     *
+     * @param key Storage key for the new [ContextWindow].
+     * @param metadata [ContextResourceMetadata] to enroll with the resource.
+     * @param window Initial [ContextWindow] payload.
+     * @param mode [StorageMode] controlling memory, disk, or remote storage.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     */
+    suspend fun createContextWindowSuspend(
+        key: String,
+        metadata: ContextResourceMetadata,
+        window: ContextWindow,
+        mode: StorageMode = StorageMode.MEMORY_ONLY,
+        skipRemote: Boolean = false
+    )
+    {
+        require(metadata.resourceKind == ContextResourceKind.CONTEXT_WINDOW)
+        require(key.isNotBlank()) { "Context resource key must not be blank." }
+        validateCreationMetadata(ContextResourceKind.CONTEXT_WINDOW, key, metadata)
+        val storedWindow = if(ContextAccess.currentScope() == null) window else window.deepCopy()
+
+        getPageMutex(key).withLock {
+            authorizeCreate(
+                ContextResourceKind.CONTEXT_WINDOW,
+                key,
+                metadata,
+                mode,
+                skipRemote
+            )
+            ensureResourceDoesNotExist(
+                ContextResourceKind.CONTEXT_WINDOW,
+                key,
+                mode,
+                skipRemote
+            )
+
+            if(shouldUseRemotePersistence(mode, skipRemote))
+            {
+                val backend = requireRemotePersistenceBackend()
+                val metadataBackend = requireMetadataBackendForCreation(
+                    ContextResourceKind.CONTEXT_WINDOW,
+                    key
+                )
+                metadataBackend.putResourceMetadata(ContextResourceKind.CONTEXT_WINDOW, key, metadata)
+                try
+                {
+                    backend.putContextWindow(key, storedWindow)
+                }
+                catch(exception: Throwable)
+                {
+                    runCatching {
+                        metadataBackend.deleteResourceMetadata(ContextResourceKind.CONTEXT_WINDOW, key)
+                    }
+                    throw exception
+                }
+                updateMetadata(key, mode)
+                return
+            }
+
+            val bankPath = "${TPipeConfig.getLorebookDir()}/${key}.bank"
+            try
+            {
+                when(mode)
+                {
+                    StorageMode.MEMORY_ONLY -> bank[key] = storedWindow
+                    StorageMode.MEMORY_AND_DISK ->
+                    {
+                        MemoryPersistence.writeMemoryFile(bankPath, serialize(storedWindow))
+                        bank[key] = storedWindow
+                    }
+                    StorageMode.DISK_ONLY ->
+                        MemoryPersistence.writeMemoryFile(bankPath, serialize(storedWindow))
+                    StorageMode.DISK_WITH_CACHE ->
+                    {
+                        MemoryPersistence.writeMemoryFile(bankPath, serialize(storedWindow))
+                        bank[key] = storedWindow
+                    }
+                    StorageMode.REMOTE -> Unit
+                }
+                LocalContextResourceMetadataStore.putResourceMetadata(
+                    ContextResourceKind.CONTEXT_WINDOW,
+                    key,
+                    metadata
+                )
+            }
+            catch(exception: Throwable)
+            {
+                bank.remove(key)
+                if(mode != StorageMode.MEMORY_ONLY)
+                {
+                    MemoryPersistence.deleteMemoryFile(bankPath)
+                }
+                runCatching {
+                    LocalContextResourceMetadataStore.deleteResourceMetadata(
+                        ContextResourceKind.CONTEXT_WINDOW,
+                        key
+                    )
+                }
+                throw exception
+            }
+            updateMetadata(key, mode)
+        }
 
         if(mode == StorageMode.DISK_WITH_CACHE)
         {
@@ -1208,6 +1649,9 @@ object ContextBank
      * Check page existence for the legacy write leash without enumerating the
      * bank. A caller that already named a write target must not need
      * ENUMERATE authority just to distinguish update from creation.
+     *
+     * @param key Page key to inspect.
+     * @return `true` when the page exists in the active local or remote store.
      */
     internal suspend fun contextWindowExistsForWriteLeashSuspend(key: String): Boolean
     {
@@ -1242,7 +1686,12 @@ object ContextBank
         return contextWindowExistsLocallySuspend(key)
     }
 
-    /** Blocking compatibility wrapper for [contextWindowExistsForWriteLeashSuspend]. */
+    /**
+     * Blocking compatibility wrapper for [contextWindowExistsForWriteLeashSuspend].
+     *
+     * @param key Page key to inspect.
+     * @return `true` when the page exists in the active local or remote store.
+     */
     internal fun contextWindowExistsForWriteLeash(key: String): Boolean
     {
         return ContextAccess.runBlockingWithCurrentScope {
@@ -1588,6 +2037,8 @@ object ContextBank
 
     /**
      * Update the banked context window with a new context.
+     *
+     * @param newContext New banked context window to store.
      */
     fun updateBankedContext(newContext: ContextWindow)
     {
@@ -1598,6 +2049,8 @@ object ContextBank
 
     /**
      * Safely update the banked context window using mutex.
+     *
+     * @param newContext New banked context window to store.
      */
     suspend fun updateBankedContextWithMutex(newContext: ContextWindow)
     {
@@ -1641,6 +2094,9 @@ object ContextBank
 
     /**
      * Function to safely bank swap inside a coroutine or multithreaded environment.
+     *
+     * @param key Page key to load into the banked context window.
+     * @param copy Whether to store a defensive copy.
      * @see swapBank
      */
     suspend fun swapBankWithMutex(key: String, copy: Boolean = true)
@@ -1673,6 +2129,11 @@ object ContextBank
 
     /**
      * Safely retrieve a context window from the bank using mutex.
+     *
+     * @param key Page key to retrieve.
+     * @param copy Whether to return a defensive copy.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     * @return The requested context window.
      */
     suspend fun getContextFromBankWithMutex(key: String, copy: Boolean = true, skipRemote: Boolean = false) : ContextWindow
     {
@@ -1683,6 +2144,11 @@ object ContextBank
 
     /**
      * Safely retrieve a todo list from the bank using mutex.
+     *
+     * @param key Todo-list key to retrieve.
+     * @param copy Whether to return a defensive copy.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     * @return The requested todo list.
      */
     suspend fun getPagedTodoListWithMutex(key: String, copy: Boolean = true, skipRemote: Boolean = false) : TodoList
     {
@@ -1700,6 +2166,7 @@ object ContextBank
      * @param copy If true, a deep copy will be made using serialization. Otherwise, return the reference directly.
      * Defaults to true.
      * @param skipRemote If true, skip remote delegation even if configured.
+     * @return The requested context window.
      */
     fun getContextFromBank(key: String, copy: Boolean = true, skipRemote: Boolean = false) : ContextWindow
     {
@@ -1798,6 +2265,11 @@ object ContextBank
     /**
      * Internal lock-maintenance path that preserves ContextLock's independent
      * metadata semantics without exposing a retained reference to callers.
+     *
+     * @param key Page key whose reference is being accessed.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     * @param block Mutation or lock-maintenance operation to apply.
+     * @return The context window used by the lock-maintenance operation.
      */
     internal suspend fun withContextWindowReferenceForContextLock(
         key: String,
@@ -1908,7 +2380,9 @@ object ContextBank
 
     /**
      * Access function to get all the pages that are stored inside the context bank.
+     *
      * @param skipRemote If true, skip remote keys even if configured.
+     * @return All visible page keys.
      */
     fun getPageKeys(skipRemote: Boolean = false) : List<String>
     {
@@ -1938,7 +2412,11 @@ object ContextBank
         return filterVisibleKeys(localKeys, ContextResourceKind.CONTEXT_WINDOW, skipRemote)
     }
 
-    /** Return local page keys to ContextLock without applying agent authority. */
+    /**
+     * Return local page keys to [ContextLock] without applying agent authority.
+     *
+     * @return Local page keys known to this process.
+     */
     internal fun getPageKeysForContextLockSuspend(): List<String>
     {
         return (bank.keys + retrievalFunctions.keys).distinct()
@@ -1947,6 +2425,8 @@ object ContextBank
     /**
      * Require explicit enumeration authority for strict access-aware tools.
      * Legacy enumeration remains filtering-based for compatibility.
+     *
+     * @param kind Resource kind being enumerated.
      */
     internal fun requireEnumerationAccess(kind: ContextResourceKind)
     {
@@ -1964,7 +2444,9 @@ object ContextBank
 
     /**
      * Access function to get all the todo list keys that are stored inside the context bank.
+     *
      * @param skipRemote If true, skip remote keys even if configured.
+     * @return All visible todo-list keys.
      */
     fun getTodoListKeys(skipRemote: Boolean = false) : List<String>
     {
@@ -2024,6 +2506,9 @@ object ContextBank
 
     /**
      * Suspend-safe registration of authorization metadata.
+     *
+     * @param key ContextBank page or todo key.
+     * @param metadata Versioned metadata describing the resource.
      */
     suspend fun registerResourceMetadataSuspend(key: String, metadata: ContextResourceMetadata)
     {
@@ -2049,6 +2534,10 @@ object ContextBank
      * Remove authorization metadata. Removing a sidecar returns the resource
      * to legacy-shared behavior; callers should use this only as a trusted
      * administrative operation.
+     *
+     * @param key ContextBank page or todo key.
+     * @param kind Resource kind whose metadata is being removed.
+     * @return `true` when a sidecar was deleted.
      */
     fun deleteResourceMetadata(key: String, kind: ContextResourceKind): Boolean
     {
@@ -2057,7 +2546,13 @@ object ContextBank
         }
     }
 
-    /** Suspend-safe removal of resource authorization metadata. */
+    /**
+     * Suspend-safe removal of resource authorization metadata.
+     *
+     * @param key ContextBank page or todo key.
+     * @param kind Resource kind whose metadata is being removed.
+     * @return `true` when a sidecar was deleted.
+     */
     suspend fun deleteResourceMetadataSuspend(key: String, kind: ContextResourceKind): Boolean
     {
         requireTrustedMetadataAdministration()
@@ -2079,6 +2574,10 @@ object ContextBank
     /**
      * Resolve resource metadata for trusted administration and diagnostics.
      * This method does not expose stored values.
+     *
+     * @param key ContextBank page or todo key.
+     * @param kind Resource kind whose metadata is requested.
+     * @return Resource metadata, or `null` when no sidecar exists.
      */
     suspend fun getResourceMetadataSuspend(
         key: String,
@@ -2092,6 +2591,10 @@ object ContextBank
     /**
      * Read metadata from this process's local sidecar store without consulting remote persistence.
      * This is used by [MemoryServer], whose metadata routes describe the server's local resources.
+     *
+     * @param key ContextBank page or todo key.
+     * @param kind Resource kind whose metadata is requested.
+     * @return Resource metadata, or `null` when no sidecar exists.
      */
     internal suspend fun getLocalResourceMetadataSuspend(
         key: String,
@@ -2102,7 +2605,12 @@ object ContextBank
         return LocalContextResourceMetadataStore.getResourceMetadata(kind, key)
     }
 
-    /** Register metadata in this process's local sidecar store without consulting remote persistence. */
+    /**
+     * Register metadata in this process's local sidecar store without consulting remote persistence.
+     *
+     * @param key ContextBank page or todo key.
+     * @param metadata Versioned metadata describing the resource.
+     */
     internal suspend fun registerLocalResourceMetadataSuspend(
         key: String,
         metadata: ContextResourceMetadata
@@ -2113,7 +2621,13 @@ object ContextBank
         LocalContextResourceMetadataStore.putResourceMetadata(metadata.resourceKind, key, metadata)
     }
 
-    /** Delete metadata from this process's local sidecar store without consulting remote persistence. */
+    /**
+     * Delete metadata from this process's local sidecar store without consulting remote persistence.
+     *
+     * @param key ContextBank page or todo key.
+     * @param kind Resource kind whose metadata is being removed.
+     * @return `true` when a sidecar was deleted.
+     */
     internal suspend fun deleteLocalResourceMetadataSuspend(
         key: String,
         kind: ContextResourceKind
@@ -2155,7 +2669,11 @@ object ContextBank
 
     /**
      * Get a todo list by it's page key.
+     *
+     * @param key Page key for the todo list.
+     * @param copy If true, return a deep copy instead of the shared reference.
      * @param skipRemote If true, skip remote delegation even if configured.
+     * @return The requested todo list or an empty [TodoList].
      */
     fun getPagedTodoList(key: String, copy: Boolean = true, skipRemote: Boolean = false) : TodoList
     {
@@ -2241,8 +2759,15 @@ object ContextBank
     }
 
     /**
-     * Thread safe emplace call to emplace a todo list. Calls [emplaceTodoList] under the hood while invoking a mutex
-     * lock for safety. Shares the same params as [emplaceTodoList].
+     * Thread-safe emplace call to emplace a todo list. Calls [emplaceTodoList]
+     * under the hood while invoking a mutex lock for safety.
+     *
+     * @param key Bank key to write into.
+     * @param todoList [TodoList] to write into the page.
+     * @param allowUpdatesOnly Whether only existing tasks may be modified.
+     * @param allowCompletionsOnly Whether only completion state may be changed.
+     * @param persistToDisk Whether to persist the list to disk.
+     * @param skipRemote Whether to bypass configured remote persistence.
      */
     suspend fun emplaceWithMutex(
         key: String,
@@ -2367,6 +2892,124 @@ object ContextBank
     }
 
     /**
+     * Create a new [TodoList] and enroll it with authorization metadata.
+     *
+     * @param key Storage key for the new [TodoList].
+     * @param metadata [ContextResourceMetadata] to enroll with the resource.
+     * @param todoList Initial [TodoList] payload.
+     * @param mode [StorageMode] controlling memory, disk, or remote storage.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     */
+    fun createTodoList(
+        key: String,
+        metadata: ContextResourceMetadata,
+        todoList: TodoList,
+        mode: StorageMode = StorageMode.MEMORY_ONLY,
+        skipRemote: Boolean = false
+    )
+    {
+        ContextAccess.runBlockingWithCurrentScope {
+            createTodoListSuspend(key, metadata, todoList, mode, skipRemote)
+        }
+    }
+
+    /**
+     * Suspend-safe creation of an enrolled [TodoList].
+     *
+     * @param key Storage key for the new [TodoList].
+     * @param metadata [ContextResourceMetadata] to enroll with the resource.
+     * @param todoList Initial [TodoList] payload.
+     * @param mode [StorageMode] controlling memory, disk, or remote storage.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     */
+    suspend fun createTodoListSuspend(
+        key: String,
+        metadata: ContextResourceMetadata,
+        todoList: TodoList,
+        mode: StorageMode = StorageMode.MEMORY_ONLY,
+        skipRemote: Boolean = false
+    )
+    {
+        require(metadata.resourceKind == ContextResourceKind.TODO_LIST)
+        require(key.isNotBlank()) { "Context resource key must not be blank." }
+        validateCreationMetadata(ContextResourceKind.TODO_LIST, key, metadata)
+        val storedTodoList = if(ContextAccess.currentScope() == null) todoList else todoList.deepCopy()
+
+        getTodoMutex(key).withLock {
+            authorizeCreate(ContextResourceKind.TODO_LIST, key, metadata, mode, skipRemote)
+            ensureResourceDoesNotExist(ContextResourceKind.TODO_LIST, key, mode, skipRemote)
+
+            if(shouldUseRemotePersistence(mode, skipRemote))
+            {
+                val backend = requireRemotePersistenceBackend()
+                val metadataBackend = requireMetadataBackendForCreation(ContextResourceKind.TODO_LIST, key)
+                metadataBackend.putResourceMetadata(ContextResourceKind.TODO_LIST, key, metadata)
+                try
+                {
+                    backend.putTodoList(key, storedTodoList)
+                }
+                catch(exception: Throwable)
+                {
+                    runCatching {
+                        metadataBackend.deleteResourceMetadata(ContextResourceKind.TODO_LIST, key)
+                    }
+                    throw exception
+                }
+                updateMetadata(key, mode)
+                return
+            }
+
+            val todoPath = "${TPipeConfig.getTodoListDir()}/${key}.todo"
+            try
+            {
+                when(mode)
+                {
+                    StorageMode.MEMORY_ONLY -> ContextBank.todoList[key] = storedTodoList
+                    StorageMode.MEMORY_AND_DISK ->
+                    {
+                        MemoryPersistence.writeMemoryFile(todoPath, serialize(storedTodoList))
+                        ContextBank.todoList[key] = storedTodoList
+                    }
+                    StorageMode.DISK_ONLY ->
+                        MemoryPersistence.writeMemoryFile(todoPath, serialize(storedTodoList))
+                    StorageMode.DISK_WITH_CACHE ->
+                    {
+                        MemoryPersistence.writeMemoryFile(todoPath, serialize(storedTodoList))
+                        ContextBank.todoList[key] = storedTodoList
+                    }
+                    StorageMode.REMOTE -> Unit
+                }
+                LocalContextResourceMetadataStore.putResourceMetadata(
+                    ContextResourceKind.TODO_LIST,
+                    key,
+                    metadata
+                )
+            }
+            catch(exception: Throwable)
+            {
+                ContextBank.todoList.remove(key)
+                if(mode != StorageMode.MEMORY_ONLY)
+                {
+                    MemoryPersistence.deleteMemoryFile(todoPath)
+                }
+                runCatching {
+                    LocalContextResourceMetadataStore.deleteResourceMetadata(
+                        ContextResourceKind.TODO_LIST,
+                        key
+                    )
+                }
+                throw exception
+            }
+            updateMetadata(key, mode)
+        }
+
+        if(mode == StorageMode.DISK_WITH_CACHE)
+        {
+            enforceTodoListEvictionPolicy()
+        }
+    }
+
+    /**
      * Apply write protection rules to TodoList updates.
      */
     private fun applyTodoListWriteProtection(
@@ -2450,6 +3093,9 @@ object ContextBank
 
     /**
      * Evict least valuable TodoList based on eviction policy.
+     *
+     * @param authorizedKeys Optional keys that the active scope may evict.
+     * @return `true` when a todo list was evicted.
      */
     private fun evictLeastValuableTodoListLocked(authorizedKeys: Set<String>? = null): Boolean
     {

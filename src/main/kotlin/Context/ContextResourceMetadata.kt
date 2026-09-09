@@ -18,6 +18,11 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Versioned sidecar record describing the authorization identity of one
  * ContextBank resource. The ContextWindow/TodoList payload is not changed.
+ *
+ * @param resourceKind Kind of the protected ContextBank resource.
+ * @param resourceId Opaque host-defined identity of the resource.
+ * @param boundaryId Optional opaque boundary containing the resource.
+ * @param schemaVersion Sidecar schema version used for strict decoding.
  */
 @Serializable
 data class ContextResourceMetadata(
@@ -39,7 +44,12 @@ data class ContextResourceMetadata(
         /** Current sidecar schema version. */
         const val CURRENT_SCHEMA_VERSION: Int = 1
 
-        /** Decode a metadata record without applying lenient default values. */
+        /**
+         * Decode a metadata record without applying lenient default values.
+         *
+         * @param raw Serialized sidecar contents.
+         * @return Decoded metadata, or `null` when the record is invalid.
+         */
         internal fun decodeStrict(raw: String): ContextResourceMetadata?
         {
             return try
@@ -74,6 +84,13 @@ internal object LocalContextResourceMetadataStore : ContextResourceMetadataBacke
 {
     private val mutexes = ConcurrentHashMap<String, Mutex>()
 
+    /**
+     * Read the sidecar for one resource.
+     *
+     * @param kind Resource kind whose sidecar should be read.
+     * @param key ContextBank storage key.
+     * @return The decoded metadata, or `null` when no sidecar exists.
+     */
     override suspend fun getResourceMetadata(
         kind: ContextResourceKind,
         key: String
@@ -92,6 +109,13 @@ internal object LocalContextResourceMetadataStore : ContextResourceMetadataBacke
         }
     }
 
+    /**
+     * Atomically replace the sidecar for one resource.
+     *
+     * @param kind Resource kind whose sidecar should be written.
+     * @param key ContextBank storage key.
+     * @param metadata Metadata to persist.
+     */
     override suspend fun putResourceMetadata(
         kind: ContextResourceKind,
         key: String,
@@ -104,6 +128,13 @@ internal object LocalContextResourceMetadataStore : ContextResourceMetadataBacke
         }
     }
 
+    /**
+     * Delete the sidecar for one resource.
+     *
+     * @param kind Resource kind whose sidecar should be deleted.
+     * @param key ContextBank storage key.
+     * @return `true` when a sidecar was deleted.
+     */
     override suspend fun deleteResourceMetadata(
         kind: ContextResourceKind,
         key: String
@@ -114,7 +145,13 @@ internal object LocalContextResourceMetadataStore : ContextResourceMetadataBacke
         }
     }
 
-    /** Resolve the sidecar path for tests and local administration. */
+    /**
+     * Resolve the sidecar path for tests and local administration.
+     *
+     * @param kind Resource kind whose sidecar path is requested.
+     * @param key ContextBank storage key.
+     * @return Absolute path of the resource sidecar.
+     */
     internal fun sidecarPath(kind: ContextResourceKind, key: String): String
     {
         val basePath = when(kind)

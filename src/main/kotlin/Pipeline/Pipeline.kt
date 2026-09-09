@@ -534,8 +534,14 @@ class Pipeline : P2PInterface
     override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? =
         ContextAccess.withCurrentScope { executeP2PRequestInternal(request) }
 
-    /** Execute a P2P request after the local scope propagation hook. */
-    private suspend fun executeP2PRequestInternal(request: P2PRequest): P2PResponse? {
+    /**
+     * Execute a P2P request after the local scope propagation hook.
+     *
+     * @param request Inbound request to route to this pipeline.
+     * @return The pipeline response, or `null` when no response is produced.
+     */
+    private suspend fun executeP2PRequestInternal(request: P2PRequest): P2PResponse?
+    {
         /** Start as "this" but we may need to alter our target if we need to copy "this" due to some change the
          *  requested be made during the p2p request operation.
          */
@@ -1486,7 +1492,10 @@ class Pipeline : P2PInterface
             }
             catch(e: Exception)
             {
-                if(e is ContextAccessDeniedException) throw e
+                if(e is ContextAccessDeniedException)
+                {
+                    throw e
+                }
                 if(tracingEnabled)
                 {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.PRE_VALIDATION, initialContent,

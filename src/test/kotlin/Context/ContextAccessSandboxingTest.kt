@@ -28,6 +28,8 @@ class ContextAccessSandboxingTest
     private val legacyKey = "sandbox-legacy-page"
     private val todoKey = "sandbox-todo"
     private val remoteKey = "sandbox-remote-page"
+    private val createdKey = "sandbox-created-page"
+    private val createdTodoKey = "sandbox-created-todo"
 
     @Before
     fun setup() = runBlocking {
@@ -45,7 +47,7 @@ class ContextAccessSandboxingTest
         TPipeConfig.remoteMemoryEnabled = false
         TPipeConfig.useRemoteMemoryGlobally = false
         ContextBank.configureCachePolicySuspend(CacheConfig())
-        listOf(privateKey, otherKey, legacyKey, todoKey, remoteKey).forEach { key ->
+        listOf(privateKey, otherKey, legacyKey, todoKey, remoteKey, createdKey, createdTodoKey).forEach { key ->
             ContextBank.deleteContextWindowSuspend(key, skipRemote = true)
             ContextBank.deleteResourceMetadataSuspend(key, ContextResourceKind.CONTEXT_WINDOW)
             ContextBank.deleteTodoListSuspend(key, skipRemote = true)
@@ -84,6 +86,22 @@ class ContextAccessSandboxingTest
                 enumerableResources = selectors,
                 delegable = true
             )
+        )
+    }
+
+    private fun strictScopeFor(vararg resourceIds: String): ContextAccessScope
+    {
+        return ContextAccess.issueRootScope(
+            principal = ExecutionPrincipal("strict-sandbox-agent"),
+            rights = ContextAccessRights(
+                readableResources = resourceIds.map { ContextResourceSelector.Resource(it) }.toSet(),
+                writableResources = resourceIds.map { ContextResourceSelector.Resource(it) }.toSet(),
+                creatableResources = resourceIds.map { ContextResourceSelector.Resource(it) }.toSet(),
+                deletableResources = resourceIds.map { ContextResourceSelector.Resource(it) }.toSet(),
+                enumerableResources = resourceIds.map { ContextResourceSelector.Resource(it) }.toSet(),
+                delegable = true
+            ),
+            enforcementMode = ContextAccessEnforcementMode.REQUIRE_ENROLLMENT
         )
     }
 
@@ -871,6 +889,401 @@ class ContextAccessSandboxingTest
     }
 
     @Test
+    fun boundaryScopeCanAttenuateToAContainedResource() = runBlocking {
+        seedProtectedPage(privateKey, "private-resource", "private value")
+        seedProtectedPage(otherKey, "other-resource", "other value")
+        val parent = ContextAccess.issueRootScope(
+            ExecutionPrincipal("boundary-parent"),
+            ContextAccessRights(
+                readableResources = setOf(ContextResourceSelector.Boundary("sandbox-boundary")),
+                delegable = true
+            )
+        )
+        val resolver = ContextResourceContainmentResolver { resource, boundary ->
+            resource.id == "private-resource" && boundary.id == "sandbox-boundary"
+        }
+
+        ContextAccess.withCoroutineScope(parent) {
+            ContextAccess.withChildCoroutineScopeForResources(
+                ExecutionPrincipal("resource-child"),
+                ContextAccessRights(
+                    readableResources = setOf(ContextResourceSelector.Resource("private-resource"))
+                ),
+                resolver
+            ) {
+                assertEquals(
+                    listOf("private value"),
+                    ContextBank.getContextFromBankSuspend(privateKey, skipRemote = true).contextElements
+                )
+                assertFailsWith<ContextAccessDeniedException> {
+                    ContextBank.getContextFromBankSuspend(otherKey, skipRemote = true)
+                }
+            }
+        }
+
+        Unit
+    }
+
+    @Test
+    fun containmentResolverFailureCannotGrantAResource() = runBlocking {
+        seedProtectedPage(privateKey, "private-resource", "private value")
+        val parent = ContextAccess.issueRootScope(
+            ExecutionPrincipal("failing-resolver-parent"),
+            ContextAccessRights(
+                readableResources = setOf(ContextResourceSelector.Boundary("sandbox-boundary")),
+                delegable = true
+            )
+        )
+        val resolver = ContextResourceContainmentResolver { _, _ ->
+            throw IllegalStateException("containment lookup unavailable")
+        }
+
+        ContextAccess.withCoroutineScope(parent) {
+            ContextAccess.withChildCoroutineScopeForResources(
+                ExecutionPrincipal("resolver-failure-child"),
+                ContextAccessRights(
+                    readableResources = setOf(ContextResourceSelector.Resource("private-resource"))
+                ),
+                resolver
+            ) {
+                assertFailsWith<ContextAccessDeniedException> {
+                    ContextBank.getContextFromBankSuspend(privateKey, skipRemote = true)
+                }
+            }
+        }
+
+        Unit
+    }
+
+    @Test
+    fun resourceAttenuationCannotBroadenToAParentBoundary() = runBlocking {
+        seedProtectedPage(privateKey, "private-resource", "private value")
+        seedProtectedPage(otherKey, "other-resource", "other value")
+        val parent = ContextAccess.issueRootScope(
+            ExecutionPrincipal("resource-parent"),
+            ContextAccessRights(
+                readableResources = setOf(ContextResourceSelector.Resource("private-resource")),
+                delegable = true
+            )
+        )
+        val resolver = ContextResourceContainmentResolver { _, _ -> true }
+
+        ContextAccess.withCoroutineScope(parent) {
+            ContextAccess.withChildCoroutineScopeForResources(
+                ExecutionPrincipal("boundary-child"),
+                ContextAccessRights(
+                    readableResources = setOf(ContextResourceSelector.Boundary("sandbox-boundary"))
+                ),
+                resolver
+            ) {
+                assertFailsWith<ContextAccessDeniedException> {
+                    ContextBank.getContextFromBankSuspend(privateKey, skipRemote = true)
+                }
+                assertFailsWith<ContextAccessDeniedException> {
+                    ContextBank.getContextFromBankSuspend(otherKey, skipRemote = true)
+                }
+            }
+        }
+
+        Unit
+    }
+
+    @Test
+    fun strictScopeDeniesMissingMetadataButLegacyScopeStillSharesIt() = runBlocking {
+        ContextBank.emplaceSuspend(
+            legacyKey,
+            ContextWindow().apply { contextElements.add("legacy value") },
+            StorageMode.MEMORY_ONLY,
+            skipRemote = true
+        )
+
+        val exception = assertFailsWith<ContextAccessDeniedException> {
+            ContextAccess.withCoroutineScope(strictScopeFor("legacy-resource")) {
+                ContextBank.getContextFromBankSuspend(legacyKey, skipRemote = true)
+            }
+        }
+        assertEquals(ContextAccessDenialReason.METADATA_UNAVAILABLE, exception.reason)
+
+        val legacyValue = ContextAccess.withCoroutineScope(scopeFor("unrelated-resource")) {
+            ContextBank.getContextFromBankSuspend(legacyKey, skipRemote = true)
+        }
+        assertEquals(listOf("legacy value"), legacyValue.contextElements)
+    }
+
+    @Test
+    fun strictModeCannotBeRemovedByNestedLegacyScope() = runBlocking {
+        val strictScope = strictScopeFor("legacy-resource")
+        val legacyScope = ContextAccess.issueRootScope(
+            ExecutionPrincipal("legacy-child"),
+            ContextAccessRights(readableResources = setOf(ContextResourceSelector.Resource("legacy-resource")))
+        )
+
+        ContextAccess.withCoroutineScope(strictScope) {
+            ContextAccess.withCoroutineScope(legacyScope) {
+                assertEquals(
+                    ContextAccessEnforcementMode.REQUIRE_ENROLLMENT,
+                    ContextAccess.currentScope()?.enforcementMode
+                )
+            }
+        }
+    }
+
+    @Test
+    fun strictEnumerationOmitsUnenrolledResources() = runBlocking {
+        seedProtectedPage(privateKey, "private-resource", "private value")
+        ContextBank.emplaceSuspend(
+            legacyKey,
+            ContextWindow().apply { contextElements.add("legacy value") },
+            StorageMode.MEMORY_ONLY,
+            skipRemote = true
+        )
+
+        val visibleKeys = ContextAccess.withCoroutineScope(strictScopeFor("private-resource")) {
+            ContextBank.getPageKeysSuspend(skipRemote = true)
+        }
+
+        assertTrue(visibleKeys.contains(privateKey))
+        assertFalse(visibleKeys.contains(legacyKey))
+    }
+
+    @Test
+    fun orphanedRemoteSidecarCannotAuthorizeEnumeration() = runBlocking {
+        val backend = FakeRemoteBackend().apply {
+            resourceMetadata[remoteKey] = ContextResourceMetadata(
+                ContextResourceKind.CONTEXT_WINDOW,
+                "remote-orphan-resource",
+                "sandbox-boundary"
+            )
+            includeMetadataOnlyKeysInListings = true
+        }
+        ContextBank.setRemotePersistenceBackend(backend)
+        ContextBank.setStorageMode(remoteKey, StorageMode.REMOTE)
+
+        val visibleKeys = ContextAccess.withCoroutineScope(scopeFor("remote-orphan-resource")) {
+            ContextBank.getPageKeysSuspend()
+        }
+
+        assertFalse(visibleKeys.contains(remoteKey))
+        assertEquals(0, backend.contextReads)
+    }
+
+    @Test
+    fun typedCreationRejectsUnsupportedMetadataWithoutStoringPayload() = runBlocking {
+        val exception = assertFailsWith<ContextAccessDeniedException> {
+            ContextAccess.withCoroutineScope(strictScopeFor("unsupported-resource")) {
+                ContextBank.createContextWindowSuspend(
+                    createdKey,
+                    ContextResourceMetadata(
+                        ContextResourceKind.CONTEXT_WINDOW,
+                        "unsupported-resource",
+                        "sandbox-boundary",
+                        schemaVersion = ContextResourceMetadata.CURRENT_SCHEMA_VERSION + 1
+                    ),
+                    ContextWindow().apply { contextElements.add("must not be stored") },
+                    skipRemote = true
+                )
+            }
+        }
+
+        assertEquals(ContextAccessDenialReason.INVALID_METADATA, exception.reason)
+        assertTrue(ContextBank.getContextFromBankSuspend(createdKey, skipRemote = true).contextElements.isEmpty())
+        assertNull(ContextBank.getResourceMetadataSuspend(createdKey, ContextResourceKind.CONTEXT_WINDOW))
+    }
+
+    @Test
+    fun strictEmplaceCannotCreateAnUnenrolledResource() = runBlocking {
+        val exception = assertFailsWith<ContextAccessDeniedException> {
+            ContextAccess.withCoroutineScope(strictScopeFor("created-resource")) {
+                ContextBank.emplaceSuspend(
+                    createdKey,
+                    ContextWindow().apply { contextElements.add("must not be stored") },
+                    StorageMode.MEMORY_ONLY,
+                    skipRemote = true
+                )
+            }
+        }
+
+        assertEquals(ContextAccessOperation.CREATE, exception.operation)
+        val loaded = ContextBank.getContextFromBankSuspend(createdKey, skipRemote = true)
+        assertTrue(loaded.contextElements.isEmpty())
+    }
+
+    @Test
+    fun strictModeDeniesMutationAndDeletionOfAnUnenrolledResource() = runBlocking {
+        ContextBank.emplaceSuspend(
+            legacyKey,
+            ContextWindow().apply { contextElements.add("legacy value") },
+            StorageMode.MEMORY_ONLY,
+            skipRemote = true
+        )
+
+        val scope = strictScopeFor("legacy-resource")
+        assertFailsWith<ContextAccessDeniedException> {
+            ContextAccess.withCoroutineScope(scope) {
+                ContextBank.mutateContextWindowSuspend(legacyKey, skipRemote = true) { }
+            }
+        }
+        assertFailsWith<ContextAccessDeniedException> {
+            ContextAccess.withCoroutineScope(scope) {
+                ContextBank.deleteContextWindowSuspend(legacyKey, skipRemote = true)
+            }
+        }
+
+        ContextBank.emplaceTodoListSuspend(
+            todoKey,
+            TodoList(),
+            StorageMode.MEMORY_ONLY,
+            skipRemote = true
+        )
+        assertFailsWith<ContextAccessDeniedException> {
+            ContextAccess.withCoroutineScope(scope) {
+                ContextBank.getPagedTodoListSuspend(todoKey, skipRemote = true)
+            }
+        }
+
+        Unit
+    }
+
+    @Test
+    fun typedContextCreationEnrollsBeforeExposingThePayload() = runBlocking {
+        val metadata = ContextResourceMetadata(
+            ContextResourceKind.CONTEXT_WINDOW,
+            "created-resource",
+            "sandbox-boundary"
+        )
+        val scope = strictScopeFor("created-resource")
+
+        ContextAccess.withCoroutineScope(scope) {
+            ContextBank.createContextWindowSuspend(
+                createdKey,
+                metadata,
+                ContextWindow().apply { contextElements.add("created value") },
+                StorageMode.MEMORY_ONLY,
+                skipRemote = true
+            )
+        }
+
+        val loaded = ContextAccess.withCoroutineScope(scope) {
+            ContextBank.getContextFromBankSuspend(createdKey, skipRemote = true)
+        }
+        assertEquals(listOf("created value"), loaded.contextElements)
+        assertEquals(metadata, ContextBank.getResourceMetadataSuspend(createdKey, ContextResourceKind.CONTEXT_WINDOW))
+    }
+
+    @Test
+    fun typedContextCreationRejectsDuplicatesWithoutOverwriting() = runBlocking {
+        val metadata = ContextResourceMetadata(
+            ContextResourceKind.CONTEXT_WINDOW,
+            "created-resource",
+            "sandbox-boundary"
+        )
+        val scope = strictScopeFor("created-resource")
+
+        ContextAccess.withCoroutineScope(scope) {
+            ContextBank.createContextWindowSuspend(
+                createdKey,
+                metadata,
+                ContextWindow().apply { contextElements.add("original value") },
+                skipRemote = true
+            )
+            assertFailsWith<IllegalStateException> {
+                ContextBank.createContextWindowSuspend(
+                    createdKey,
+                    metadata,
+                    ContextWindow().apply { contextElements.add("replacement value") },
+                    skipRemote = true
+                )
+            }
+        }
+
+        val loaded = ContextBank.getContextFromBankSuspend(createdKey, skipRemote = true)
+        assertEquals(listOf("original value"), loaded.contextElements)
+    }
+
+    @Test
+    fun typedRemoteCreationUsesMetadataPlaneWithoutReadingThePayload() = runBlocking {
+        val backend = FakeRemoteBackend()
+        ContextBank.setRemotePersistenceBackend(backend)
+        ContextBank.setStorageMode(remoteKey, StorageMode.REMOTE)
+        val scope = strictScopeFor("remote-created-resource")
+
+        ContextAccess.withCoroutineScope(scope) {
+            ContextBank.createContextWindowSuspend(
+                remoteKey,
+                ContextResourceMetadata(
+                    ContextResourceKind.CONTEXT_WINDOW,
+                    "remote-created-resource",
+                    "sandbox-boundary"
+                ),
+                ContextWindow().apply { contextElements.add("remote created value") },
+                StorageMode.REMOTE
+            )
+        }
+
+        assertEquals(0, backend.contextReads)
+        assertEquals(1, backend.presenceReads)
+        assertEquals(
+            listOf("remote created value"),
+            backend.contextWindows[remoteKey]?.contextElements ?: emptyList<String>()
+        )
+    }
+
+    @Test
+    fun failedRemoteCreationRemovesTheEnrollmentSidecar() = runBlocking {
+        val backend = FakeRemoteBackend().apply {
+            failContextWrites = true
+        }
+        ContextBank.setRemotePersistenceBackend(backend)
+        ContextBank.setStorageMode(remoteKey, StorageMode.REMOTE)
+        val scope = strictScopeFor("remote-failed-resource")
+
+        assertFailsWith<IllegalStateException> {
+            ContextAccess.withCoroutineScope(scope) {
+                ContextBank.createContextWindowSuspend(
+                    remoteKey,
+                    ContextResourceMetadata(
+                        ContextResourceKind.CONTEXT_WINDOW,
+                        "remote-failed-resource",
+                        "sandbox-boundary"
+                    ),
+                    ContextWindow().apply { contextElements.add("must be rolled back") },
+                    StorageMode.REMOTE
+                )
+            }
+        }
+
+        assertFalse(backend.resourceMetadata.containsKey(remoteKey))
+        assertFalse(backend.contextWindows.containsKey(remoteKey))
+    }
+
+    @Test
+    fun typedTodoCreationRequiresCreateAuthority() = runBlocking {
+        val metadata = ContextResourceMetadata(
+            ContextResourceKind.TODO_LIST,
+            "created-todo-resource",
+            "sandbox-boundary"
+        )
+        val readOnlyScope = ContextAccess.issueRootScope(
+            ExecutionPrincipal("todo-reader"),
+            ContextAccessRights(readableResources = setOf(ContextResourceSelector.Resource("created-todo-resource"))),
+            ContextAccessEnforcementMode.REQUIRE_ENROLLMENT
+        )
+
+        assertFailsWith<ContextAccessDeniedException> {
+            ContextAccess.withCoroutineScope(readOnlyScope) {
+                ContextBank.createTodoListSuspend(
+                    createdTodoKey,
+                    metadata,
+                    TodoList(),
+                    StorageMode.MEMORY_ONLY,
+                    skipRemote = true
+                )
+            }
+        }
+        assertNull(ContextBank.getResourceMetadataSuspend(createdTodoKey, ContextResourceKind.TODO_LIST))
+    }
+
+    @Test
     fun pipeGlobalContextPullCannotBypassProtectedPageAuthorization() = runBlocking {
         seedProtectedPage(privateKey, "private-resource", "private value")
         val pipe = DummyPipe()
@@ -1118,6 +1531,8 @@ class ContextAccessSandboxingTest
         var presenceReads: Int = 0
         var reportUnknownPresence: Boolean = false
         var throwPresenceDenial: Boolean = false
+        var failContextWrites: Boolean = false
+        var includeMetadataOnlyKeysInListings: Boolean = false
 
         override val id: String = "metadata-test-remote"
 
@@ -1156,6 +1571,28 @@ class ContextAccessSandboxingTest
                 ContextResourceKind.CONTEXT_WINDOW -> contextWindows.containsKey(key)
                 ContextResourceKind.TODO_LIST -> false
                 ContextResourceKind.BANKED_CONTEXT -> true
+            }
+        }
+
+        override suspend fun putContextWindow(key: String, window: ContextWindow)
+        {
+            if(failContextWrites)
+            {
+                throw IllegalStateException("simulated remote write failure")
+            }
+            super.putContextWindow(key, window)
+        }
+
+        override suspend fun listContextWindowKeys(): List<String>
+        {
+            val payloadKeys = super.listContextWindowKeys()
+            return if(includeMetadataOnlyKeysInListings)
+            {
+                (payloadKeys + resourceMetadata.keys).distinct()
+            }
+            else
+            {
+                payloadKeys
             }
         }
     }

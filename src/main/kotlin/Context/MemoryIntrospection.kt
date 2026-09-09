@@ -94,6 +94,8 @@ object MemoryIntrospection
      *
      * This distinction lets layered tools preserve an existing leash while still
      * providing their historical permissive defaults when no leash is active.
+     *
+     * @return The active config, or `null` when no leash is installed.
      */
     fun getCurrentConfigOrNull(): MemoryIntrospectionConfig? = configThreadLocal.get()
 

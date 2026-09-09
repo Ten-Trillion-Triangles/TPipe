@@ -476,7 +476,10 @@ class Connector : P2PInterface
         }
         catch(e: Exception)
         {
-            if(e is ContextAccessDeniedException) throw e
+            if(e is ContextAccessDeniedException)
+            {
+                throw e
+            }
             content.terminatePipeline = true
             return content
         }

@@ -3949,7 +3949,10 @@ private fun pathKey(name: String): String = name.lowercase()
         }
         catch(e: Exception)
         {
-            if(e is ContextAccessDeniedException) throw e
+            if(e is ContextAccessDeniedException)
+            {
+                throw e
+            }
             // Timeouts are path-level, not harness-level, failures: skip
             // lastError so the loop continues instead of breaking into
             // runFinalizationPhase on the first transport timeout.

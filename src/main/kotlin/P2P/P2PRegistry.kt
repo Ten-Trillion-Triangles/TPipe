@@ -915,16 +915,24 @@ object P2PRegistry
      * called through it's p2p interface object and the response will propagate back to here. And then this
      * result will be routed through a router function, and returned backwards via the transport method that was
      * used to get to here in the first place.
+     *
+     * @param request Inbound request to route to a registered agent.
+     * @return The agent response or a structured rejection response.
      */
-    suspend fun executeP2pRequest(request: P2PRequest) : P2PResponse
+    suspend fun executeP2pRequest(request: P2PRequest): P2PResponse
     {
         return ContextAccess.withCurrentScope {
             executeP2pRequestInternal(request)
         }
     }
 
-    /** Execute an inbound request after the local scope propagation hook. */
-    private suspend fun executeP2pRequestInternal(request: P2PRequest) : P2PResponse
+    /**
+     * Execute an inbound request after the local scope propagation hook.
+     *
+     * @param request Inbound request to route to a registered agent.
+     * @return The agent response or a structured rejection response.
+     */
+    private suspend fun executeP2pRequestInternal(request: P2PRequest): P2PResponse
     {
         //Try to find our agent on this system. If we can't, we need to produce a failure and exit from here.
         val agent = Agents[request.transport]

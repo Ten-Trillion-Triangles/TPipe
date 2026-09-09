@@ -21,6 +21,8 @@ object MemoryIntrospectionTools
     /**
      * Lists all allowed page keys in the ContextBank.
      * Respects MemoryIntrospection allowedPageKeys and ContextLock (hides locked pages).
+     *
+     * @return Page keys visible to the current introspection leash.
      */
     suspend fun listPageKeys(): List<String>
     {
@@ -40,6 +42,10 @@ object MemoryIntrospectionTools
     /**
      * Retrieves a specific lorebook entry by key from a page.
      * Respects MemoryIntrospection leash and ContextLock (hides locked entries).
+     *
+     * @param pageKey Page containing the lorebook entry.
+     * @param key Lorebook key to retrieve.
+     * @return The entry, or `null` when it is unavailable.
      */
     suspend fun getLorebookEntry(pageKey: String, key: String): LoreBook?
     {
@@ -54,6 +60,9 @@ object MemoryIntrospectionTools
     /**
      * Retrieves the entire lorebook for a specific page.
      * Respects MemoryIntrospection leash and ContextLock (filters out locked entries).
+     *
+     * @param pageKey Page whose lorebook should be retrieved.
+     * @return Visible lorebook entries keyed by lorebook key.
      */
     suspend fun getLorebook(pageKey: String): Map<String, LoreBook>
     {
@@ -69,6 +78,14 @@ object MemoryIntrospectionTools
     /**
      * Queries the lorebook using structured parameters and optional regex extraction.
      * Respects MemoryIntrospection leash and ContextLock.
+     *
+     * @param pageKey Page whose lorebook should be queried.
+     * @param query Optional substring to match.
+     * @param minWeight Minimum entry weight to include.
+     * @param requiredKeys Required lorebook keys.
+     * @param aliasKeys Alias keys to match.
+     * @param extractRegex Optional regular expression used to extract result text.
+     * @return Matching lorebook results.
      */
     suspend fun queryLorebook(
         pageKey: String,
@@ -167,6 +184,10 @@ object MemoryIntrospectionTools
     /**
      * Simulates what lorebook entries would be triggered by a specific input text.
      * Respects MemoryIntrospection leash and ContextLock.
+     *
+     * @param pageKey Page whose lorebook should be inspected.
+     * @param text Input text to evaluate.
+     * @return Lorebook keys that would be triggered.
      */
     suspend fun simulateLorebookTrigger(pageKey: String, text: String): List<String>
     {
@@ -243,6 +264,11 @@ object MemoryIntrospectionTools
     /**
      * Performs a substring search across both lorebook entries and context elements.
      * Respects MemoryIntrospection leash and ContextLock.
+     *
+     * @param pageKey Page whose memory should be searched.
+     * @param query Text to find in memory.
+     * @param extractRegex Optional regular expression used to extract result text.
+     * @return Matching lorebook and context-element results.
      */
     suspend fun searchMemory(
         pageKey: String,
@@ -279,6 +305,10 @@ object MemoryIntrospectionTools
     /**
      * Adds or updates a lorebook entry in a page.
      * Respects MemoryIntrospection write leash and ContextLock (cannot modify locked entries).
+     *
+     * @param pageKey Page to update.
+     * @param entry Lorebook entry to add or replace.
+     * @return `true` when the entry was updated.
      */
     suspend fun updateLorebookEntry(pageKey: String, entry: LoreBook): Boolean
     {
@@ -303,6 +333,10 @@ object MemoryIntrospectionTools
     /**
      * Deletes a lorebook entry from a page.
      * Respects MemoryIntrospection write leash and ContextLock.
+     *
+     * @param pageKey Page to update.
+     * @param key Lorebook key to delete.
+     * @return `true` when an entry was deleted.
      */
     suspend fun deleteLorebookEntry(pageKey: String, key: String): Boolean
     {
@@ -328,6 +362,9 @@ object MemoryIntrospectionTools
     /**
      * Retrieves the todo list for a page.
      * Respects MemoryIntrospection leash and ContextLock.
+     *
+     * @param pageKey Todo-list key to retrieve.
+     * @return The todo list, or `null` when it is unavailable.
      */
     suspend fun getTodoList(pageKey: String): TodoList?
     {
@@ -339,6 +376,10 @@ object MemoryIntrospectionTools
     /**
      * Updates the todo list for a page.
      * Respects MemoryIntrospection write leash and ContextLock.
+     *
+     * @param pageKey Todo-list key to update.
+     * @param todoList Replacement todo list.
+     * @return `true` when the list was updated.
      */
     suspend fun updateTodoList(pageKey: String, todoList: TodoList): Boolean
     {
@@ -349,6 +390,10 @@ object MemoryIntrospectionTools
      * Update a todo list while preserving typed ContextBank denials for secure
      * callers. The public legacy method above keeps its historical Boolean
      * result contract.
+     *
+     * @param pageKey Todo-list key to update.
+     * @param todoList Replacement todo list.
+     * @return `true` when the list was updated.
      */
     internal suspend fun updateTodoListWithTypedAccessDenial(
         pageKey: String,
@@ -358,7 +403,14 @@ object MemoryIntrospectionTools
         return updateTodoListInternal(pageKey, todoList, propagateAccessDenial = true)
     }
 
-    /** Execute the todo update with an explicit legacy-versus-secure denial policy. */
+    /**
+     * Execute the todo update with an explicit legacy-versus-secure denial policy.
+     *
+     * @param pageKey Todo-list key to update.
+     * @param todoList Replacement todo list.
+     * @param propagateAccessDenial Whether typed access denials should escape.
+     * @return `true` when the list was updated.
+     */
     private suspend fun updateTodoListInternal(
         pageKey: String,
         todoList: TodoList,
@@ -372,7 +424,10 @@ object MemoryIntrospectionTools
         }
         catch(e: ContextAccessDeniedException)
         {
-            if(propagateAccessDenial) throw e
+            if(propagateAccessDenial)
+            {
+                throw e
+            }
             return false
         }
         if(!canWrite || ContextLock.isPageLockedSuspend(pageKey)) return false
@@ -382,7 +437,10 @@ object MemoryIntrospectionTools
         }
         catch(e: ContextAccessDeniedException)
         {
-            if(propagateAccessDenial) throw e
+            if(propagateAccessDenial)
+            {
+                throw e
+            }
             return false
         }
         return true
@@ -392,6 +450,12 @@ object MemoryIntrospectionTools
      * Preflight ContextBank authority before optional query backends or local
      * value reads are invoked. Legacy tools translate a typed denial back to
      * their historical safe-result contract.
+     *
+     * @param pageKey ContextBank storage key.
+     * @param operation Operation to authorize.
+     * @param kind Resource kind being accessed.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     * @return `true` when access is authorized or no scope is active.
      */
     private suspend fun hasContextAccess(
         pageKey: String,
@@ -413,6 +477,8 @@ object MemoryIntrospectionTools
 
     /**
      * Registers all memory introspection tools in the FunctionRegistry and adds them to a PcpContext.
+     *
+     * @param context PCP context that receives the tool options.
      */
     fun registerAndEnable(context: PcpContext)
     {

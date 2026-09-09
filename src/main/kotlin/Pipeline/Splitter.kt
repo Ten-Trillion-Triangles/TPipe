@@ -887,7 +887,10 @@ class Splitter: P2PInterface
                         }
                         catch(e: Exception)
                         {
-                            if(e is ContextAccessDeniedException) throw e
+                            if(e is ContextAccessDeniedException)
+                            {
+                                throw e
+                            }
                             //Handle pipeline execution failure by creating error content.
                             val errorContent = MultimodalContent("Pipeline execution failed: ${e.message}")
                             

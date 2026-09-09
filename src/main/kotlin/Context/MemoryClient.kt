@@ -293,9 +293,9 @@ object MemoryClient
     /**
      * Retrieve authorization metadata for a remote ContextBank resource.
      *
-     * @param kind Resource kind being inspected.
+     * @param kind [ContextResourceKind] being inspected.
      * @param key Resource key.
-     * @return Metadata when enrolled, or a typed not-found result otherwise.
+     * @return [ContextResourceMetadata] when enrolled, or a typed not-found result otherwise.
      */
     suspend fun getResourceMetadata(
         kind: ContextResourceKind,
@@ -313,7 +313,14 @@ object MemoryClient
         }
     }
 
-    /** Persist authorization metadata for a remote ContextBank resource. */
+    /**
+     * Persist authorization metadata for a remote ContextBank resource.
+     *
+     * @param kind [ContextResourceKind] whose metadata is being written.
+     * @param key Remote ContextBank storage key.
+     * @param metadata [ContextResourceMetadata] to persist.
+     * @return Typed success or failure for the metadata write.
+     */
     suspend fun putResourceMetadata(
         kind: ContextResourceKind,
         key: String,
@@ -329,7 +336,13 @@ object MemoryClient
         )
     }
 
-    /** Delete authorization metadata for a remote ContextBank resource. */
+    /**
+     * Delete authorization metadata for a remote ContextBank resource.
+     *
+     * @param kind [ContextResourceKind] whose metadata is being deleted.
+     * @param key Remote ContextBank storage key.
+     * @return Typed success or failure for the metadata deletion.
+     */
     suspend fun deleteResourceMetadata(
         kind: ContextResourceKind,
         key: String
@@ -346,7 +359,7 @@ object MemoryClient
     /**
      * Check remote resource presence without retrieving its protected value.
      *
-     * @param kind Resource kind being checked.
+     * @param kind [ContextResourceKind] being checked.
      * @param key Resource key.
      * @return Typed presence result.
      */

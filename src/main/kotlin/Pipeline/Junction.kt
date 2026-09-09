@@ -3141,7 +3141,10 @@ class Junction : P2PInterface
         }
         catch(e: Exception)
         {
-            if(e is ContextAccessDeniedException) throw e
+            if(e is ContextAccessDeniedException)
+            {
+                throw e
+            }
             // Any participant failure is converted into a structured phase result so the recipe can stop
             // cleanly, trace the error, and preserve the workflow state for inspection.
             trace(
@@ -4070,7 +4073,10 @@ class Junction : P2PInterface
         }
         catch(e: Exception)
         {
-            if(e is ContextAccessDeniedException) throw e
+            if(e is ContextAccessDeniedException)
+            {
+                throw e
+            }
             // Participant failures are folded into a neutral opinion instead of crashing the entire harness so
             // the moderator can still inspect a partial round and decide how to continue.
             trace(
@@ -4299,7 +4305,10 @@ class Junction : P2PInterface
         }
         catch(e: Exception)
         {
-            if(e is ContextAccessDeniedException) throw e
+            if(e is ContextAccessDeniedException)
+            {
+                throw e
+            }
             discussionState.roundLog.add("Moderator directive failed: ${e.message}")
             buildDefaultDirective(voteResults)
         }

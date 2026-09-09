@@ -72,6 +72,13 @@ class TPipeRemotePersistenceBackend :
     override suspend fun listTodoListKeys(): List<String> =
         MemoryClient.getTodoListKeys().requireValue("list remote todo keys")
 
+    /**
+     * Retrieve authorization metadata from the remote memory server.
+     *
+     * @param kind [ContextResourceKind] whose metadata is requested.
+     * @param key Remote ContextBank storage key.
+     * @return Resource metadata, or `null` when the sidecar is absent.
+     */
     override suspend fun getResourceMetadata(
         kind: ContextResourceKind,
         key: String
@@ -103,6 +110,13 @@ class TPipeRemotePersistenceBackend :
         }
     }
 
+    /**
+     * Persist authorization metadata through the remote memory server.
+     *
+     * @param kind [ContextResourceKind] whose metadata is being written.
+     * @param key Remote ContextBank storage key.
+     * @param metadata [ContextResourceMetadata] to persist.
+     */
     override suspend fun putResourceMetadata(
         kind: ContextResourceKind,
         key: String,
@@ -112,6 +126,13 @@ class TPipeRemotePersistenceBackend :
         MemoryClient.putResourceMetadata(kind, key, metadata).requireSuccess("store remote resource metadata '$key'")
     }
 
+    /**
+     * Delete authorization metadata through the remote memory server.
+     *
+     * @param kind [ContextResourceKind] whose metadata is being deleted.
+     * @param key Remote ContextBank storage key.
+     * @return `true` when the sidecar existed and was deleted.
+     */
     override suspend fun deleteResourceMetadata(kind: ContextResourceKind, key: String): Boolean =
         when(val operationResult = MemoryClient.deleteResourceMetadata(kind, key))
         {
@@ -119,6 +140,13 @@ class TPipeRemotePersistenceBackend :
             is MemoryOperationResult.Failure -> operationResult.booleanNotFoundOrThrow("delete remote resource metadata '$key'")
         }
 
+    /**
+     * Check remote resource presence without retrieving its protected value.
+     *
+     * @param kind [ContextResourceKind] whose presence is being checked.
+     * @param key Remote ContextBank storage key.
+     * @return `true` when the resource payload exists.
+     */
     override suspend fun resourceExists(kind: ContextResourceKind, key: String): Boolean =
         when(val operationResult = MemoryClient.resourceExists(kind, key))
         {

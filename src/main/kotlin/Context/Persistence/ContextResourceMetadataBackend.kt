@@ -11,13 +11,31 @@ import com.TTT.Context.ContextResourceMetadata
  */
 interface ContextResourceMetadataBackend
 {
-    /** Retrieve metadata, or null when the resource is not enrolled. */
+    /**
+     * Retrieve metadata, or `null` when the resource is not enrolled.
+     *
+     * @param kind [ContextResourceKind] whose metadata is requested.
+     * @param key ContextBank storage key.
+     * @return Resource metadata, or `null` when no sidecar exists.
+     */
     suspend fun getResourceMetadata(kind: ContextResourceKind, key: String): ContextResourceMetadata?
 
-    /** Persist metadata for a resource. */
+    /**
+     * Persist metadata for a resource.
+     *
+     * @param kind Resource kind whose metadata is being written.
+     * @param key ContextBank storage key.
+     * @param metadata [ContextResourceMetadata] to persist.
+     */
     suspend fun putResourceMetadata(kind: ContextResourceKind, key: String, metadata: ContextResourceMetadata)
 
-    /** Delete metadata, returning whether a sidecar existed. */
+    /**
+     * Delete metadata, returning whether a sidecar existed.
+     *
+     * @param kind [ContextResourceKind] whose metadata is being deleted.
+     * @param key ContextBank storage key.
+     * @return `true` when a sidecar existed and was deleted.
+     */
     suspend fun deleteResourceMetadata(kind: ContextResourceKind, key: String): Boolean
 
     /**
@@ -27,6 +45,10 @@ interface ContextResourceMetadataBackend
      * WRITE without retrieving the protected value. Implementations that
      * cannot answer it return `null`; ContextBank then fails closed with a
      * metadata-unavailable denial.
+     *
+     * @param kind [ContextResourceKind] whose presence is being checked.
+     * @param key ContextBank storage key.
+     * @return `true` or `false` when presence is known, otherwise `null`.
      */
     suspend fun resourceExists(kind: ContextResourceKind, key: String): Boolean? = null
 }

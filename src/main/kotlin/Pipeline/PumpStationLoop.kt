@@ -942,7 +942,10 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
         }
         catch (e: Throwable)
         {
-            if(e is ContextAccessDeniedException) throw e
+            if(e is ContextAccessDeniedException)
+            {
+                throw e
+            }
             emitEventInternal(PathFailed(
                 runId = taskState.runId,
                 turnIndex = turnIndexSnapshot,
@@ -2586,7 +2589,13 @@ private fun PumpStation.launchAsyncJob(block: suspend () -> Unit): kotlinx.corou
     return launchOn.launch { withCapturedContextAccessScope(accessScope, block) }
 }
 
-/** Reinstall authority captured before a detached station job was launched. */
+/**
+ * Reinstall authority captured before a detached station job was launched.
+ *
+ * @param scope Authority captured at launch time, or `null` in legacy mode.
+ * @param block Detached job to execute.
+ * @return The value returned by [block].
+ */
 private suspend fun <T> withCapturedContextAccessScope(
     scope: ContextAccessScope?,
     block: suspend () -> T
@@ -2659,7 +2668,10 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
                 }
                 catch (e: Exception)
                 {
-                    if(e is ContextAccessDeniedException) throw e
+                    if(e is ContextAccessDeniedException)
+                    {
+                        throw e
+                    }
                     // Isolate failures
                 }
             }

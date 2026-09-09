@@ -7298,7 +7298,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 }
                 catch(e: Exception)
                 {
-                    if(e is com.TTT.Context.ContextAccessDeniedException) throw e
+                    if(e is ContextAccessDeniedException)
+                    {
+                        throw e
+                    }
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.VALIDATION, generatedContent,
                           metadata = mapOf(
                               "reason" to "Validator pipe threw an exception",
@@ -7330,7 +7333,8 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         if(transformationPipe != null)
                         {
                             trace(TraceEventType.BRANCH_PIPE_TRIGGERED, TracePhase.TRANSFORMATION)
-                            try {
+                            try
+                            {
                                 if(tracingEnabled)
                                 {
                                     transformationPipe!!.propagateTracingRecursively()
@@ -7351,12 +7355,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                         //Add the transformation pipe's token usage to our child pipe tracking.
                                         pipeTokenUsage.addChildUsage("transformation-${pipe.pipeName}", pipe.getTokenUsage())
                                     }
-                            }
-
+                                }
                             }
                             catch(e: Exception)
                             {
-                                if(e is com.TTT.Context.ContextAccessDeniedException) throw e
+                                if(e is ContextAccessDeniedException)
+                                {
+                                    throw e
+                                }
                                 trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
                                 // Continue with original content if transformation pipe fails
                             }
@@ -7448,7 +7454,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         }
                         catch(e: Exception)
                         {
-                            if(e is com.TTT.Context.ContextAccessDeniedException) throw e
+                            if(e is ContextAccessDeniedException)
+                            {
+                                throw e
+                            }
                             trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, generatedContent, error = e)
                             // Continue with original content if transformation pipe fails
                         }
@@ -7561,7 +7570,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                 }
                                 catch(e: Exception)
                                 {
-                                    if(e is com.TTT.Context.ContextAccessDeniedException) throw e
+                                    if(e is ContextAccessDeniedException)
+                                    {
+                                        throw e
+                                    }
                                     trace(TraceEventType.PIPE_FAILURE, TracePhase.TRANSFORMATION, branchResult, error = e)
                                     // Continue with branch result if transformation pipe fails
                                 }
@@ -7600,7 +7612,10 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     }
                     catch(e: Exception)
                     {
-                        if(e is com.TTT.Context.ContextAccessDeniedException) throw e
+                        if(e is ContextAccessDeniedException)
+                        {
+                            throw e
+                        }
                         trace(TraceEventType.PIPE_FAILURE, TracePhase.POST_PROCESSING, generatedContent, error = e)
                         // Branch pipe failed, continue to failure function
                     }
