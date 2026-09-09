@@ -291,6 +291,82 @@ object MemoryClient
     }
 
     /**
+     * Retrieve authorization metadata for a remote ContextBank resource.
+     *
+     * @param kind Resource kind being inspected.
+     * @param key Resource key.
+     * @return Metadata when enrolled, or a typed not-found result otherwise.
+     */
+    suspend fun getResourceMetadata(
+        kind: ContextResourceKind,
+        key: String
+    ): MemoryOperationResult<ContextResourceMetadata>
+    {
+        return parseResponse(
+            executeRequest(
+                pathSegments = listOf("context", "metadata", kind.name.lowercase(), key),
+                method = HttpMethod.Get
+            ),
+            operation = "fetch remote resource metadata '$key'"
+        ) { responseBody ->
+            ContextResourceMetadata.decodeStrict(responseBody)
+        }
+    }
+
+    /** Persist authorization metadata for a remote ContextBank resource. */
+    suspend fun putResourceMetadata(
+        kind: ContextResourceKind,
+        key: String,
+        metadata: ContextResourceMetadata
+    ): MemoryOperationResult<Unit>
+    {
+        return mapUnitResult(
+            executeRequest(
+                pathSegments = listOf("context", "metadata", kind.name.lowercase(), key),
+                method = HttpMethod.Post,
+                requestBody = serialize(metadata, encodedefault = true)
+            )
+        )
+    }
+
+    /** Delete authorization metadata for a remote ContextBank resource. */
+    suspend fun deleteResourceMetadata(
+        kind: ContextResourceKind,
+        key: String
+    ): MemoryOperationResult<Unit>
+    {
+        return mapUnitResult(
+            executeRequest(
+                pathSegments = listOf("context", "metadata", kind.name.lowercase(), key),
+                method = HttpMethod.Delete
+            )
+        )
+    }
+
+    /**
+     * Check remote resource presence without retrieving its protected value.
+     *
+     * @param kind Resource kind being checked.
+     * @param key Resource key.
+     * @return Typed presence result.
+     */
+    suspend fun resourceExists(
+        kind: ContextResourceKind,
+        key: String
+    ): MemoryOperationResult<Boolean>
+    {
+        return parseResponse(
+            executeRequest(
+                pathSegments = listOf("context", "metadata", kind.name.lowercase(), key, "exists"),
+                method = HttpMethod.Get
+            ),
+            operation = "check remote resource presence '$key'"
+        ) { responseBody ->
+            deserialize<Boolean>(responseBody, useRepair = false)
+        }
+    }
+
+    /**
      * Get all lock keys from the remote server.
      *
      * @return Typed result containing all visible lock keys.

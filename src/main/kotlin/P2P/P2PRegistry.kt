@@ -1,6 +1,7 @@
 package com.TTT.P2P
 
 import com.TTT.Config.AuthRegistry
+import com.TTT.Context.ContextAccess
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.Dictionary
@@ -916,6 +917,14 @@ object P2PRegistry
      * used to get to here in the first place.
      */
     suspend fun executeP2pRequest(request: P2PRequest) : P2PResponse
+    {
+        return ContextAccess.withCurrentScope {
+            executeP2pRequestInternal(request)
+        }
+    }
+
+    /** Execute an inbound request after the local scope propagation hook. */
+    private suspend fun executeP2pRequestInternal(request: P2PRequest) : P2PResponse
     {
         //Try to find our agent on this system. If we can't, we need to produce a failure and exit from here.
         val agent = Agents[request.transport]

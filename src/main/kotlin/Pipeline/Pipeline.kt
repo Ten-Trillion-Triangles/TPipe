@@ -1,5 +1,7 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ContextAccess
+import com.TTT.Context.ContextAccessDeniedException
 import com.TTT.Context.ContextBank
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.ConverseHistory
@@ -529,7 +531,11 @@ class Pipeline : P2PInterface
     }
 
 
-    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? {
+    override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? =
+        ContextAccess.withCurrentScope { executeP2PRequestInternal(request) }
+
+    /** Execute a P2P request after the local scope propagation hook. */
+    private suspend fun executeP2PRequestInternal(request: P2PRequest): P2PResponse? {
         /** Start as "this" but we may need to alter our target if we need to copy "this" due to some change the
          *  requested be made during the p2p request operation.
          */
@@ -1412,10 +1418,12 @@ class Pipeline : P2PInterface
      * @param initialPrompt The initial prompt to pass to the first pipe in the pipeline.
      * @return The generated text after all pipes in the pipeline have been executed.
      */
-    suspend fun execute(initialPrompt: String = ""): String = coroutineScope {
-        val content = MultimodalContent(text = initialPrompt)
-        val result = executeMultimodal(content)
-        result.text
+    suspend fun execute(initialPrompt: String = ""): String = ContextAccess.withCurrentScope {
+        coroutineScope {
+            val content = MultimodalContent(text = initialPrompt)
+            val result = executeMultimodal(content)
+            result.text
+        }
     }
     
     /**
@@ -1428,7 +1436,8 @@ class Pipeline : P2PInterface
      * @param initialContent The initial multimodal content to pass to the first pipe.
      * @return The generated multimodal content after all pipes have been executed.
      */
-    suspend fun execute(initialContent: MultimodalContent): MultimodalContent = executeMultimodal(initialContent)
+    suspend fun execute(initialContent: MultimodalContent): MultimodalContent =
+        ContextAccess.withCurrentScope { executeMultimodal(initialContent) }
 
     /**
      * P2PInterface compliance: when the harness (or any other P2PInterface consumer) holds
@@ -1477,6 +1486,7 @@ class Pipeline : P2PInterface
             }
             catch(e: Exception)
             {
+                if(e is ContextAccessDeniedException) throw e
                 if(tracingEnabled)
                 {
                     trace(TraceEventType.VALIDATION_FAILURE, TracePhase.PRE_VALIDATION, initialContent,
@@ -1564,6 +1574,11 @@ class Pipeline : P2PInterface
 
             catch(e: com.TTT.P2P.KillSwitchException) {
                 // KillSwitchException must never be caught — it must propagate to terminate the agent
+                throw e
+            }
+            catch(e: ContextAccessDeniedException)
+            {
+                // Protected ContextBank failures must retain their typed security contract.
                 throw e
             }
             catch(e: Exception)

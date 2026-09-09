@@ -22,6 +22,52 @@ The `ContextBank` is a singleton object that manages TPipe's global context wind
 object ContextBank
 ```
 
+## Opt-in Access Sandboxing
+
+`ContextAccess` adds a provider-neutral authority layer without changing the
+existing `ContextWindow`, `TodoList`, or persistence payloads. With no active
+scope, direct `ContextBank` calls retain their legacy behavior. A host can
+enroll a resource with versioned sidecar metadata and then install a scope:
+
+```kotlin
+ContextBank.registerResourceMetadata(
+    "private-page",
+    ContextResourceMetadata(
+        resourceKind = ContextResourceKind.CONTEXT_WINDOW,
+        resourceId = "opaque-resource-id",
+        boundaryId = "opaque-boundary-id"
+    )
+)
+
+val scope = ContextAccess.issueRootScope(
+    ExecutionPrincipal("agent-1"),
+    ContextAccessRights(
+        readableResources = setOf(ContextResourceSelector.Boundary("opaque-boundary-id")),
+        enumerableResources = setOf(ContextResourceSelector.Boundary("opaque-boundary-id"))
+    )
+)
+
+ContextAccess.withCoroutineScope(scope) {
+    ContextBank.getContextFromBankSuspend("private-page")
+}
+```
+
+The access checks cover reads, writes, creation, deletion, enumeration, todo
+operations, retrieval/writeback hooks, remote persistence, and retained
+mutable references. Protected denials throw `ContextAccessDeniedException`
+before the underlying callback or backend is invoked. A missing sidecar means
+legacy-shared access; corrupt, unsupported, or orphaned sidecars fail closed.
+The optional `ContextResourceMetadataBackend` capability enables secured remote
+access without adding methods to the existing `ContextPersistenceBackend`
+interface.
+
+Scopes are monotone: nested and delegated scopes are intersections, and
+coroutine propagation uses the coroutine context. `ContextLock` is evaluated
+separately and still denies an operation even when the authority scope allows
+it. Authority objects are not serialized through P2P requests. TPipe does not
+define provider, workspace, session-visibility, or provider-egress policy; those
+remain host/Apex integration responsibilities.
+
 ## Public Properties
 
 **`swapMutex`**
@@ -841,4 +887,3 @@ TPipe exposes a separate local persisted-document facade for administrative tool
 The facade pins its root at construction, enumerates regular nested `.bank` files in deterministic order, rejects traversal and symbolic-link escapes, and uses the same per-file sidecar locking discipline as ordinary memory persistence. Use `listSavedPagesPage(query, page, pageSize)` for filtered metadata pagination, `readSavedPage(relativePath)` for lazy raw-document reads, and the checked replacement/deletion methods with the current revision for optimistic concurrency.
 
 Malformed pages remain visible with their original bytes and an invalid result so an administrator can inspect or repair them. Replacements validate the complete proposed document before an atomic commit; conflicts, missing pages, unreadable pages, and storage failures remain distinct typed outcomes. The facade never creates backups or trash entries.
-

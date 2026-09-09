@@ -1323,6 +1323,7 @@ class DistributionGrid : P2PInterface
         }
         catch(error: Throwable)
         {
+            if(error is com.TTT.Context.ContextAccessDeniedException) throw error
             trace(
                 TraceEventType.DISTRIBUTION_GRID_FAILURE,
                 TracePhase.CONTEXT_PREPARATION,
@@ -1525,6 +1526,7 @@ class DistributionGrid : P2PInterface
 
         catch(error: Throwable)
         {
+            if(error is com.TTT.Context.ContextAccessDeniedException) throw error
             initialized = false
             trace(
                 TraceEventType.DISTRIBUTION_GRID_VALIDATION_FAILURE,
@@ -3756,6 +3758,7 @@ class DistributionGrid : P2PInterface
         }
         catch(error: Throwable)
         {
+            if(error is com.TTT.Context.ContextAccessDeniedException) throw error
             val failure = buildFailure(
                 kind = DistributionGridFailureKind.POLICY_REJECTED,
                 reason = error.message ?: "DistributionGrid could not build a safe outbound memory envelope.",
@@ -4369,6 +4372,7 @@ class DistributionGrid : P2PInterface
         }
         catch(error: Throwable)
         {
+            if(error is com.TTT.Context.ContextAccessDeniedException) throw error
             val failure = buildFailure(
                 kind = DistributionGridFailureKind.UNKNOWN,
                 reason = error.message ?: "DistributionGrid local execution failed.",
@@ -4608,6 +4612,7 @@ class DistributionGrid : P2PInterface
 
         catch(error: Throwable)
         {
+            if(error is com.TTT.Context.ContextAccessDeniedException) throw error
             val failure = buildFailure(
                 kind = DistributionGridFailureKind.WORKER_FAILURE,
                 reason = error.message ?: "Local worker execution failed.",
@@ -4755,6 +4760,7 @@ class DistributionGrid : P2PInterface
         }
         catch(hookError: Throwable)
         {
+            if(hookError is com.TTT.Context.ContextAccessDeniedException) throw hookError
             envelope.executionNotes.add(
                 "Failure hook error: ${hookError.message ?: hookError::class.simpleName.orEmpty()}"
             )
@@ -4967,6 +4973,7 @@ class DistributionGrid : P2PInterface
 
         catch(error: Throwable)
         {
+            if(error is com.TTT.Context.ContextAccessDeniedException) throw error
             envelope.executionNotes.add(
                 "Durability checkpoint '$checkpointReason' failed: ${error.message ?: error::class.simpleName.orEmpty()}"
             )
@@ -5020,6 +5027,7 @@ class DistributionGrid : P2PInterface
 
         catch(error: Throwable)
         {
+            if(error is com.TTT.Context.ContextAccessDeniedException) throw error
             envelope.executionNotes.add(
                 "Durability archive '$checkpointReason' failed: ${error.message ?: error::class.simpleName.orEmpty()}"
             )
@@ -5300,10 +5308,23 @@ class DistributionGrid : P2PInterface
             ).apply {
                 metadata["distributionGridSummarizerContext"] = context
             }
-            val agentResult = runCatching {
+            val agentResult: MultimodalContent? = try
+            {
                 memoryPolicy.summaryAgent!!.executeLocal(agentInput)
             }
-            val agentText = agentResult.getOrNull()?.text
+            catch(error: kotlinx.coroutines.CancellationException)
+            {
+                throw error
+            }
+            catch(error: com.TTT.Context.ContextAccessDeniedException)
+            {
+                throw error
+            }
+            catch(_: Exception)
+            {
+                null
+            }
+            val agentText = agentResult?.text
             if(!agentText.isNullOrBlank())
             {
                 agentSummary = agentText
@@ -5313,8 +5334,23 @@ class DistributionGrid : P2PInterface
         val summarized = agentSummary
             ?: if(memoryPolicy.enableSummarization && memoryPolicy.summarizer != null)
             {
-                runCatching { memoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
-                    .getOrDefault("")
+                val lambdaSummary = try
+                {
+                    memoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty()
+                }
+                catch(error: kotlinx.coroutines.CancellationException)
+                {
+                    throw error
+                }
+                catch(error: com.TTT.Context.ContextAccessDeniedException)
+                {
+                    throw error
+                }
+                catch(_: Exception)
+                {
+                    ""
+                }
+                lambdaSummary
                     .ifBlank { trimmedSeed }
             }
             else

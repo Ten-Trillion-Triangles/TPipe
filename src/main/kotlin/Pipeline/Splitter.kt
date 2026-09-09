@@ -1,5 +1,6 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ContextAccessDeniedException
 import com.TTT.Debug.*
 import com.TTT.Debug.TraceAutoExporter
 import com.TTT.P2P.P2PInterface
@@ -886,6 +887,7 @@ class Splitter: P2PInterface
                         }
                         catch(e: Exception)
                         {
+                            if(e is ContextAccessDeniedException) throw e
                             //Handle pipeline execution failure by creating error content.
                             val errorContent = MultimodalContent("Pipeline execution failed: ${e.message}")
                             

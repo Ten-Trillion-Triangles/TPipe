@@ -1,6 +1,11 @@
 package com.TTT.Context.Persistence
 
+import com.TTT.Context.ContextAccessDeniedException
+import com.TTT.Context.ContextAccessDenialReason
+import com.TTT.Context.ContextAccessOperation
 import com.TTT.Context.ContextWindow
+import com.TTT.Context.ContextResourceKind
+import com.TTT.Context.ContextResourceMetadata
 import com.TTT.Context.LockRequest
 import com.TTT.Context.LoreBookQueryResult
 import com.TTT.Context.MemoryClient
@@ -18,7 +23,8 @@ import com.TTT.Context.requireSuccess
 class TPipeRemotePersistenceBackend :
     ContextPersistenceBackend,
     ContextLockBackend,
-    ContextQueryBackend {
+    ContextQueryBackend,
+    ContextResourceMetadataBackend {
 
     override val id: String = "tpipe-remote-http"
 
@@ -65,6 +71,72 @@ class TPipeRemotePersistenceBackend :
 
     override suspend fun listTodoListKeys(): List<String> =
         MemoryClient.getTodoListKeys().requireValue("list remote todo keys")
+
+    override suspend fun getResourceMetadata(
+        kind: ContextResourceKind,
+        key: String
+    ): ContextResourceMetadata? = when(val operationResult = MemoryClient.getResourceMetadata(kind, key))
+    {
+        is MemoryOperationResult.Success -> operationResult.value
+        is MemoryOperationResult.Failure ->
+        {
+            if(operationResult.error.errorType == MemoryErrorType.notFound)
+            {
+                null
+            }
+            else
+            {
+                throw ContextAccessDeniedException(
+                    ContextAccessOperation.READ,
+                    kind,
+                    key,
+                    if(operationResult.error.errorType == MemoryErrorType.serialization)
+                    {
+                        ContextAccessDenialReason.INVALID_METADATA
+                    }
+                    else
+                    {
+                        ContextAccessDenialReason.METADATA_UNAVAILABLE
+                    }
+                )
+            }
+        }
+    }
+
+    override suspend fun putResourceMetadata(
+        kind: ContextResourceKind,
+        key: String,
+        metadata: ContextResourceMetadata
+    )
+    {
+        MemoryClient.putResourceMetadata(kind, key, metadata).requireSuccess("store remote resource metadata '$key'")
+    }
+
+    override suspend fun deleteResourceMetadata(kind: ContextResourceKind, key: String): Boolean =
+        when(val operationResult = MemoryClient.deleteResourceMetadata(kind, key))
+        {
+            is MemoryOperationResult.Success -> true
+            is MemoryOperationResult.Failure -> operationResult.booleanNotFoundOrThrow("delete remote resource metadata '$key'")
+        }
+
+    override suspend fun resourceExists(kind: ContextResourceKind, key: String): Boolean =
+        when(val operationResult = MemoryClient.resourceExists(kind, key))
+        {
+            is MemoryOperationResult.Success -> operationResult.value
+            is MemoryOperationResult.Failure -> throw ContextAccessDeniedException(
+                ContextAccessOperation.READ,
+                kind,
+                key,
+                if(operationResult.error.errorType == MemoryErrorType.serialization)
+                {
+                    ContextAccessDenialReason.INVALID_METADATA
+                }
+                else
+                {
+                    ContextAccessDenialReason.METADATA_UNAVAILABLE
+                }
+            )
+        }
 
     override suspend fun getLockKeys(): Set<String> =
         MemoryClient.getLockKeys().requireValue("list remote lock keys")

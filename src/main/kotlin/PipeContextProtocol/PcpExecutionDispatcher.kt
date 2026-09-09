@@ -1,5 +1,6 @@
 package com.TTT.PipeContextProtocol
 
+import com.TTT.Context.ContextAccessDeniedException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
@@ -124,6 +125,10 @@ class PcpExecutionDispatcher
             val executor = routeRequest(requestTransport)
             executor.execute(request, context)
         }
+        catch(e: ContextAccessDeniedException)
+        {
+            throw e
+        }
         catch(e: Exception)
         {
             val transport = responseParser.determineTransport(request)
@@ -187,6 +192,10 @@ class PcpExecutionDispatcher
                     errors.add(result.error)
                 }
             }
+        }
+        catch(e: ContextAccessDeniedException)
+        {
+            throw e
         }
         catch(e: Exception)
         {

@@ -1,5 +1,7 @@
 package com.TTT.PipeContextProtocol
 
+import com.TTT.Context.ContextAccessDeniedException
+
 /**
  * Handler for PCP requests that involve native function calls.
  * Integrates with existing PCP request processing pipeline to execute
@@ -138,6 +140,10 @@ class PcpFunctionHandler : PcpExecutor
                 error = invocationResult.error
             )
         } 
+        catch(e: ContextAccessDeniedException)
+        {
+            throw e
+        }
         catch(e: Exception)
         {
             PcpFunctionResponse(

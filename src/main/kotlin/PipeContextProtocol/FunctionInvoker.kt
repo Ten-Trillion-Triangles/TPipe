@@ -1,5 +1,6 @@
 package com.TTT.PipeContextProtocol
 
+import com.TTT.Context.ContextAccessDeniedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 
@@ -80,6 +81,10 @@ class FunctionInvoker
             )
         } 
         catch(e: CancellationException)
+        {
+            throw e
+        }
+        catch(e: ContextAccessDeniedException)
         {
             throw e
         }

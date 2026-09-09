@@ -90,6 +90,14 @@ object MemoryIntrospection
     }
 
     /**
+     * Gets the configured introspection leash, if one was explicitly installed.
+     *
+     * This distinction lets layered tools preserve an existing leash while still
+     * providing their historical permissive defaults when no leash is active.
+     */
+    fun getCurrentConfigOrNull(): MemoryIntrospectionConfig? = configThreadLocal.get()
+
+    /**
      * Checks if a specific page key is allowed under the current scope.
      * @param pageKey The key to check.
      * @return True if allowed, false otherwise.
@@ -131,19 +139,18 @@ object MemoryIntrospection
             return false
         }
 
-        // If it's a new page, check allowPageCreation
-        val pageExists = ContextBank.getPageKeys().contains(pageKey)
-        if(!pageExists && !config.allowPageCreation)
+        if(!config.allowedPageKeys.contains("*") && !config.allowedPageKeys.contains(pageKey))
         {
             return false
         }
 
-        // Check if the key itself is allowed
-        if(config.allowedPageKeys.contains("*"))
+        // If it's a new page, check allowPageCreation without enumerating.
+        val pageExists = ContextBank.contextWindowExistsForWriteLeash(pageKey)
+        if(!pageExists && !config.allowPageCreation)
         {
-            return true
+            return false
         }
-        return config.allowedPageKeys.contains(pageKey)
+        return true
     }
 
     /**
@@ -160,16 +167,18 @@ object MemoryIntrospection
             return false
         }
 
-        val pageExists = ContextBank.getPageKeysSuspend().contains(pageKey)
-        if(!pageExists && !config.allowPageCreation)
+        if(!config.allowedPageKeys.contains("*") && !config.allowedPageKeys.contains(pageKey))
         {
             return false
         }
 
-        if(config.allowedPageKeys.contains("*"))
+        // If it's a new page, check allowPageCreation without requiring
+        // ContextAccess ENUMERATE authority for the named target.
+        val pageExists = ContextBank.contextWindowExistsForWriteLeashSuspend(pageKey)
+        if(!pageExists && !config.allowPageCreation)
         {
-            return true
+            return false
         }
-        return config.allowedPageKeys.contains(pageKey)
+        return true
     }
 }

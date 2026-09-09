@@ -2,6 +2,7 @@
 
 ## Table of Contents
 - [Overview](#overview)
+- [ContextBank Access Sandboxing](#contextbank-access-sandboxing)
 - [The Leash Concept](#the-leash-concept)
 - [MemoryIntrospectionConfig](#memoryintrospectionconfig)
 - [Scoped Execution](#scoped-execution)
@@ -28,6 +29,57 @@ Memory introspection allows autonomous agents to query and manipulate TPipe's me
 - Multi-agent systems with isolated memory spaces
 - Sandboxed AI assistants
 - Hierarchical agent architectures with different privilege levels
+
+## ContextBank Access Sandboxing
+
+`MemoryIntrospection` is a compatibility leash for PCP memory tools. For a
+stronger, host-controlled boundary around direct `ContextBank` access, use
+`ContextAccess`. It is provider-neutral and opt-in:
+
+```kotlin
+val scope = ContextAccess.issueRootScope(
+    ExecutionPrincipal("agent-1"),
+    ContextAccessRights(
+        readableResources = setOf(ContextResourceSelector.Resource("private-page")),
+        writableResources = setOf(ContextResourceSelector.Resource("private-page")),
+        enumerableResources = setOf(ContextResourceSelector.Resource("private-page"))
+    )
+)
+
+ContextAccess.withCoroutineScope(scope) {
+    ContextBank.getContextFromBankSuspend("private-page")
+}
+```
+
+Hosts enroll a page, todo list, or banked context with
+`ContextBank.registerResourceMetadata(...)`. Enrollment is stored in a
+versioned per-resource sidecar. A missing sidecar deliberately preserves the
+legacy shared behavior; a corrupt or unsupported sidecar fails closed. The
+sidecar contains only an opaque resource identifier and optional opaque
+boundary identifier, not a changed `ContextWindow` or `TodoList` payload.
+
+Nested scopes are intersections, so child code can remove rights but cannot
+restore or broaden them. `withCoroutineScope` carries the authority across
+dispatcher changes, and pipeline, manifold, and local P2P execution paths
+reinstall the active scope at their boundaries. Authority is not serialized in
+`P2PRequest`; a remote host must establish its own local scope.
+
+Protected direct operations throw `ContextAccessDeniedException` before value
+retrieval, callbacks, persistence, or remote calls. Mutable-reference APIs are
+rejected inside a secured scope; use copying APIs or bounded mutation
+callbacks. `ContextLock` remains independent: an operation must satisfy both
+the access scope and the lock/passthrough decision.
+
+For PCP callers, existing `MemoryIntrospectionTools` names and result
+contracts remain compatible. Hosts that want typed protected denials can
+register `SecureMemoryIntrospectionTools`, whose registrations use the
+`secure_` prefix. Remote secured access requires the optional
+`ContextResourceMetadataBackend` capability; old persistence backends continue
+to compile and retain unscoped legacy behavior.
+
+This TPipe layer protects ContextBank-originated access only. Trace/event
+visibility, provider-egress manifests, already-materialized context values,
+and Apex session policy remain host-level responsibilities.
 
 ## The Leash Concept
 

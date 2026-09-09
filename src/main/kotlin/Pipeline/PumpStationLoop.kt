@@ -1,5 +1,8 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ContextAccessDeniedException
+import com.TTT.Context.ContextAccess
+import com.TTT.Context.ContextAccessScope
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseRole
 import com.TTT.Context.LoreBook
@@ -900,6 +903,7 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
     val seq = asyncSeqCounterInternal.incrementAndGet()
     val turnIndexSnapshot = taskState.turnIndex
     val dispatcher = asyncScope
+    val accessScope = ContextAccess.currentScope()
 
     val launchOn: kotlinx.coroutines.CoroutineScope =
         if (asyncJobsScopedToStationInternal) dispatcher
@@ -911,8 +915,10 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
     launchOn.launch {
         try
         {
-            val result = semaphore.withPermit {
-                invokePathInternal(path, input, registerAsInteractiveControlPath = false)
+            val result = withCapturedContextAccessScope(accessScope) {
+                semaphore.withPermit {
+                    invokePathInternal(path, input, registerAsInteractiveControlPath = false)
+                }
             }
             val entry = PendingTurnEntry(
                 seq = seq,
@@ -936,6 +942,7 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
         }
         catch (e: Throwable)
         {
+            if(e is ContextAccessDeniedException) throw e
             emitEventInternal(PathFailed(
                 runId = taskState.runId,
                 turnIndex = turnIndexSnapshot,
@@ -2575,7 +2582,17 @@ private fun PumpStation.launchAsyncJob(block: suspend () -> Unit): kotlinx.corou
     val launchOn: kotlinx.coroutines.CoroutineScope =
         if (asyncJobsScopedToStationInternal) asyncScope
         else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.GlobalScope.coroutineContext)
-    return launchOn.launch { block() }
+    val accessScope = ContextAccess.currentScope()
+    return launchOn.launch { withCapturedContextAccessScope(accessScope, block) }
+}
+
+/** Reinstall authority captured before a detached station job was launched. */
+private suspend fun <T> withCapturedContextAccessScope(
+    scope: ContextAccessScope?,
+    block: suspend () -> T
+): T
+{
+    return if(scope == null) block() else ContextAccess.withCoroutineScope(scope, block)
 }
 
 internal suspend fun PumpStation.runBackgroundAgentsPhase()
@@ -2587,6 +2604,7 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
         permits = maxConcurrentBackgroundAgentsInternal.coerceAtLeast(1)
     )
     val dispatcher = asyncScope
+    val accessScope = ContextAccess.currentScope()
 
     for (slot in additionalHarnessAgentSlotsInternal)
 {
@@ -2604,29 +2622,32 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
             backgroundJobs += launchOn.launch {
                 try
                 {
-                    val agent = slot.builderFunction?.invoke(this@runBackgroundAgentsPhase) ?: slot.agent
-                    if (agent != null)
+                    withCapturedContextAccessScope(accessScope)
                     {
-                        agent.setParentInterface(this@runBackgroundAgentsPhase)
-                        agent.P2PInit()
-                        semaphore.withPermit {
-                            val result = agent.executeLocal(this@runBackgroundAgentsPhase.buildTurnContent())
-                            if (appends)
-                            {
-                                val entry = PendingTurnEntry(
-                                    seq = seq,
-                                    turnIndex = turnIndexSnapshot,
-                                    pathName = null,
-                                    agentName = agentNameHint,
-                                    source = "asyncHarnessAgent",
-                                    result = result,
-                                    inputTokens = null,
-                                    outputTokens = null,
-                                    totalTokens = null,
-                                    passPipeline = result.passPipeline,
-                                    terminatePipeline = result.terminatePipeline
-                                )
-                                pendingAsyncResultsInternal.trySend(entry)
+                        val agent = slot.builderFunction?.invoke(this@runBackgroundAgentsPhase) ?: slot.agent
+                        if (agent != null)
+                        {
+                            agent.setParentInterface(this@runBackgroundAgentsPhase)
+                            agent.P2PInit()
+                            semaphore.withPermit {
+                                val result = agent.executeLocal(this@runBackgroundAgentsPhase.buildTurnContent())
+                                if (appends)
+                                {
+                                    val entry = PendingTurnEntry(
+                                        seq = seq,
+                                        turnIndex = turnIndexSnapshot,
+                                        pathName = null,
+                                        agentName = agentNameHint,
+                                        source = "asyncHarnessAgent",
+                                        result = result,
+                                        inputTokens = null,
+                                        outputTokens = null,
+                                        totalTokens = null,
+                                        passPipeline = result.passPipeline,
+                                        terminatePipeline = result.terminatePipeline
+                                    )
+                                    pendingAsyncResultsInternal.trySend(entry)
+                                }
                             }
                         }
                     }
@@ -2638,6 +2659,7 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
                 }
                 catch (e: Exception)
                 {
+                    if(e is ContextAccessDeniedException) throw e
                     // Isolate failures
                 }
             }

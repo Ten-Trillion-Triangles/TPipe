@@ -1,5 +1,6 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ContextAccessDeniedException
 import com.TTT.Debug.PipeTracer
 import com.TTT.Debug.TraceAutoExporter
 import com.TTT.Debug.TraceConfig
@@ -475,6 +476,7 @@ class Connector : P2PInterface
         }
         catch(e: Exception)
         {
+            if(e is ContextAccessDeniedException) throw e
             content.terminatePipeline = true
             return content
         }

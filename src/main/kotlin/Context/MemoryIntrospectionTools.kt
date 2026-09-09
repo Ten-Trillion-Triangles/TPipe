@@ -24,7 +24,14 @@ object MemoryIntrospectionTools
      */
     suspend fun listPageKeys(): List<String>
     {
-        val allKeys = ContextBank.getPageKeysSuspend()
+        val allKeys = try
+        {
+            ContextBank.getPageKeysSuspend()
+        }
+        catch(_: ContextAccessDeniedException)
+        {
+            return emptyList()
+        }
         return allKeys.filter { key ->
             MemoryIntrospection.canRead(key) && !ContextLock.isPageLockedSuspend(key)
         }
@@ -36,6 +43,7 @@ object MemoryIntrospectionTools
      */
     suspend fun getLorebookEntry(pageKey: String, key: String): LoreBook?
     {
+        if(!hasContextAccess(pageKey, ContextAccessOperation.READ)) return null
         if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return null
         if(ContextLock.isKeyLockedSuspend(key, pageKey = pageKey)) return null
 
@@ -49,6 +57,7 @@ object MemoryIntrospectionTools
      */
     suspend fun getLorebook(pageKey: String): Map<String, LoreBook>
     {
+        if(!hasContextAccess(pageKey, ContextAccessOperation.READ)) return emptyMap()
         if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return emptyMap()
 
         val window = ContextBank.getContextFromBankSuspend(pageKey)
@@ -118,6 +127,7 @@ object MemoryIntrospectionTools
         skipRemote: Boolean
     ): List<LoreBookQueryResult>
     {
+        if(!hasContextAccess(pageKey, ContextAccessOperation.READ, skipRemote = skipRemote)) return emptyList()
         if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey, skipRemote)) return emptyList()
 
         // Use a backend's optional query capability when it has one. Exact
@@ -189,6 +199,7 @@ object MemoryIntrospectionTools
         skipRemote: Boolean
     ): List<String>
     {
+        if(!hasContextAccess(pageKey, ContextAccessOperation.READ, skipRemote = skipRemote)) return emptyList()
         if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey, skipRemote)) return emptyList()
 
         queryBackendOrNull(pageKey, skipRemote)?.let { backend ->
@@ -239,6 +250,10 @@ object MemoryIntrospectionTools
         extractRegex: String = ""
     ): MemorySearchResult
     {
+        if(!hasContextAccess(pageKey, ContextAccessOperation.READ))
+        {
+            return MemorySearchResult(emptyList(), emptyList())
+        }
         if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey))
         {
             return MemorySearchResult(emptyList(), emptyList())
@@ -267,7 +282,16 @@ object MemoryIntrospectionTools
      */
     suspend fun updateLorebookEntry(pageKey: String, entry: LoreBook): Boolean
     {
-        if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
+        if(!hasContextAccess(pageKey, ContextAccessOperation.WRITE)) return false
+        val canWrite = try
+        {
+            MemoryIntrospection.canWriteSuspend(pageKey)
+        }
+        catch(_: ContextAccessDeniedException)
+        {
+            false
+        }
+        if(!canWrite || ContextLock.isPageLockedSuspend(pageKey)) return false
         if(ContextLock.isKeyLockedSuspend(entry.key, pageKey = pageKey)) return false
 
         ContextBank.mutateContextWindowSuspend(pageKey, mode = ContextBank.getStorageMode(pageKey)) { window ->
@@ -282,7 +306,16 @@ object MemoryIntrospectionTools
      */
     suspend fun deleteLorebookEntry(pageKey: String, key: String): Boolean
     {
-        if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
+        if(!hasContextAccess(pageKey, ContextAccessOperation.WRITE)) return false
+        val canWrite = try
+        {
+            MemoryIntrospection.canWriteSuspend(pageKey)
+        }
+        catch(_: ContextAccessDeniedException)
+        {
+            false
+        }
+        if(!canWrite || ContextLock.isPageLockedSuspend(pageKey)) return false
         if(ContextLock.isKeyLockedSuspend(key, pageKey = pageKey)) return false
 
         var removed = false
@@ -298,6 +331,7 @@ object MemoryIntrospectionTools
      */
     suspend fun getTodoList(pageKey: String): TodoList?
     {
+        if(!hasContextAccess(pageKey, ContextAccessOperation.READ, ContextResourceKind.TODO_LIST)) return null
         if(!MemoryIntrospection.canRead(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return null
         return ContextBank.getPagedTodoListSuspend(pageKey)
     }
@@ -308,9 +342,73 @@ object MemoryIntrospectionTools
      */
     suspend fun updateTodoList(pageKey: String, todoList: TodoList): Boolean
     {
-        if(!MemoryIntrospection.canWriteSuspend(pageKey) || ContextLock.isPageLockedSuspend(pageKey)) return false
-        ContextBank.emplaceTodoListSuspend(pageKey, todoList, ContextBank.getStorageMode(pageKey))
+        return updateTodoListInternal(pageKey, todoList, propagateAccessDenial = false)
+    }
+
+    /**
+     * Update a todo list while preserving typed ContextBank denials for secure
+     * callers. The public legacy method above keeps its historical Boolean
+     * result contract.
+     */
+    internal suspend fun updateTodoListWithTypedAccessDenial(
+        pageKey: String,
+        todoList: TodoList
+    ): Boolean
+    {
+        return updateTodoListInternal(pageKey, todoList, propagateAccessDenial = true)
+    }
+
+    /** Execute the todo update with an explicit legacy-versus-secure denial policy. */
+    private suspend fun updateTodoListInternal(
+        pageKey: String,
+        todoList: TodoList,
+        propagateAccessDenial: Boolean
+    ): Boolean
+    {
+        if(!hasContextAccess(pageKey, ContextAccessOperation.WRITE, ContextResourceKind.TODO_LIST)) return false
+        val canWrite = try
+        {
+            MemoryIntrospection.canWriteSuspend(pageKey)
+        }
+        catch(e: ContextAccessDeniedException)
+        {
+            if(propagateAccessDenial) throw e
+            return false
+        }
+        if(!canWrite || ContextLock.isPageLockedSuspend(pageKey)) return false
+        try
+        {
+            ContextBank.emplaceTodoListSuspend(pageKey, todoList, ContextBank.getStorageMode(pageKey))
+        }
+        catch(e: ContextAccessDeniedException)
+        {
+            if(propagateAccessDenial) throw e
+            return false
+        }
         return true
+    }
+
+    /**
+     * Preflight ContextBank authority before optional query backends or local
+     * value reads are invoked. Legacy tools translate a typed denial back to
+     * their historical safe-result contract.
+     */
+    private suspend fun hasContextAccess(
+        pageKey: String,
+        operation: ContextAccessOperation,
+        kind: ContextResourceKind = ContextResourceKind.CONTEXT_WINDOW,
+        skipRemote: Boolean = false
+    ): Boolean
+    {
+        return try
+        {
+            ContextBank.requireAccessSuspend(pageKey, kind, operation, skipRemote)
+            true
+        }
+        catch(_: ContextAccessDeniedException)
+        {
+            false
+        }
     }
 
     /**

@@ -152,7 +152,7 @@ object ContextLock
     {
         val affectedPages = if(pageKeys.isEmpty())
         {
-            ContextBank.getPageKeysSuspend(skipRemote = true)
+            ContextBank.getPageKeysForContextLockSuspend()
         }
         else
         {
@@ -183,7 +183,7 @@ object ContextLock
 
             for(page in affectedPages)
             {
-                val pageWindow = ContextBank.withContextWindowReferenceSuspend(page, skipRemote = true) { contextWindow ->
+                val pageWindow = ContextBank.withContextWindowReferenceForContextLock(page, skipRemote = true) { contextWindow ->
                     contextWindow.metaData["isLocked"] = lockState
                 }
                 val lorebook = pageWindow.findLoreBookEntry(key)
@@ -269,13 +269,13 @@ object ContextLock
         val pagesToClear = when
         {
             bundle.pages.isNotEmpty() -> bundle.pages.toSet()
-            bundle.isGlobal -> ContextBank.getPageKeysSuspend(skipRemote = true).toSet()
+            bundle.isGlobal -> ContextBank.getPageKeysForContextLockSuspend().toSet()
             else -> parsePageKeys(key).toSet()
         }
 
         for(page in pagesToClear)
         {
-            ContextBank.withContextWindowReferenceSuspend(page, skipRemote = true) { pageWindow ->
+            ContextBank.withContextWindowReferenceForContextLock(page, skipRemote = true) { pageWindow ->
                 pageWindow.metaData.remove("isLocked")
             }
         }
@@ -413,13 +413,13 @@ object ContextLock
         val pagesToUpdate = when
         {
             bundle.pages.isNotEmpty() -> bundle.pages.toSet()
-            bundle.isGlobal -> ContextBank.getPageKeysSuspend(skipRemote = true).toSet()
+            bundle.isGlobal -> ContextBank.getPageKeysForContextLockSuspend().toSet()
             else -> parsePageKeys(key).toSet()
         }
 
         for(page in pagesToUpdate)
         {
-            ContextBank.withContextWindowReferenceSuspend(page, skipRemote = true) { pageWindow ->
+            ContextBank.withContextWindowReferenceForContextLock(page, skipRemote = true) { pageWindow ->
                 pageWindow.metaData["isLocked"] = lockState
             }
         }

@@ -1,5 +1,6 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ContextAccessDeniedException
 import com.TTT.Debug.EventPriorityMapper
 import com.TTT.Debug.FailureAnalysis
 import com.TTT.Debug.PipeTracer
@@ -2072,15 +2073,34 @@ class Junction : P2PInterface
                 ).apply {
                     metadata["junctionSummarizerContext"] = context
                 }
-                val result = runCatching {
+                val result = try
+                {
                     junctionMemoryPolicy.summaryAgent!!.executeLocal(agentInput)
                 }
-                result.getOrNull()?.text?.ifBlank { trimmedSeed } ?: trimmedSeed
+                catch(e: ContextAccessDeniedException)
+                {
+                    throw e
+                }
+                catch(_: Exception)
+                {
+                    null
+                }
+                result?.text?.ifBlank { trimmedSeed } ?: trimmedSeed
             }
             junctionMemoryPolicy.enableSummarization && junctionMemoryPolicy.summarizer != null ->
             {
-                runCatching { junctionMemoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty() }
-                    .getOrDefault("")
+                try
+                {
+                    junctionMemoryPolicy.summarizer?.invoke(trimmedSeed).orEmpty()
+                }
+                catch(e: ContextAccessDeniedException)
+                {
+                    throw e
+                }
+                catch(_: Exception)
+                {
+                    ""
+                }
                     .ifBlank { trimmedSeed }
             }
             else -> trimmedSeed
@@ -3121,6 +3141,7 @@ class Junction : P2PInterface
         }
         catch(e: Exception)
         {
+            if(e is ContextAccessDeniedException) throw e
             // Any participant failure is converted into a structured phase result so the recipe can stop
             // cleanly, trace the error, and preserve the workflow state for inspection.
             trace(
@@ -4049,6 +4070,7 @@ class Junction : P2PInterface
         }
         catch(e: Exception)
         {
+            if(e is ContextAccessDeniedException) throw e
             // Participant failures are folded into a neutral opinion instead of crashing the entire harness so
             // the moderator can still inspect a partial round and decide how to continue.
             trace(
@@ -4277,6 +4299,7 @@ class Junction : P2PInterface
         }
         catch(e: Exception)
         {
+            if(e is ContextAccessDeniedException) throw e
             discussionState.roundLog.add("Moderator directive failed: ${e.message}")
             buildDefaultDirective(voteResults)
         }

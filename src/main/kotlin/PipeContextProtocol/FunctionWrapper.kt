@@ -1,5 +1,8 @@
 package com.TTT.PipeContextProtocol
 
+import com.TTT.Context.ContextAccessDeniedException
+import kotlinx.coroutines.CancellationException
+import java.lang.reflect.InvocationTargetException
 import kotlin.reflect.*
 import kotlin.reflect.full.*
 
@@ -146,7 +149,20 @@ class LambdaFunction<T>(
         val invokeMethod = lambda!!::class.java.methods.find { it.name == "invoke" }
             ?: throw IllegalStateException("Lambda function does not have invoke method")
         
-        return invokeMethod.invoke(lambda, *orderedParams)
+        return try
+        {
+            invokeMethod.invoke(lambda, *orderedParams)
+        }
+        catch(e: InvocationTargetException)
+        {
+            val cause = e.targetException ?: e.cause
+            when(cause)
+            {
+                is ContextAccessDeniedException -> throw cause
+                is CancellationException -> throw cause
+                else -> throw e
+            }
+        }
     }
     
     /**

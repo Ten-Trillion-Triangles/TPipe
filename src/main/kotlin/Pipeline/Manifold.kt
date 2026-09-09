@@ -1,5 +1,7 @@
 package com.TTT.Pipeline
 
+import com.TTT.Context.ContextAccess
+import com.TTT.Context.ContextAccessDeniedException
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
@@ -1633,14 +1635,16 @@ class Manifold : P2PInterface
      */
     suspend fun execute(content: MultimodalContent): MultimodalContent
     {
-        implementationPlanLifecycleGuard.beginExecution()
-        try
-        {
-            return executeInternal(content)
-        }
-        finally
-        {
-            implementationPlanLifecycleGuard.endExecution()
+        return ContextAccess.withCurrentScope {
+            implementationPlanLifecycleGuard.beginExecution()
+            try
+            {
+                executeInternal(content)
+            }
+            finally
+            {
+                implementationPlanLifecycleGuard.endExecution()
+            }
         }
     }
 
@@ -2306,6 +2310,11 @@ class Manifold : P2PInterface
             catch(e: com.TTT.P2P.KillSwitchException)
             {
                 // KillSwitchException must never be caught — it must propagate to terminate the agent
+                throw e
+            }
+            catch(e: ContextAccessDeniedException)
+            {
+                // Protected ContextBank failures must retain their typed security contract.
                 throw e
             }
             catch(e: Exception)

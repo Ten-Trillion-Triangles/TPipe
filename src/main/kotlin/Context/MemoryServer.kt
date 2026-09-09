@@ -291,6 +291,112 @@ object MemoryServer
                 }
             }
 
+            route("/metadata")
+            {
+                get("/{kind}/{key}/exists")
+                {
+                    val kind = call.parameters["kind"]?.let { value ->
+                        runCatching { ContextResourceKind.valueOf(value.uppercase()) }.getOrNull()
+                    } ?: return@get call.respondMemoryError(
+                        HttpStatusCode.BadRequest,
+                        MemoryErrorType.badRequest,
+                        "Missing or invalid resource kind"
+                    )
+                    val key = call.parameters["key"] ?: return@get call.respondMemoryError(
+                        HttpStatusCode.BadRequest,
+                        MemoryErrorType.badRequest,
+                        "Missing resource key"
+                    )
+                    val exists = when(kind)
+                    {
+                        ContextResourceKind.CONTEXT_WINDOW -> ContextBank.contextWindowExistsLocallySuspend(key)
+                        ContextResourceKind.TODO_LIST -> ContextBank.todoListExistsLocallySuspend(key)
+                        ContextResourceKind.BANKED_CONTEXT -> true
+                    }
+                    call.respond(exists)
+                }
+
+                get("/{kind}/{key}")
+                {
+                    val kind = call.parameters["kind"]?.let { value ->
+                        runCatching { ContextResourceKind.valueOf(value.uppercase()) }.getOrNull()
+                    } ?: return@get call.respondMemoryError(
+                        HttpStatusCode.BadRequest,
+                        MemoryErrorType.badRequest,
+                        "Missing or invalid resource kind"
+                    )
+                    val key = call.parameters["key"] ?: return@get call.respondMemoryError(
+                        HttpStatusCode.BadRequest,
+                        MemoryErrorType.badRequest,
+                        "Missing resource key"
+                    )
+                    val metadata = ContextBank.getLocalResourceMetadataSuspend(key, kind)
+                        ?: return@get call.respondMemoryError(
+                            HttpStatusCode.NotFound,
+                            MemoryErrorType.notFound,
+                            "Resource metadata '$key' was not found"
+                        )
+                    call.respond(metadata)
+                }
+
+                post("/{kind}/{key}")
+                {
+                    val kind = call.parameters["kind"]?.let { value ->
+                        runCatching { ContextResourceKind.valueOf(value.uppercase()) }.getOrNull()
+                    } ?: return@post call.respondMemoryError(
+                        HttpStatusCode.BadRequest,
+                        MemoryErrorType.badRequest,
+                        "Missing or invalid resource kind"
+                    )
+                    val key = call.parameters["key"] ?: return@post call.respondMemoryError(
+                        HttpStatusCode.BadRequest,
+                        MemoryErrorType.badRequest,
+                        "Missing resource key"
+                    )
+                    val metadata = ContextResourceMetadata.decodeStrict(call.receiveText())
+                        ?: return@post call.respondMemoryError(
+                            HttpStatusCode.BadRequest,
+                            MemoryErrorType.serialization,
+                            "Failed to deserialize resource metadata"
+                        )
+                    if(metadata.resourceKind != kind)
+                    {
+                        return@post call.respondMemoryError(
+                            HttpStatusCode.BadRequest,
+                            MemoryErrorType.badRequest,
+                            "Resource metadata kind does not match the route"
+                        )
+                    }
+                    ContextBank.registerLocalResourceMetadataSuspend(key, metadata)
+                    call.respond(metadata)
+                }
+
+                delete("/{kind}/{key}")
+                {
+                    val kind = call.parameters["kind"]?.let { value ->
+                        runCatching { ContextResourceKind.valueOf(value.uppercase()) }.getOrNull()
+                    } ?: return@delete call.respondMemoryError(
+                        HttpStatusCode.BadRequest,
+                        MemoryErrorType.badRequest,
+                        "Missing or invalid resource kind"
+                    )
+                    val key = call.parameters["key"] ?: return@delete call.respondMemoryError(
+                        HttpStatusCode.BadRequest,
+                        MemoryErrorType.badRequest,
+                        "Missing resource key"
+                    )
+                    if(!ContextBank.deleteLocalResourceMetadataSuspend(key, kind))
+                    {
+                        return@delete call.respondMemoryError(
+                            HttpStatusCode.NotFound,
+                            MemoryErrorType.notFound,
+                            "Resource metadata '$key' was not found"
+                        )
+                    }
+                    call.respondNoContent()
+                }
+            }
+
             route("/lock")
             {
                 get("/keys")
