@@ -561,10 +561,18 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var maxRepairPromptTokens: Int = 500
 
     /**
-     * If true, throw error and exit PumpStation when dispatch agent generates invalid JSON
-     * for a path request.
+     * Failure recovery policy for common failure modes.
      */
-    var stopHarnessOnInvalidPathRequest: Boolean = false
+    var failurePolicy: PumpStationFailurePolicy = PumpStationFailurePolicy()
+
+    /**
+     * If true, throw error and exit PumpStation when dispatch agent generates invalid JSON
+     * for a path request. This property delegates to [failurePolicy] so the DSL
+     * and runtime share one authoritative value.
+     */
+    var stopHarnessOnInvalidPathRequest: Boolean
+        get() = failurePolicy.stopHarnessOnInvalidPathRequest
+        set(value) { failurePolicy.stopHarnessOnInvalidPathRequest = value }
 
     /**
      * If true, the dispatch LLM must commit a non-null
@@ -573,11 +581,6 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * to the next-turn dispatch history (no hard dispatch failure).
      */
     var requirePathSelectionRationale: Boolean = true
-
-    /**
-     * Failure recovery policy for common failure modes.
-     */
-    var failurePolicy: PumpStationFailurePolicy = PumpStationFailurePolicy()
 
 //=========================================Loop Guards==============================================================
 
@@ -1332,7 +1335,6 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setMemoryUpdateTimeoutMs(memoryUpdateTimeoutMs)
             .setMaxBlowoutRecoveries(maxBlowoutRecoveries)
             .setMaxRepairPromptTokens(maxRepairPromptTokens)
-            .setStopHarnessOnInvalidPathRequest(stopHarnessOnInvalidPathRequest)
             .setRequirePathSelectionRationale(requirePathSelectionRationale)
             .setFailurePolicy(failurePolicy)
 

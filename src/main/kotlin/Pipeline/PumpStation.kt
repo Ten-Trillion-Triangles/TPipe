@@ -1741,12 +1741,6 @@ private fun pathKey(name: String): String = name.lowercase()
     internal var turnSummary = ""
 
     /**
-     * If true, and the dispatch agent generates invalid json for a path request, throw an error, and
-     * exit the PumpStation harness on the spot.
-     */
-    private var stopHarnessOnInvalidPathRequest = false
-
-    /**
      * Mirror of [PumpStationFailurePolicy.requirePathSelectionRationale].
      * Cached at build/init time and re-read on every dispatch turn.
      * If true, the dispatch LLM is required to commit a non-null
@@ -5130,7 +5124,7 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     fun setStopHarnessOnInvalidPathRequest(stop: Boolean): PumpStation
     {
-        this.stopHarnessOnInvalidPathRequest = stop
+        this.failurePolicy.stopHarnessOnInvalidPathRequest = stop
         return this
     }
 
