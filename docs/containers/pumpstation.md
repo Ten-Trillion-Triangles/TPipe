@@ -232,6 +232,17 @@ If the harness cannot parse the dispatch output as `PathRequest`, it invokes `bu
 
 The error message the harness injects for an unknown path or invalid path request is built by `buildLlmErrorMessage` (`Pipeline/PumpStationHelpers.kt:743`). It is natural-language, names the available paths, and explains what a valid `PathRequest` looks like — the dispatch agent sees this on the next turn as part of `turnHistory`.
 
+Rejected dispatch-output visibility is controlled independently for durable history and the immediate repair request:
+
+```kotlin
+pumpStation("safe") {
+    retainRejectedDispatchOutputInTurnHistory = false
+    includeRejectedDispatchOutputInRepairPrompt = false
+}
+```
+
+When `retainRejectedDispatchOutputInTurnHistory` is false, recovery notices keep their corrective guidance but omit rejected model text. When `includeRejectedDispatchOutputInRepairPrompt` is false, the repair agent receives a generic parse-failure notice and the required schema without the previous output. Both settings default to `true` for compatibility. Raw dispatch results remain available in `DispatchCompleted` and trace data for programmer observability.
+
 ### Prompt Transport and Latest Output
 
 PumpStation builds each judge, dispatch, and goal input through `buildTurnContent(history)`. `historyTransport` selects one representation for the supplied history:
@@ -788,6 +799,8 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `maxTotalPathCallsPerPath` | `Int?`                                   | `null`  | Loop guard on total calls per path; null disables. |
 | `pathLimitExceededPolicy` | `PathLimitExceededPolicy`                 | `Skip`  | `Skip`, `Halt`, or `Continue` when the per-path limit is hit. |
 | `requirePathSelectionRationale` | `Boolean`                            | `true`  | When true, the harness appends a one-shot reminder to the next dispatch prompt if the LLM returned a null `pathSelectionRationale`. See [Dispatch Contract: `pathSelectionRationale`](#dispatch-contract-pathselectionrationale). |
+| `retainRejectedDispatchOutputInTurnHistory` | `Boolean` | `true` | Retain rejected dispatch text in durable agent-facing recovery notices. Set false to keep only sanitized guidance. |
+| `includeRejectedDispatchOutputInRepairPrompt` | `Boolean` | `true` | Include the bounded rejected dispatch text in the immediate repair prompt. Set false to send only the parse failure and schema. |
 | `asyncPathsAppendToTurnHistory` | `Boolean`                             | `true`  | Station-wide default for whether async paths append their result to `turnHistory` on completion. Per-path opt-out via `suppressHistoryEmit` on the path block. |
 | `asyncAgentsAppendToTurnHistory` | `Boolean`                            | `false` | Station-wide default for whether async harness agents append their result to `turnHistory` on completion. Per-slot opt-in via `HarnessAgentSlot.appendsToTurnHistory`. |
 | `asyncJobGracePeriodMs` | `Long?`                                     | `null`  | Optional millisecond grace period given to in-flight async coroutines after finalization before `cancelAsyncJobs` cancels the `asyncScope`. `null` (the default) is unbounded. See [Async Substrate](#async-substrate) below. |
@@ -925,7 +938,9 @@ data class PumpStationFailurePolicy(
     var stashOversizedOutputs: Boolean = true,
     var callInterventionOnPathFailure: Boolean = true,
     var stopHarnessOnInvalidPathRequest: Boolean = false,
-    var requirePathSelectionRationale: Boolean = true
+    var requirePathSelectionRationale: Boolean = true,
+    var retainRejectedDispatchOutputInTurnHistory: Boolean = true,
+    var includeRejectedDispatchOutputInRepairPrompt: Boolean = true
 )
 ```
 
@@ -937,6 +952,8 @@ data class PumpStationFailurePolicy(
 | `callInterventionOnPathFailure` | `true` | Invoke `interventionAgent` after a path failure. |
 | `stopHarnessOnInvalidPathRequest` | `false` | When true, set `lastError = DispatchJsonRepairFailed` after repair budget is exhausted. |
 | `requirePathSelectionRationale` | `true` | When true, the harness appends a one-shot reminder to the next dispatch prompt if the LLM returned a null `pathSelectionRationale`. See [Dispatch Contract: `pathSelectionRationale`](#dispatch-contract-pathselectionrationale). The field is mirrored on the `PumpStationBuilder` (`requirePathSelectionRationale: Boolean = true`) and on `PumpStation` itself; `setRequirePathSelectionRationale(Boolean)` keeps both sides in sync. |
+| `retainRejectedDispatchOutputInTurnHistory` | `true` | When false, durable recovery notices omit rejected dispatch text while preserving corrective guidance. |
+| `includeRejectedDispatchOutputInRepairPrompt` | `true` | When false, repair prompts omit the rejected output and include only the parse failure and required schema. |
 
 ### Dispatch Contract: `pathSelectionRationale`
 

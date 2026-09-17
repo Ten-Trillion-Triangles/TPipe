@@ -145,6 +145,39 @@ class PumpStationPathSchemaValidationTest
                     "entry referencing pathSchema. Got history tail: " +
                     station.turnHistory.history.takeLast(3).map { it.content.text.take(120) }
             )
+            assertTrue(
+                hintEntries.any { it.content.text.contains("Hello I am not valid JSON") },
+                "Legacy mode must preserve the rejected pathSchema in the history notice."
+            )
+        }
+    }
+
+    @Test
+    fun buildPathInput_protectedHistoryModeSanitizesRejectedSchemaFromAgents()
+    {
+        runBlocking {
+            val (station, path) = stationForBuildPathInput()
+            val rejectedSchema = "Hello I am not valid JSON"
+            station.setRetainRejectedDispatchOutputInTurnHistory(false)
+            station.taskState.originalInput = MultimodalContent(text = "research Mars geology")
+
+            station.buildPathInput(
+                path,
+                PathRequest(pathName = "p1", pathSchema = rejectedSchema)
+            )
+
+            assertTrue(
+                station.turnHistory.history.any { it.content.text.contains("[Harness Notice]") },
+                "Protected mode must retain corrective guidance in turnHistory."
+            )
+            assertTrue(
+                station.turnHistory.history.none { it.content.text.contains(rejectedSchema) },
+                "Protected mode must remove the rejected schema from agent-facing history."
+            )
+            assertTrue(
+                !station.buildDispatchContent().text.contains(rejectedSchema),
+                "Protected mode must keep the rejected schema out of the next dispatch input."
+            )
         }
     }
 

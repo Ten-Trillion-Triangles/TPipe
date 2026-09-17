@@ -1311,7 +1311,20 @@ data class PumpStationFailurePolicy(
      * rationale field is not surfaced in the path-injection prompt and no
      * nudge is appended on empty.
      */
-    var requirePathSelectionRationale: Boolean = true
+    var requirePathSelectionRationale: Boolean = true,
+    /**
+     * If true, rejected dispatch material included in a durable turn-history
+     * recovery notice remains visible to future agents. When false, the
+     * recovery notice keeps its corrective guidance but omits the rejected
+     * model output.
+     */
+    var retainRejectedDispatchOutputInTurnHistory: Boolean = true,
+    /**
+     * If true, malformed dispatch output is echoed in the immediate repair
+     * prompt sent back to the dispatch agent. This does not affect durable
+     * turn history or programmer-facing events and traces.
+     */
+    var includeRejectedDispatchOutputInRepairPrompt: Boolean = true
 )
 
 //=========================================Snapshot===================================================================

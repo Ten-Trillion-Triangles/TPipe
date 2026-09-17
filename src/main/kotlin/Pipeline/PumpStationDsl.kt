@@ -582,6 +582,22 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      */
     var requirePathSelectionRationale: Boolean = true
 
+    /**
+     * Whether raw rejected dispatch output may appear in durable turn-history
+     * recovery notices supplied to future agents.
+     */
+    var retainRejectedDispatchOutputInTurnHistory: Boolean
+        get() = failurePolicy.retainRejectedDispatchOutputInTurnHistory
+        set(value) { failurePolicy.retainRejectedDispatchOutputInTurnHistory = value }
+
+    /**
+     * Whether raw rejected dispatch output is echoed in the immediate repair
+     * prompt sent back to the dispatch agent.
+     */
+    var includeRejectedDispatchOutputInRepairPrompt: Boolean
+        get() = failurePolicy.includeRejectedDispatchOutputInRepairPrompt
+        set(value) { failurePolicy.includeRejectedDispatchOutputInRepairPrompt = value }
+
 //=========================================Loop Guards==============================================================
 
     /**

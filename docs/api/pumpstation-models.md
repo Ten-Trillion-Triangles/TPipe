@@ -233,7 +233,9 @@ data class PumpStationFailurePolicy(
     var stashOversizedOutputs: Boolean = true,
     var callInterventionOnPathFailure: Boolean = true,
     var stopHarnessOnInvalidPathRequest: Boolean = false,
-    var requirePathSelectionRationale: Boolean = true
+    var requirePathSelectionRationale: Boolean = true,
+    var retainRejectedDispatchOutputInTurnHistory: Boolean = true,
+    var includeRejectedDispatchOutputInRepairPrompt: Boolean = true
 )
 ```
 
@@ -245,6 +247,8 @@ data class PumpStationFailurePolicy(
 | `callInterventionOnPathFailure` | `true` | Invoke `interventionAgent` after a path failure. |
 | `stopHarnessOnInvalidPathRequest` | `false` | When true, set `lastError = DispatchJsonRepairFailed` after repair budget is exhausted. |
 | `requirePathSelectionRationale` | `true` | When true, the harness appends a one-shot reminder to the next dispatch prompt if the LLM returned a null `pathSelectionRationale`. Mirrored on `PumpStationBuilder` and on `PumpStation` itself; `setRequirePathSelectionRationale(Boolean)` keeps both sides in sync. See [Dispatch Contract: `pathSelectionRationale`](../containers/pumpstation.md#dispatch-contract-pathselectionrationale). |
+| `retainRejectedDispatchOutputInTurnHistory` | `true` | When false, durable recovery notices omit rejected dispatch text while preserving corrective guidance. |
+| `includeRejectedDispatchOutputInRepairPrompt` | `true` | When false, repair prompts omit rejected output and include only the parse failure and required schema. |
 
 ### PumpStationSnapshot
 

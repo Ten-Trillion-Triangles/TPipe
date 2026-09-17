@@ -1071,11 +1071,19 @@ internal fun PumpStation.buildInvalidPathRequestMessage(details: Map<String, Any
 {
     val output = details["output"] ?: "(no output)"
     val available = (details["availablePaths"] as? List<*>)?.joinToString(", ") ?: "(none)"
+    val outputDetails = if (failurePolicy.retainRejectedDispatchOutputInTurnHistory)
+    {
+        "Output: $output"
+    }
+    else
+    {
+        "The rejected dispatch output was omitted from this agent-facing notice."
+    }
     return """
 [Harness Notice] Your dispatch output was not a valid PathRequest.
 
 What you did: Returned output that doesn't match the PathRequest schema.
-Output: $output
+$outputDetails
 
 Available paths: $available
 
@@ -1109,10 +1117,18 @@ internal fun PumpStation.buildPathSchemaFallbackMessage(details: Map<String, Any
 {
     val pathName = details["pathName"] ?: "(unknown)"
     val output = details["output"] ?: "(no output)"
+    val outputDetails = if (failurePolicy.retainRejectedDispatchOutputInTurnHistory)
+    {
+        "What you did: Returned `pathSchema` as: $output"
+    }
+    else
+    {
+        "The rejected `pathSchema` value was omitted from this agent-facing notice."
+    }
     return """
 [Harness Notice] Your dispatch output's pathSchema did not deserialize as a valid PathRequest JSON object.
 
-What you did: Returned `pathSchema` as: $output
+$outputDetails
 Why it's a problem: The path LLM would receive this literal string as its prompt and research it instead of the topic.
 What to do instead: Return a pathName in your dispatch JSON. Leave `pathSchema` blank or return it as a valid JSON object. The path's own `pathSchema` (defined on the path at registration time) is the canonical source of truth and will be used as the authoritative schema for path "$pathName".
 """.trimIndent()

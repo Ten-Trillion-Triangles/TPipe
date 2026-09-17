@@ -317,6 +317,10 @@ Stores the normalized plan in the staged builder. The value is copied during bui
 
 The equivalent `PumpStation` methods are `setHistoryTransport(...)`, `setGoalHistorySource(...)`, `setLatestContentInjectionEnabled(...)`, `setLatestContentPosition(...)`, and `setDeduplicateLatestContentAgainstHistory(...)`.
 
+### Rejected Dispatch Output Visibility
+
+`PumpStationFailurePolicy.retainRejectedDispatchOutputInTurnHistory` controls whether raw rejected dispatch text is retained in durable agent-facing recovery notices. `includeRejectedDispatchOutputInRepairPrompt` independently controls whether the immediate repair prompt echoes the rejected output. Both default to `true`; setting either to `false` sanitizes that agent-facing surface while `DispatchCompleted` and trace data retain raw output for observability. The DSL exposes both settings directly on `PumpStationBuilder`.
+
 ### Prompt Transport Enums
 
 `PumpStationHistoryTransport`, `PumpStationGoalHistorySource`, and `PumpStationLatestContentPosition` live in `src/main/kotlin/Enums/`. `TextOnly`, `Curated`, and `Suffix` are the defaults because they preserve one provider-facing history representation, keep goal prompts context-managed by default, and provide a stable dispatch prefix. `Full` selects the retained raw event history for goal validation.

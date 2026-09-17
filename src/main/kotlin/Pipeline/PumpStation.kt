@@ -5129,6 +5129,48 @@ private fun pathKey(name: String): String = name.lowercase()
     }
 
     /**
+     * Sets whether raw rejected dispatch output may be retained in durable
+     * turn-history recovery notices supplied to future agents.
+     *
+     * @param retain true to preserve the legacy raw-output notice; false to
+     *        keep only sanitized corrective guidance.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setRetainRejectedDispatchOutputInTurnHistory(retain: Boolean): PumpStation
+    {
+        this.failurePolicy.retainRejectedDispatchOutputInTurnHistory = retain
+        return this
+    }
+
+    /**
+     * Returns whether raw rejected dispatch output is retained in durable
+     * turn-history recovery notices.
+     */
+    fun getRetainRejectedDispatchOutputInTurnHistory(): Boolean =
+        failurePolicy.retainRejectedDispatchOutputInTurnHistory
+
+    /**
+     * Sets whether raw rejected dispatch output is echoed in the immediate
+     * repair prompt sent back to the dispatch agent.
+     *
+     * @param include true to include the bounded raw output; false to use a
+     *        generic parse-failure prompt.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setIncludeRejectedDispatchOutputInRepairPrompt(include: Boolean): PumpStation
+    {
+        this.failurePolicy.includeRejectedDispatchOutputInRepairPrompt = include
+        return this
+    }
+
+    /**
+     * Returns whether raw rejected dispatch output is included in repair
+     * prompts.
+     */
+    fun getIncludeRejectedDispatchOutputInRepairPrompt(): Boolean =
+        failurePolicy.includeRejectedDispatchOutputInRepairPrompt
+
+    /**
      * Sets the [requirePathSelectionRationale] flag on the failure policy,
      * controlling whether the dispatch LLM is required to commit a
      * [PathRequest.pathSelectionRationale] on every turn.
@@ -5991,6 +6033,10 @@ private fun pathKey(name: String): String = name.lowercase()
         this.failurePolicy.callInterventionOnPathFailure = policy.callInterventionOnPathFailure
         this.failurePolicy.stopHarnessOnInvalidPathRequest = policy.stopHarnessOnInvalidPathRequest
         this.failurePolicy.requirePathSelectionRationale = policy.requirePathSelectionRationale
+        this.failurePolicy.retainRejectedDispatchOutputInTurnHistory =
+            policy.retainRejectedDispatchOutputInTurnHistory
+        this.failurePolicy.includeRejectedDispatchOutputInRepairPrompt =
+            policy.includeRejectedDispatchOutputInRepairPrompt
         this.requirePathSelectionRationale = policy.requirePathSelectionRationale
         return this
     }

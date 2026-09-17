@@ -495,10 +495,14 @@ Please retry with a valid PathRequest JSON object. The schema is:
 }
 ```
 
+The `Previous output` line is controlled by `failurePolicy.includeRejectedDispatchOutputInRepairPrompt`. When that setting is false, the prompt contains a generic omission notice instead. The repair attempt still runs.
+
 The repair loop runs up to `failurePolicy.maxDispatchRepairAttempts` times (default 1). After the budget is exhausted:
 
-- `failurePolicy.stopHarnessOnInvalidPathRequest = false` (default): the turn continues without a path call. The natural-language error message is injected into `turnHistory` for the next turn.
+- `failurePolicy.stopHarnessOnInvalidPathRequest = false` (default): the turn continues without a path call. The rejected whole dispatch response is not appended to `turnHistory`.
 - `failurePolicy.stopHarnessOnInvalidPathRequest = true`: the harness records `lastError = DispatchJsonRepairFailed`. `runFinalizationPhase` emits `HarnessFailed`.
+
+Raw rejected output remains available in the `DispatchCompleted` event and trace data. Field-level recovery notices, such as an invalid `pathSchema`, are controlled by `failurePolicy.retainRejectedDispatchOutputInTurnHistory`; when false, the notice is sanitized before it enters agent-facing history.
 
 ### Multi-Path Repair Prompt
 
@@ -516,6 +520,8 @@ Please retry with a valid PathRequestList JSON object. The schema is:
   "batchRationale": "..."
 }
 ```
+
+The multi-path repair prompt follows the same `includeRejectedDispatchOutputInRepairPrompt` setting.
 
 The multi-path repair loop has the same configuration as the single-path loop: up to `failurePolicy.maxDispatchRepairAttempts` iterations, with `failurePolicy.stopHarnessOnInvalidPathRequest` controlling the post-exhaustion behavior. A `PathBatchFailed` event with `errorMessage` and `repairAttempts` rides at the end of the failed batch, distinct from per-path `PathFailed` events.
 

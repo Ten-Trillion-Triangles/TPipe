@@ -760,9 +760,17 @@ internal suspend fun PumpStation.runDispatchPhaseMulti(): PathRequest?
  */
 internal fun PumpStation.buildRepairPrompt(badOutput: MultimodalContent): MultimodalContent
 {
+    val previousOutput = if (failurePolicy.includeRejectedDispatchOutputInRepairPrompt)
+    {
+        "Previous output: ${badOutput.text.take(maxRepairPromptTokensInternal)}"
+    }
+    else
+    {
+        "Previous output omitted by PumpStationFailurePolicy."
+    }
     val repairText = """
 [Harness Notice] Your previous dispatch output was not parseable as a PathRequest JSON.
-Previous output: ${badOutput.text.take(maxRepairPromptTokensInternal)}
+$previousOutput
 
 Please retry with a valid PathRequest JSON object. The schema is:
 {
@@ -779,9 +787,17 @@ Please retry with a valid PathRequest JSON object. The schema is:
  */
 internal fun PumpStation.buildMultiPathRepairPrompt(badOutput: MultimodalContent): MultimodalContent
 {
+    val previousOutput = if (failurePolicy.includeRejectedDispatchOutputInRepairPrompt)
+    {
+        "Previous output: ${badOutput.text.take(maxRepairPromptTokensInternal)}"
+    }
+    else
+    {
+        "Previous output omitted by PumpStationFailurePolicy."
+    }
     val repairText = """
 [Harness Notice] Your previous dispatch output was not parseable as a PathRequestList JSON.
-Previous output: ${badOutput.text.take(maxRepairPromptTokensInternal)}
+$previousOutput
 
 Please retry with a valid PathRequestList JSON object. The schema is:
 {
@@ -1025,9 +1041,9 @@ internal fun PumpStation.buildPathInput(path: PathObject, request: PathRequest):
         else                           -> run {
             /*
              * Append a [Harness Notice] hint so the next dispatch LLM sees
-             * the constraint and self-corrects. We always include the
-             * dispatch-emitted garbage in the hint detail map so the next
-             * turn's dispatch LLM knows what was filtered.
+             * the constraint and self-corrects. The notice preserves the
+             * dispatch-emitted garbage only when the failure policy allows
+             * rejected output in durable turn history.
              */
             turnHistory.add(
                 ConverseData(
