@@ -2,13 +2,9 @@
 
 **Built by [Ten Trillion Triangles](https://tentrilliontriangles.com)**
 
+TPipe is an Agent Operating Environment designed for engineering robust, deterministic AI systems that can be embedded anywhere. Think of it as **Municipal Plumbing** for your LLMs: data flows through **Pipes** (Valves), gets routed along **Pipelines** (Mainlines), and pools into your ContextWindow and ContextBank (Reservoirs). Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade multi-agent swarms.
+
 **TPipe is the Agent Operating Environment**
-
----
-
-> ⚠️ **Startup License Branch** — This branch carries the TPipe Startup License, a free closed-source license for companies under $1M annual revenue. If you're looking for the **open-source AGPL-3.0** version of TPipe, use the default `main` branch instead. See [TPipe Pricing](https://tentrilliontriangles.com/pricing) for full licensing details.
-
----
 
 TPipe provides the managed substrate for AI agents, moving beyond simple library wrappers into a production-grade runtime. It treats LLM interactions as data flowing through a managed plumbing system: **Pipes** (Valves) transport data, **Pipelines** (Mainlines) route it, and **ContextWindow**/**ContextBank** (Reservoirs) provide persistent state. Built on Kotlin and GraalVM, it provides strict resource accounting, secure sandboxing, and structured reasoning for production-grade autonomous systems.
 
@@ -52,20 +48,22 @@ graph TD
 *   **Guardrails & Security**: Built-in content moderation, DNS rebinding protection, and secure sandboxing.
 
 ## Case Studies
-
-Real-world patterns and comparisons:
-
-- [Grounded Case Studies](docs/case-studies/grounded-case-studies.md) - TPipe as an operating environment for advanced systems
+Explore how TPipe is used in the field for high-stakes automation:
 - [Headless Use-Cases: TPipe in the Field](docs/case-studies/headless-use-cases.md)
-- [TPipe vs Apache Camel](docs/comparison/TPipe-vs-Apache-Camel-Comparison.md) - Complete feature comparison
 
 ## Documentation
 
 ### 🚀 Getting Started
+
+Start here for installation and your first TPipe application:
+
 - [Installation and Setup](docs/getting-started/installation-and-setup.md) - Requirements, installation, and environment setup
 - [First Steps](docs/getting-started/first-steps.md) - Your first pipe and pipeline
 
 ### 🧠 Core Concepts
+
+Essential TPipe features organized by complexity:
+
 #### Fundamentals
 - [Why TPipe? Architectural Deep Dive](docs/core-concepts/why-tpipe.md) - The paradigm shift from libraries to substrates
 - [Pipe Class - Core Concepts](docs/core-concepts/pipe-class.md) - Understanding the fundamental Pipe class
@@ -101,20 +99,26 @@ Real-world patterns and comparisons:
 - [Timeout and Retry System](docs/core-concepts/timeout-and-retry.md) - Pressure relief valves for transient failures
 
 ### 🏗️ Container Architecture
+
+Advanced pipeline orchestration and multi-agent systems:
+
 - [Container Overview](docs/containers/container-overview.md) - Introduction to TPipe containers
 - [Manifold - Multi-Agent Orchestration](docs/containers/manifold.md) - Coordinating multiple AI agents
 - [Manifold DSL Builder](docs/containers/manifold.md#dsl-builder) - Build and initialize manifolds in one Kotlin DSL block
 - [Manifold Setup Checklist](docs/containers/manifold.md#startup-checklist) - Required manager, worker, memory, and `init()` steps before startup
 - [Connector - Pipeline Branching](docs/containers/connector.md) - Conditional pipeline routing
 - [Splitter - Parallel Processing](docs/containers/splitter.md) - Concurrent pipeline execution
-- [Junction - Discussion and Workflow Harness](docs/containers/junction.md) - Collaborative discussion, voting, and workflow handoff
+- [Junction - Discussion and Workflow Harness](docs/containers/junction.md) - Multi-agent discussion, voting, and workflow handoff
 - [PumpStation - Judge/Dispatch/Path Harness](docs/containers/pumpstation.md) - Runtime agentic harness with judge, dispatch, paths, memory management, and goal validation
 - [PumpStation Magic Contracts](docs/core-concepts/pumpstation-magic-contracts.md) - LLM JSON contracts (judge, dispatch, path-safety, health, lorebook, goal) and where the data classes live
 - [MultiConnector - Advanced Routing](docs/containers/multiconnector.md) - Complex routing patterns
-- [DistributionGrid - Distributed Node Grid](docs/containers/distributiongrid.md) - Distributed node routing, discovery, and remote handoff
+- [DistributionGrid - Load Balancing](docs/containers/distributiongrid.md) - Distributed processing
 - [Cross-Cutting Topics](docs/containers/cross-cutting-topics.md) - Shared container concepts
 
 ### 🔧 Advanced Concepts
+
+Complex features and protocol integration:
+
 #### Pipe Context Protocol (PCP)
 - [Pipe Context Protocol Overview](docs/advanced-concepts/pipe-context-protocol.md) - TPipe's native tool protocol
 - [Basic PCP Usage](docs/advanced-concepts/basic-pcp-usage.md) - Getting started with PCP
@@ -156,7 +160,18 @@ Integration guides for different AI providers:
 #### Codex OAuth
 - [Getting Started with TPipe-Codex](docs/codex/getting-started.md) - ChatGPT subscription-backed OAuth transport
 
+### 📚 Case Studies
+
+Real-world patterns and comparisons:
+
+- [Grounded Case Studies](docs/case-studies/grounded-case-studies.md) - TPipe as an operating environment for advanced systems
+- [Headless Use-Cases](docs/case-studies/headless-use-cases.md) - TPipe in autonomous, headless-first deployments
+- [TPipe vs Apache Camel](docs/comparison/TPipe-vs-Apache-Camel-Comparison.md) - Complete feature comparison
+
 ### 📚 API Reference
+
+Complete API documentation for all TPipe components:
+
 #### Core APIs
 - [Pipe Class API](docs/api/pipe.md) - Complete Pipe class reference
 - [Pipeline Class API](docs/api/pipeline.md) - Pipeline orchestration methods
@@ -196,15 +211,15 @@ Integration guides for different AI providers:
 ## Quick Start
 
 ```kotlin
-import bedrockPipe.BedrockPipe
+import com.TTT.Pipe.BedrockPipe
 
 val pipe = BedrockPipe()
     .setRegion("us-east-1")
     .setModel("anthropic.claude-3-sonnet-20240229-v1:0")
-    .setSystemPrompt("You are an automated security auditor responsible for identifying PII leakage in application logs.")
+    .setSystemPrompt("You are a helpful assistant.")
     .setTemperature(0.7)
 
-val result = pipe.execute("Analyze the following log entries for security vulnerabilities...")
+val result = pipe.execute("What is artificial intelligence?")
 println(result.text)
 ```
 
@@ -247,21 +262,26 @@ println(result.text)
 ## Installation
 
 ```kotlin
+repositories {
+    maven { url = uri("https://raw.githubusercontent.com/Ten-Trillion-Triangles/TPipe/main/maven") }
+}
+
 dependencies {
     implementation("com.TTT:TPipe:1.0.0")
     implementation("com.TTT:TPipe-Bedrock:1.0.0")  // For AWS Bedrock
     implementation("com.TTT:TPipe-Ollama:1.0.0")   // For Ollama
+    implementation("com.TTT:TPipe-OpenRouter:1.0.0") // For OpenRouter
+    implementation("com.TTT:TPipe-Defaults:1.0.0") // Reasoning pipes and pre-configured components
+    implementation("com.TTT:TPipe-TraceServer:1.0.0") // Remote trace dashboard
 }
 ```
 
 ## Licensing
 
-> ⚠️ **This branch uses the TPipe Startup License** — free for companies under $1M/year, no source release required. For the AGPL-3.0 open-source version, use the `main` branch.
-
 TPipe is triple-licensed to meet the needs of both open-source developers and enterprise organizations.
 
-*   **Open Source (AGPL-3.0)**: Available on the [`main`](https://github.com/ten-trillion-triangles/TPipe/tree/main) branch. Full open-source rights — requires derivative works to also be open-source.
-*   **Startup**: Free closed-source license for companies under $1M annual revenue — see [TPipe Pricing](https://tentrilliontriangles.com/pricing).
-*   **Commercial**: For closed-source applications and proprietary integrations above $1M revenue. See [TPipe Pricing](https://tentrilliontriangles.com/pricing) for tiers and terms.
+*   **Open Source (AGPL-3.0)**: Free, requires derivative works to also be open-source.
+*   **Startup**: Free closed-source for companies under $1M annual revenue. Also available to OSI-approved FOSS projects using TPipe as a dependency — see the [TPipe Startup License](https://www.tentrilliontriangles.com/licenses/LICENSE.TPipe-Startup.txt) for conditions.
+*   **Commercial**: Above $1M revenue — see [TPipe Pricing](https://tentrilliontriangles.com/pricing) for tiers and terms.
 
 Contact [contact@tentrilliontriangles.com](mailto:contact@tentrilliontriangles.com) for commercial and enterprise inquiries.
