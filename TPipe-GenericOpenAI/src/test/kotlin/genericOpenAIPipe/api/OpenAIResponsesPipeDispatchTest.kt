@@ -3,6 +3,7 @@ package genericOpenAIPipe.api
 import com.TTT.Util.serialize
 import com.TTT.P2P.P2PError
 import com.TTT.P2P.P2PException
+import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.FunctionRegistry
 import com.TTT.PipeContextProtocol.PcpContext
 import com.TTT.PipeContextProtocol.TPipeContextOptions
@@ -330,6 +331,87 @@ class OpenAIResponsesPipeDispatchTest
         pipe.injectStreamingConnectionFactoryForTest(factory)
         pipe.initForTest()
         return pipe to factory
+    }
+
+    @Test
+    fun testStreamingTimeoutsArePassedToTheDirectTransport()
+    {
+        val sseBody = """
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","delta":"timeout-configured"}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"status":"completed"}}
+
+        """.trimIndent()
+
+        runBlocking {
+            val (pipe, factory) = streamingPipe(sseBody)
+            try
+            {
+                pipe.setStreamingTimeouts(
+                    connectTimeoutMs = 7_000,
+                    readTimeoutMs = 321_000
+                )
+
+                pipe.generateTextForTest("hi")
+
+                Assertions.assertEquals(7_000, factory.capturedConnectTimeoutMs)
+                Assertions.assertEquals(321_000, factory.capturedReadTimeoutMs)
+            }
+            finally
+            {
+                pipe.abortForTest()
+            }
+        }
+    }
+
+    @Test
+    fun testTransportFailureRetriesThroughGenericPipeWithBoundedLimit() = runBlocking<Unit>
+    {
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val sseBody = """
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","delta":"recovered"}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"status":"completed"}}
+
+        """.trimIndent()
+        val factory = MockStreamingConnectionFactory(
+            responseBodySupplier = {
+                if(calls.incrementAndGet() == 1)
+                {
+                    throw java.net.SocketTimeoutException("simulated stream timeout")
+                }
+                sseBody
+            }
+        )
+        val pipe = GenericOpenAIPipe()
+            .setApiKey("mock-key")
+            .setBaseUrl("https://mock.local/v1")
+            .setApiMode(ApiMode.OpenAIResponses)
+        pipe.setModel("MiniMax-M2.7")
+        pipe.setMaxTokens(64)
+        pipe.setStreamingEnabled(true)
+        pipe.enablePipeTimeout(
+            duration = 5_000,
+            autoRetry = true,
+            retryLimit = 1
+        )
+        pipe.injectStreamingConnectionFactoryForTest(factory)
+        pipe.initForTest()
+        try
+        {
+            val result = pipe.execute(MultimodalContent(text = "hi"))
+
+            Assertions.assertEquals("recovered", result.text)
+            Assertions.assertEquals(2, calls.get())
+        }
+        finally
+        {
+            pipe.abortForTest()
+        }
     }
 
     private class RotatingTestAccessProfile(

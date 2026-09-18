@@ -1,5 +1,10 @@
 package genericOpenAIPipe
 
+import com.TTT.Debug.PipeTracer
+import com.TTT.Debug.TraceConfig
+import com.TTT.Debug.TraceDetailLevel
+import com.TTT.Debug.TraceEventType
+import com.TTT.Pipe.MultimodalContent
 import genericOpenAIPipe.api.ApiMode
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -176,6 +181,77 @@ class GenericOpenAIPipeLocalTransportTest
         }
     }
 
+    @Test
+    fun responsesReasoningSummarySurvivesPipeAndTraceProjection() = runBlocking<Unit>
+    {
+        val traceId = "camelstream-reasoning-summary-trace"
+        val engine = MockEngine {
+            respond(
+                content = cannedCamelStreamResponsesBody,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            )
+        }
+        val client = HttpClient(engine)
+        val pipe = GenericOpenAIPipe()
+            .setApiKey("test-key")
+            .setBaseUrl("https://mock.camelstream.test/v1")
+            .setApiMode(ApiMode.OpenAIResponses) as GenericOpenAIPipe
+        pipe.setModel("auto")
+        pipe.setStreamingEnabled(false)
+        pipe.injectHttpClientForTest(client)
+
+        PipeTracer.enable()
+        PipeTracer.startTrace(traceId)
+        pipe.enableTracing(
+            TraceConfig(
+                enabled = true,
+                detailLevel = TraceDetailLevel.DEBUG,
+                includeContext = true,
+                includeMetadata = true
+            )
+        )
+        pipe.addTraceId(traceId)
+
+        try
+        {
+            pipe.initForTest()
+            val result = pipe.generateContent(MultimodalContent(text = "classify this prompt"))
+
+            Assertions.assertEquals(
+                "{\"isSafe\":true,\"reason\":\"No unsafe content detected.\"}",
+                result.text
+            )
+            Assertions.assertEquals(
+                "Evaluating whether the player prompt is safe.\nNo unsafe request was found.",
+                result.modelReasoning
+            )
+
+            val events = PipeTracer.getTrace(traceId)
+            val success = events.firstOrNull { it.eventType == TraceEventType.API_CALL_SUCCESS }
+            Assertions.assertNotNull(success, "Expected an API_CALL_SUCCESS trace event")
+            Assertions.assertEquals(
+                result.modelReasoning,
+                success!!.content?.modelReasoning
+            )
+            Assertions.assertEquals(
+                result.modelReasoning,
+                success.metadata["reasoningContent"]
+            )
+            Assertions.assertFalse(
+                events.toString().contains("encrypted-reasoning-must-not-escape"),
+                "Encrypted reasoning content must not enter TPipe tracing"
+            )
+        }
+        finally
+        {
+            pipe.abortForTest()
+            client.close()
+            PipeTracer.clearTrace(traceId)
+            PipeTracer.disable()
+        }
+    }
+
 //=========================================Helpers==================================================================
 
     private fun localPipe(
@@ -237,6 +313,55 @@ class GenericOpenAIPipeLocalTransportTest
           "model": "test-model",
           "stop_reason": "end_turn",
           "usage": { "input_tokens": 1, "output_tokens": 1 }
+        }
+    """.trimIndent()
+
+    private val cannedCamelStreamResponsesBody = """
+        {
+          "id": "resp_camelstream_safety",
+          "object": "response",
+          "created_at": 1758209701,
+          "status": "completed",
+          "model": "auto",
+          "output": [
+            {
+              "type": "reasoning",
+              "id": "rs_camelstream_safety",
+              "status": "completed",
+              "summary": [
+                {
+                  "type": "summary_text",
+                  "text": "Evaluating whether the player prompt is safe."
+                }
+              ],
+              "content": [
+                {
+                  "type": "reasoning_text",
+                  "text": "No unsafe request was found."
+                }
+              ],
+              "encrypted_content": "encrypted-reasoning-must-not-escape"
+            },
+            {
+              "type": "message",
+              "id": "msg_camelstream_safety",
+              "role": "assistant",
+              "status": "completed",
+              "content": [
+                {
+                  "type": "output_text",
+                  "text": "{\"isSafe\":true,\"reason\":\"No unsafe content detected.\"}",
+                  "annotations": []
+                }
+              ]
+            }
+          ],
+          "usage": {
+            "input_tokens": 42,
+            "output_tokens": 18,
+            "total_tokens": 60,
+            "output_tokens_details": { "reasoning_tokens": 8 }
+          }
         }
     """.trimIndent()
 }

@@ -31,6 +31,8 @@ import com.TTT.P2P.P2PTransport
 import com.TTT.P2P.P2PRequirements
 import com.TTT.P2P.P2PRequest
 import com.TTT.P2P.P2PResponse
+import com.TTT.P2P.P2PError
+import com.TTT.P2P.P2PException
 import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.Pipeline.PathDescriptionList
 import com.TTT.Pipeline.PathRequest
@@ -626,6 +628,98 @@ object PipeTimeoutManager
             content.terminate()
             content
         }
+    }
+
+    /**
+     * Determines whether an exception represents a retryable transport failure
+     * and, when configured, restores the input snapshot for another execution.
+     *
+     * Timeout cancellation and ordinary exceptions use the same bounded retry
+     * counter. This keeps a provider failure from bypassing the retry limit while
+     * avoiding retries for malformed output, authentication, prompt, or coding
+     * errors.
+     *
+     * @param pipe Pipe that raised the exception.
+     * @param content Input content captured before the provider call.
+     * @param exception Exception raised by the provider call.
+     * @return Snapshot content with [MultimodalContent.repeatPipe] set, or the
+     * original content when the failure is not retryable or the limit is reached.
+     */
+    fun handleExceptionSignal(
+        pipe: Pipe,
+        content: MultimodalContent,
+        exception: Throwable
+    ): MultimodalContent
+    {
+        if(pipe.timeoutStrategy != PipeTimeoutStrategy.Retry ||
+            pipe.maxRetryAttempts <= 0 ||
+            !isRetryableTransportException(exception))
+        {
+            return content
+        }
+
+        val attempts = getRetryCount(pipe)
+        if(attempts >= pipe.maxRetryAttempts)
+        {
+            pipe.timeoutTrace(
+                TraceEventType.PIPE_FAILURE,
+                TracePhase.EXECUTION,
+                error = Exception("Pipe transport failure retry limit reached after $attempts retries.")
+            )
+            content.terminate()
+            return content
+        }
+
+        incrementRetryCount(pipe)
+        pipe.timeoutTrace(
+            TraceEventType.PIPE_RETRY,
+            TracePhase.EXECUTION,
+            metadata = mapOf(
+                "attempt" to getRetryCount(pipe),
+                "reason" to "transportFailure",
+                "exceptionType" to (exception::class.simpleName ?: "Throwable")
+            )
+        )
+
+        val snapshot = content.getSnapshot()
+        if(snapshot != null)
+        {
+            snapshot.repeatPipe = true
+            return snapshot
+        }
+
+        pipe.timeoutTrace(
+            TraceEventType.PIPE_FAILURE,
+            TracePhase.EXECUTION,
+            error = Exception("Transport retry failed: No snapshot available to restore state.")
+        )
+        content.terminate()
+        return content
+    }
+
+    /**
+     * Classifies only transport failures as safe for automatic replay.
+     *
+     * @param exception Exception raised by the provider call.
+     * @return Whether the exception or one of its causes is transport-related.
+     */
+    private fun isRetryableTransportException(exception: Throwable): Boolean
+    {
+        val visited = mutableSetOf<Throwable>()
+        var current: Throwable? = exception
+        while(current != null && visited.add(current))
+        {
+            if(current is P2PException)
+            {
+                return current.errorType == P2PError.transport
+            }
+            if(current is java.io.IOException)
+            {
+                return true
+            }
+            current = current.cause
+        }
+        return false
     }
 
     /**
@@ -7161,17 +7255,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
              * call.
              */
             try {
-                val result : Deferred<MultimodalContent> = async {
-                    generateContent(processedContent)
-                }
+                generatedContent = supervisorScope {
+                    val result: Deferred<MultimodalContent> = async {
+                        generateContent(processedContent)
+                    }
 
-                activeJob = result
-                try {
-                    //Run the llm and await it's output.
-                    generatedContent = result.await()
-                } finally {
-                    activeJob = null
-                    activeStallDetector = null
+                    activeJob = result
+                    try {
+                        // Run the LLM and await its output.
+                        result.await()
+                    } finally {
+                        activeJob = null
+                        activeStallDetector = null
+                    }
                 }
             }
             catch(e: Exception)
@@ -7191,6 +7287,22 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         if(result.terminatePipeline) return@coroutineScope result.apply { text = "" }
                         return@coroutineScope result
                     }
+                }
+
+                val transportRetryResult = PipeTimeoutManager.handleExceptionSignal(
+                    this@Pipe,
+                    inputContent,
+                    e
+                )
+                if(transportRetryResult.repeatPipe || transportRetryResult.terminatePipeline)
+                {
+                    trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, processedContent, error = e)
+                    exceptionFunction?.invoke(processedContent, e)
+                    if(transportRetryResult.terminatePipeline)
+                    {
+                        transportRetryResult.text = ""
+                    }
+                    return@coroutineScope transportRetryResult
                 }
                 
                 // Trace API call failure to capture error
@@ -7490,6 +7602,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
                     trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, finalResult,
                           metadata = mapOf("outputText" to if(isExecutingAsReasoningPipe) "" else finalResult.text))
+                    PipeTimeoutManager.clearRetryCount(this@Pipe)
                     val cleanedFinal = finalResult.apply { text = cleanResponseText(finalResult.text) }
                     finalCaptureFunction?.invoke(cleanedFinal)
                     return@coroutineScope embedContentIntoInternalConverse(cleanedFinal).takeIf { wrapContentWithConverseHistory } ?: cleanedFinal

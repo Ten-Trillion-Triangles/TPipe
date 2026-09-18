@@ -46,6 +46,8 @@ import kotlinx.coroutines.runBlocking
  * serialization layer.
  */
 private const val RETRY_BACKOFF_MILLIS: Long = 100L
+private const val DEFAULT_STREAMING_CONNECT_TIMEOUT_MS: Int = 30_000
+private const val DEFAULT_STREAMING_READ_TIMEOUT_MS: Int = 120_000
 
 /**
  * Test-friendly abstraction over [java.net.HttpURLConnection] for the streaming-direct
@@ -139,6 +141,25 @@ class GenericOpenAIPipe : Pipe()
      */
     @kotlinx.serialization.Transient
     private var streamingConnectionFactory: HttpStreamingConnectionFactory? = null
+
+    /**
+     * Active direct streaming connection, if a request is currently reading.
+     * The reference lets [abort] interrupt a blocked HttpURLConnection read.
+     */
+    @kotlinx.serialization.Transient
+    private var activeStreamingConnection: HttpStreamingConnection? = null
+
+    /**
+     * Connect timeout used by the direct streaming transport.
+     */
+    @kotlinx.serialization.Serializable
+    private var streamingConnectTimeoutMs: Int = DEFAULT_STREAMING_CONNECT_TIMEOUT_MS
+
+    /**
+     * Read timeout used by the direct streaming transport.
+     */
+    @kotlinx.serialization.Serializable
+    private var streamingReadTimeoutMs: Int = DEFAULT_STREAMING_READ_TIMEOUT_MS
 
     /**
      * Whether streaming mode is enabled.
@@ -588,6 +609,31 @@ class GenericOpenAIPipe : Pipe()
     }
 
     /**
+     * Configures the HTTP transport timeouts.
+     *
+     * These values are passed to the underlying [java.net.HttpURLConnection]
+     * for streaming requests and to the Ktor client used by non-streaming
+     * requests. The defaults preserve the historical 30-second connect and
+     * 120-second read behavior.
+     *
+     * @param connectTimeoutMs Maximum time to establish the connection.
+     * @param readTimeoutMs Maximum inactivity period while reading the stream.
+     * @return This pipe instance for fluent chaining.
+     * @throws IllegalArgumentException when either timeout is not positive.
+     */
+    fun setStreamingTimeouts(
+        connectTimeoutMs: Int = streamingConnectTimeoutMs,
+        readTimeoutMs: Int = streamingReadTimeoutMs
+    ): GenericOpenAIPipe
+    {
+        require(connectTimeoutMs > 0) { "connectTimeoutMs must be positive" }
+        require(readTimeoutMs > 0) { "readTimeoutMs must be positive" }
+        streamingConnectTimeoutMs = connectTimeoutMs
+        streamingReadTimeoutMs = readTimeoutMs
+        return this
+    }
+
+    /**
      * Registers a callback for streaming response chunks.
      * Automatically enables streaming mode.
      *
@@ -974,6 +1020,10 @@ class GenericOpenAIPipe : Pipe()
             httpClient?.close()
             httpClient = createHttpClient()
         }
+
+        val connection = activeStreamingConnection
+        activeStreamingConnection = null
+        runCatching { connection?.close() }
 
         super.abort()
     }
@@ -1467,7 +1517,7 @@ class GenericOpenAIPipe : Pipe()
      * socket open indefinitely. Without these explicit termination
      * signals the parser would rely on socket EOF that never arrives,
      * and the pipe would hang for the full
-     * [HttpURLConnection.readTimeoutMs] (`120_000` ms) instead of
+     * [streamingReadTimeoutMs] instead of
      * returning within milliseconds of the model's [DONE] sentinel.
      * If AWS fixes the chunked-SigV4 keepalive-after-`[DONE]`
      * behavior, these guards become redundant but harmless — the
@@ -1533,9 +1583,10 @@ class GenericOpenAIPipe : Pipe()
             url = "$baseUrl${getEndpoint()}",
             method = "POST",
             headers = requestHeaders,
-            connectTimeoutMs = 30_000,
-            readTimeoutMs = 120_000
+            connectTimeoutMs = streamingConnectTimeoutMs,
+            readTimeoutMs = streamingReadTimeoutMs
         )
+        activeStreamingConnection = conn
 
         // Write the body. When Mantle streaming SigV4 auth is in use,
         // write the body as chunked-encoded blocks per the AWS S3
@@ -1742,7 +1793,7 @@ class GenericOpenAIPipe : Pipe()
                                     // sentinel. Capture the first non-null value
                                     // and stop the SSE loop — otherwise the
                                     // parser waits for socket EOF that may not
-                                    // arrive before the 120-second readTimeoutMs
+                                    // arrive before the configured read timeout
                                     // (Mantle chunked-SigV4 keeps the socket
                                     // alive). The primary termination trigger is
                                     // the [DONE] guard above; this is the
@@ -1856,6 +1907,13 @@ class GenericOpenAIPipe : Pipe()
                     "(${e::class.simpleName}: ${e.message}). retryable=$retryable",
                 e
             )
+        }
+        finally
+        {
+            if(activeStreamingConnection === conn)
+            {
+                activeStreamingConnection = null
+            }
         }
 
         streamingReasoning = reasoningBuilder.toString()
@@ -2808,9 +2866,9 @@ class GenericOpenAIPipe : Pipe()
     {
         install(HttpTimeout)
         {
-            requestTimeoutMillis = 120_000
-            connectTimeoutMillis = 30_000
-            socketTimeoutMillis = 120_000
+            requestTimeoutMillis = streamingReadTimeoutMs.toLong()
+            connectTimeoutMillis = streamingConnectTimeoutMs.toLong()
+            socketTimeoutMillis = streamingReadTimeoutMs.toLong()
         }
     }
 

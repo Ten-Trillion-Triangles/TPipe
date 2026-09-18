@@ -194,6 +194,108 @@ class OpenAIResponsesResponseParserTest
     }
 
     @Test
+    fun testParsesCamelStreamReasoningSummaryAlongsideSafetyJson()
+    {
+        val body = """
+            {
+              "id": "resp_camelstream_safety",
+              "object": "response",
+              "created_at": 1758209701,
+              "status": "completed",
+              "model": "auto",
+              "output": [
+                {
+                  "type": "reasoning",
+                  "id": "rs_camelstream_safety",
+                  "status": "completed",
+                  "summary": [
+                    {
+                      "type": "summary_text",
+                      "text": "Evaluating whether the player prompt is safe."
+                    }
+                  ],
+                  "content": [
+                    {
+                      "type": "reasoning_text",
+                      "text": "No unsafe request was found."
+                    }
+                  ],
+                  "encrypted_content": "encrypted-reasoning-must-not-escape"
+                },
+                {
+                  "type": "message",
+                  "id": "msg_camelstream_safety",
+                  "role": "assistant",
+                  "status": "completed",
+                  "content": [
+                    {
+                      "type": "output_text",
+                      "text": "{\"isSafe\":true,\"reason\":\"No unsafe content detected.\"}",
+                      "annotations": []
+                    }
+                  ]
+                }
+              ],
+              "usage": {
+                "input_tokens": 42,
+                "output_tokens": 18,
+                "total_tokens": 60,
+                "output_tokens_details": { "reasoning_tokens": 8 }
+              }
+            }
+        """.trimIndent()
+
+        val response = parser.parse(body, ApiMode.OpenAIResponses)
+        val content = response.choices[0].message.content
+
+        Assertions.assertTrue(content is MessageContent.TextContent)
+        Assertions.assertEquals(
+            "{\"isSafe\":true,\"reason\":\"No unsafe content detected.\"}",
+            (content as MessageContent.TextContent).text
+        )
+        Assertions.assertEquals(
+            "Evaluating whether the player prompt is safe.\nNo unsafe request was found.",
+            response.reasoningContent
+        )
+        Assertions.assertEquals(8, response.usage!!.completionTokensDetails?.reasoningTokens)
+    }
+
+    @Test
+    fun testMalformedResponsesBodyDoesNotEchoRawBodyInDiagnostic()
+    {
+        val rawBody = """
+            {
+              "id": "resp_malformed",
+              "object": "response",
+              "created_at": 0,
+              "status": "completed",
+              "model": "auto",
+              "output": [
+                {
+                  "type": "reasoning",
+                  "summary": [
+                    {
+                      "type": "unsupported_future_reasoning_type",
+                      "text": "diagnostic-secret-sentinel"
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val exception = Assertions.assertThrows(P2PException::class.java) {
+            parser.parse(rawBody, ApiMode.OpenAIResponses)
+        }
+
+        Assertions.assertEquals(P2PError.json, exception.errorType)
+        Assertions.assertNotNull(exception.cause)
+        Assertions.assertFalse(exception.message!!.contains(rawBody))
+        Assertions.assertFalse(exception.message!!.contains("diagnostic-secret-sentinel"))
+        Assertions.assertFalse(exception.stackTraceToString().contains("diagnostic-secret-sentinel"))
+    }
+
+    @Test
     fun testReasoningContentIsNullWhenNoReasoningItemsPresent()
     {
         val body = """

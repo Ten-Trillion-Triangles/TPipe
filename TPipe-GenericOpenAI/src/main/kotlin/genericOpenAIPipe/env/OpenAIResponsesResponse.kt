@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
  * The `output` list is a polymorphic list of `item` objects: assistant `message` items
  * carry text, refusal, or tool-call content; `reasoning` items are emitted by
  * reasoning-capable models (e.g. `o3`, `o4-mini`, `MiniMax-M2.7`) and contain the
- * model's internal chain-of-thought in their `content` list.
+ * model's reasoning summary and/or reasoning content.
  *
  * @see <a href="https://platform.openai.com/docs/api-reference/responses/object">OpenAI Responses object</a>
  */
@@ -57,12 +57,11 @@ sealed class OpenAIResponsesOutputItem
      *
      * The OpenAI Responses wire spec puts reasoning text in two places on this
      * item:
-     *  - `summary`: a short human-readable summary the model writes after
-     *    reasoning (often empty for fast reasoning).
+     *  - `summary`: a list of typed `summary_text` parts containing a
+     *    provider-supplied reasoning summary.
      *  - `content`: a list of typed `reasoning_text` parts containing the
-     *    actual chain-of-thought. The pipe concatenates these so the trace
-     *    contains the full reasoning transcript, matching the Bedrock
-     *    gold-standard `MultimodalContent.modelReasoning` field.
+     *    provider's reasoning content. The pipe projects both into
+     *    `MultimodalContent.modelReasoning` for tracing.
      */
     @Serializable
     @SerialName("reasoning")
@@ -109,6 +108,17 @@ sealed class OpenAIResponsesContentPart
     @Serializable
     @SerialName("reasoning_text")
     data class ReasoningText(
+        val text: String
+    ) : OpenAIResponsesContentPart()
+
+    /**
+     * Reasoning summary part (`type = "summary_text"`). Appears in the
+     * `summary` list of a reasoning output item and belongs in tracing rather
+     * than the user-visible assistant response.
+     */
+    @Serializable
+    @SerialName("summary_text")
+    data class SummaryText(
         val text: String
     ) : OpenAIResponsesContentPart()
 }

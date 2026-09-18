@@ -4,6 +4,8 @@ import kotlinx.coroutines.*
 import kotlin.test.*
 import com.TTT.Debug.*
 import com.TTT.Pipe.*
+import com.TTT.P2P.P2PError
+import com.TTT.P2P.P2PException
 
 class PipeTimeoutTest {
 
@@ -82,6 +84,106 @@ class PipeTimeoutTest {
         
         assertEquals(3, flexiblePipe.calls)
         assertEquals("success on call 3", result)
+    }
+
+    private class TransportFailureThenSuccessPipe : Pipe() {
+        var calls = 0
+
+        override suspend fun generateText(promptInjector: String): String = ""
+
+        override suspend fun generateContent(content: MultimodalContent): MultimodalContent {
+            calls++
+            if (calls == 1) {
+                throw P2PException(
+                    P2PError.transport,
+                    "simulated transport failure",
+                    IllegalStateException("simulated transport failure")
+                )
+            }
+            return content.apply { text = "recovered" }
+        }
+
+        override fun truncateModuleContext(): Pipe = this
+    }
+
+    @Test
+    fun testTransportFailureRetriesThroughPipeExecution() = runBlocking {
+        val pipe = TransportFailureThenSuccessPipe()
+        pipe.enablePipeTimeout(
+            duration = 5_000,
+            autoRetry = true,
+            retryLimit = 1
+        )
+
+        val result = pipe.execute("start")
+
+        assertEquals(2, pipe.calls, "A retryable transport failure should retry once")
+        assertEquals("recovered", result)
+    }
+
+    private class AlwaysFailingTransportPipe : Pipe() {
+        var calls = 0
+
+        override suspend fun generateText(promptInjector: String): String = ""
+
+        override suspend fun generateContent(content: MultimodalContent): MultimodalContent {
+            calls++
+            throw P2PException(
+                P2PError.transport,
+                "simulated persistent transport failure",
+                IllegalStateException("simulated persistent transport failure")
+            )
+        }
+
+        override fun truncateModuleContext(): Pipe = this
+    }
+
+    @Test
+    fun testTransportFailureRetryIsBounded() = runBlocking {
+        val pipe = AlwaysFailingTransportPipe()
+        pipe.enablePipeTimeout(
+            duration = 5_000,
+            autoRetry = true,
+            retryLimit = 2
+        )
+
+        pipe.execute("start")
+
+        assertEquals(3, pipe.calls, "Two retries must produce exactly three total attempts")
+    }
+
+    private class TransportFailureOnEachNewExecutionPipe : Pipe() {
+        var calls = 0
+
+        override suspend fun generateText(promptInjector: String): String = ""
+
+        override suspend fun generateContent(content: MultimodalContent): MultimodalContent {
+            calls++
+            if(calls % 2 == 1) {
+                throw P2PException(
+                    P2PError.transport,
+                    "simulated per-execution transport failure",
+                    IllegalStateException("simulated per-execution transport failure")
+                )
+            }
+            return content.apply { text = "recovered" }
+        }
+
+        override fun truncateModuleContext(): Pipe = this
+    }
+
+    @Test
+    fun testSuccessfulExecutionClearsTransportRetryCount() = runBlocking {
+        val pipe = TransportFailureOnEachNewExecutionPipe()
+        pipe.enablePipeTimeout(
+            duration = 5_000,
+            autoRetry = true,
+            retryLimit = 1
+        )
+
+        assertEquals("recovered", pipe.execute("first"))
+        assertEquals("recovered", pipe.execute("second"))
+        assertEquals(4, pipe.calls, "Each execution should receive its own retry budget")
     }
 
     @Test

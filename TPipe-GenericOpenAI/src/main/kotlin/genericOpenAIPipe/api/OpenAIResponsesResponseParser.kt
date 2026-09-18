@@ -13,6 +13,8 @@ import genericOpenAIPipe.env.OpenAIResponsesContentPart
 import genericOpenAIPipe.env.OpenAIResponsesOutputItem
 import genericOpenAIPipe.env.OpenAIResponsesResponse
 import genericOpenAIPipe.env.UsageInfo
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
 
 /**
  * [ResponseParser] implementation for the OpenAI `/v1/responses` endpoint.
@@ -37,8 +39,23 @@ import genericOpenAIPipe.env.UsageInfo
  *  - Empty `output` lists yield an empty `TextContent("")` choice so callers always
  *    see a non-null content.
  */
+@OptIn(ExperimentalSerializationApi::class)
 class OpenAIResponsesResponseParser : ResponseParser
 {
+
+    private val responsesJson = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        isLenient = true
+        encodeDefaults = true
+        explicitNulls = false
+        coerceInputValues = true
+        allowSpecialFloatingPointValues = true
+        allowStructuredMapKeys = true
+        allowTrailingComma = true
+        allowComments = true
+        decodeEnumsCaseInsensitive = true
+    }
 
     /**
      * Parses a raw Responses JSON body into a [GenericOpenAIChatResponse].
@@ -68,18 +85,7 @@ class OpenAIResponsesResponseParser : ResponseParser
         }
 
         // 2. Happy path: parse the responses body and project it.
-        val parsed = (try
-        {
-            deserialize<OpenAIResponsesResponse>(response)
-        }
-        catch(e: Exception)
-        {
-            null
-        }) ?: throw P2PException(
-                P2PError.json,
-                "Failed to deserialize OpenAI Responses body: $response",
-                Exception("Deserialization returned null")
-            )
+        val parsed = deserializeResponses(response)
 
         // 3. Server-side failure status -> P2PException.transport
         if(parsed.status == "failed")
@@ -149,6 +155,7 @@ class OpenAIResponsesResponseParser : ResponseParser
                             hasRefusal = true
                         }
                         is OpenAIResponsesContentPart.ReasoningText -> Unit
+                        is OpenAIResponsesContentPart.SummaryText -> Unit
                     }
                 }
             }
@@ -159,9 +166,9 @@ class OpenAIResponsesResponseParser : ResponseParser
     }
 
     /**
-     * Concatenates the `reasoning_text` content from every `reasoning` output item
-     * in the order they appear, separated by newlines so two distinct reasoning
-     * items do not visually run into each other in the trace.
+     * Concatenates the `summary_text` and `reasoning_text` content from every
+     * `reasoning` output item in wire order, separated by newlines so distinct
+     * reasoning items do not visually run into each other in the trace.
      *
      * Returns an empty string when no reasoning items are present so callers can
      * treat `null` and `""` interchangeably.
@@ -173,16 +180,48 @@ class OpenAIResponsesResponseParser : ResponseParser
         {
             if(item is OpenAIResponsesOutputItem.Reasoning)
             {
-                for(part in item.content)
+                for(part in item.summary + item.content)
                 {
-                    if(part is OpenAIResponsesContentPart.ReasoningText && part.text.isNotEmpty())
+                    val text = when(part)
                     {
-                        parts.add(part.text)
+                        is OpenAIResponsesContentPart.ReasoningText -> part.text
+                        is OpenAIResponsesContentPart.SummaryText -> part.text
+                        else -> ""
+                    }
+                    if(text.isNotEmpty())
+                    {
+                        parts.add(text)
                     }
                 }
             }
         }
         return parts.joinToString("\n")
+    }
+
+    /**
+     * Deserializes a Responses body while retaining the existing lenient repair
+     * fallback. The direct decode preserves the actual serialization exception
+     * for diagnostics without putting the complete response body in logs.
+     */
+    private fun deserializeResponses(response: String): OpenAIResponsesResponse
+    {
+        val directFailure: Exception
+        try
+        {
+            return responsesJson.decodeFromString<OpenAIResponsesResponse>(response)
+        }
+        catch(e: Exception)
+        {
+            directFailure = e
+        }
+
+        deserialize<OpenAIResponsesResponse>(response)?.let { return it }
+
+        throw P2PException(
+            P2PError.json,
+            "Failed to deserialize OpenAI Responses body",
+            directFailure
+        )
     }
 
     /**
