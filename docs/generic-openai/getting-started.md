@@ -374,25 +374,17 @@ Valid `setToolChoice(...)` values are `"auto"`, `"none"`, and `"required"`. `set
 
 ## Reasoning Models
 
-Reasoning-capable models (OpenAI o3 / o4-mini, DeepSeek-R1, etc.) accept a `ReasoningConfig` with effort, max-tokens, and visibility flags. The fields are serialized into the request body for the active mode:
+Reasoning-capable models (OpenAI o3 / o4-mini, DeepSeek-R1, etc.) use the inherited `setReasoning` overloads. Generic OpenAI maps the selected overload into the provider-specific request body internally:
 
 ```kotlin
 import genericOpenAIPipe.GenericOpenAIPipe
-import genericOpenAIPipe.env.ReasoningConfig
 import kotlinx.coroutines.runBlocking
 
 fun main() = runBlocking {
     val pipe = GenericOpenAIPipe()
         .setApiKey(System.getenv("OPENAI_API_KEY"))
         .setModel("o4-mini")
-        .setReasoningConfig(
-            ReasoningConfig(
-                effort = "high",         // "xhigh", "high", "medium", "low", "minimal", "none"
-                maxTokens = 8192,
-                exclude = false,         // include reasoning in the final output
-                enabled = true
-            )
-        )
+        .setReasoning("high") // also supports setReasoning() and setReasoning(tokens)
         .init()
 
     val result = pipe.execute("Plan a 3-day trip to Kyoto in JSON.")
@@ -402,7 +394,7 @@ fun main() = runBlocking {
 }
 ```
 
-Reasoning effort enum values: `"xhigh" | "high" | "medium" | "low" | "minimal" | "none"`. The Responses API mode (OpenAI) additionally populates `streamingReasoningTokens` from the wire and exposes them via tracing metadata.
+Reasoning effort values include `"xhigh"`, `"high"`, `"medium"`, `"low"`, `"minimal"`, and `"none"`. Use `setReasoning(tokens)` for APIs that expose a reasoning-token budget. `setReasoning()` enables the default provider reasoning level, while `disableReasoning()` emits an explicit off setting where the active wire format supports it. The Responses API mode (OpenAI) additionally populates `streamingReasoningTokens` from the wire and exposes them via tracing metadata.
 
 ### Bedrock Mantle Reasoning
 
@@ -585,7 +577,7 @@ The conversion matrix for each `BinaryContent` variant across the three modes:
 | **Provider access** | Any OpenAI-compatible API (OpenAI, Azure, Anthropic via `/messages`, DeepSeek, Groq, Together, MiniMax, custom proxies) | Local Ollama runtime | 300+ models through OpenRouter | AWS Bedrock (Claude, Titan, Llama, Cohere, …) |
 | **API modes** | 3 (OpenAI, Anthropic, OpenAIResponses) | 2 (`/api/chat`, legacy `/api/generate`) | 1 (OpenAI Chat Completions) | 1 (Bedrock Converse API) |
 | **Tool calling** | `setTools(...)` + parallel + `setToolChoice(...)` | Native tool calling | OpenAI-compatible | Converse API tools |
-| **Reasoning** | `setReasoningConfig(ReasoningConfig(...))` | `enableThink()` extracts `<think>` | `setReasoningConfig(...)` / `setReasoningEffort(...)` | Native `reasoningContent` |
+| **Reasoning** | `setReasoning()` / `setReasoning(tokens)` / `setReasoning("high")` | `enableThink()` extracts `<think>` | `setReasoningConfig(...)` / `setReasoningEffort(...)` | Native `reasoningContent` |
 | **Streaming** | SSE callback, mode-specific parsers | Ktor async + `enableStreaming(...)` | Server-Sent Events | Converse stream handler |
 | **Multimodal** | `MultimodalContent.binaryContent` with mode-specific conversion | Base64 images | OpenAI-compatible | Base64 images |
 | **Caching** | `CacheControl(type, ttl)` (Anthropic-style) | n/a | `setCacheControl(ttl)` | n/a |

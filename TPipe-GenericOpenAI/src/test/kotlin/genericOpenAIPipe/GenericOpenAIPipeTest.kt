@@ -330,7 +330,7 @@ class GenericOpenAIPipeTest
     }
 
     @Test
-    fun testSetReasoningConfigReturnsPipe()
+    fun testInternalReasoningConfigAdapterReturnsPipe()
     {
         val pipe = GenericOpenAIPipe()
         val config = ReasoningConfig(effort = "high")

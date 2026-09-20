@@ -6,7 +6,6 @@ import com.TTT.Debug.TraceFormat
 import com.TTT.Debug.TracingBuilder
 import com.TTT.Pipeline.Pipeline
 import genericOpenAIPipe.api.ApiMode
-import genericOpenAIPipe.env.ReasoningConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
@@ -21,21 +20,19 @@ import java.nio.file.Paths
  * Validates the reasoning on/off contract on the GenericOpenAIPipe against
  * MiniMax-M2.7 over the OpenAI Responses wire spec.
  *
- * TPipe exposes TWO distinct reasoning knobs that work together:
+ * TPipe exposes one public reasoning API that maps to the provider wire shape:
  *
- *  1. [com.TTT.Pipe.Pipe.setReasoning] / [com.TTT.Pipe.Pipe.disableReasoning]
- *     — flips the `useModelReasoning` flag in the base [com.TTT.Pipe.Pipe]
- *     class. This is what shows up in trace metadata as `reasoningEnabled`.
- *  2. [GenericOpenAIPipe.setReasoningConfig] — writes the `reasoning` block
- *     to the wire body (effort, max_tokens, enabled, exclude).
+ * [com.TTT.Pipe.Pipe.setReasoning] / [com.TTT.Pipe.Pipe.disableReasoning]
+ * update both the base trace state and the Generic OpenAI `reasoning` block.
+ * The provider-neutral adapter is internal to the implementation.
  *
  * For MiniMax-M2.7 the model emits reasoning even when the wire `enabled`
  * flag is false (the model is hardwired to think when given a math prompt).
  * What this test verifies is the TPipe SIDE of the contract:
  *
- *  1. ON: `setReasoning()` + `setReasoningConfig(enabled=true, effort="high")`
+ *  1. ON: `setReasoning("high")`
  *     → trace shows `reasoningEnabled=true` and `reasoningContent` is captured.
- *  2. OFF: `disableReasoning()` + `setReasoningConfig(enabled=false)`
+ *  2. OFF: `disableReasoning()`
  *     → trace shows `reasoningEnabled=false`.
  *  3. Comparison: both traces carry the expected model and apiType, and the
  *     API_CALL_SUCCESS events exist with reasoning metadata.
@@ -114,13 +111,7 @@ class MiniMaxReasoningToggleTest
         pipe.setModel(MINIMAX_MODEL)
         pipe.setMaxTokens(MAX_TOKENS)
         pipe.setTemperature(0.0)
-        pipe.setReasoning()  // base Pipe flag — flips useModelReasoning = true
-        pipe.setReasoningConfig(
-            ReasoningConfig(
-                effort = "high",
-                enabled = true
-            )
-        )
+        pipe.setReasoning("high")
 
         val pipeline = Pipeline()
         pipeline.add(pipe)
@@ -173,13 +164,7 @@ class MiniMaxReasoningToggleTest
         pipe.setModel(MINIMAX_MODEL)
         pipe.setMaxTokens(MAX_TOKENS)
         pipe.setTemperature(0.0)
-        pipe.disableReasoning()  // base Pipe flag — flips useModelReasoning = false
-        pipe.setReasoningConfig(
-            ReasoningConfig(
-                effort = "high",
-                enabled = false
-            )
-        )
+        pipe.disableReasoning()
 
         val pipeline = Pipeline()
         pipeline.add(pipe)

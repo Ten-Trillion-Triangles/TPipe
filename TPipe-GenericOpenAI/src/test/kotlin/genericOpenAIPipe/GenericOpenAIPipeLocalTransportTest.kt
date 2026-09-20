@@ -5,7 +5,9 @@ import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceEventType
 import com.TTT.Pipe.MultimodalContent
+import com.TTT.Util.deserialize
 import genericOpenAIPipe.api.ApiMode
+import genericOpenAIPipe.env.OpenAIResponsesRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -13,6 +15,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.http.content.OutgoingContent
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions
@@ -252,7 +255,91 @@ class GenericOpenAIPipeLocalTransportTest
         }
     }
 
+    @Test
+    fun responsesDefaultReasoningIsExplicitlyDisabled() = runBlocking<Unit>
+    {
+        val reasoning = requireNotNull(executeResponsesRequest { }.reasoning)
+
+        Assertions.assertEquals("none", reasoning.effort)
+        Assertions.assertNull(reasoning.maxTokens)
+    }
+
+    @Test
+    fun setReasoningMapsToResponsesEffort() = runBlocking<Unit>
+    {
+        val reasoning = requireNotNull(executeResponsesRequest { pipe -> pipe.setReasoning() }.reasoning)
+
+        Assertions.assertEquals("medium", reasoning.effort)
+        Assertions.assertNull(reasoning.maxTokens)
+    }
+
+    @Test
+    fun setReasoningStringMapsToResponsesEffort() = runBlocking<Unit>
+    {
+        val reasoning = requireNotNull(executeResponsesRequest { pipe -> pipe.setReasoning("high") }.reasoning)
+
+        Assertions.assertEquals("high", reasoning.effort)
+        Assertions.assertNull(reasoning.maxTokens)
+    }
+
+    @Test
+    fun setReasoningTokensMapsToResponsesMaxTokens() = runBlocking<Unit>
+    {
+        val reasoning = requireNotNull(executeResponsesRequest { pipe -> pipe.setReasoning(1024) }.reasoning)
+
+        Assertions.assertNull(reasoning.effort)
+        Assertions.assertEquals(1024, reasoning.maxTokens)
+    }
+
+    @Test
+    fun disableReasoningMapsToExplicitResponsesOff() = runBlocking<Unit>
+    {
+        val reasoning = requireNotNull(executeResponsesRequest { pipe ->
+            pipe.setReasoning("high")
+            pipe.disableReasoning()
+        }.reasoning)
+
+        Assertions.assertEquals("none", reasoning.effort)
+        Assertions.assertNull(reasoning.maxTokens)
+    }
+
 //=========================================Helpers==================================================================
+
+    private suspend fun executeResponsesRequest(
+        configure: (GenericOpenAIPipe) -> Unit,
+    ): OpenAIResponsesRequest
+    {
+        var requestBody = ""
+        val engine = MockEngine { request ->
+            requestBody = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            respond(
+                content = cannedCamelStreamResponsesBody,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            )
+        }
+        val client = HttpClient(engine)
+        val pipe = GenericOpenAIPipe()
+            .setApiKey("test-key")
+            .setBaseUrl("https://mock.camelstream.test/v1")
+            .setApiMode(ApiMode.OpenAIResponses) as GenericOpenAIPipe
+        pipe.setModel("auto")
+        pipe.setStreamingEnabled(false)
+        configure(pipe)
+        pipe.injectHttpClientForTest(client)
+
+        try
+        {
+            pipe.initForTest()
+            pipe.generateTextForTest("reasoning mapping probe")
+            return requireNotNull(deserialize<OpenAIResponsesRequest>(requestBody))
+        }
+        finally
+        {
+            pipe.abortForTest()
+            client.close()
+        }
+    }
 
     private fun localPipe(
         apiMode: ApiMode,

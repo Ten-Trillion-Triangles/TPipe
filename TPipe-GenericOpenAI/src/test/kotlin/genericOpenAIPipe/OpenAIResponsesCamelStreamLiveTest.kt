@@ -6,7 +6,6 @@ import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceEventType
 import com.TTT.Pipe.MultimodalContent
 import genericOpenAIPipe.api.ApiMode
-import genericOpenAIPipe.env.ReasoningConfig
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -62,7 +61,7 @@ class OpenAIResponsesCamelStreamLiveTest
             .setApiMode(ApiMode.OpenAIResponses) as GenericOpenAIPipe
         pipe.setModel(model)
         pipe.setMaxTokens(512)
-        pipe.setReasoningConfig(ReasoningConfig(maxTokens = 128))
+        pipe.setReasoning(128)
         pipe.setStreamingEnabled(false)
         pipe.setJsonOutput(SafetyResult())
         pipe.enableTracing(

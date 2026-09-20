@@ -4927,7 +4927,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * reasoning, or outright defaults only to thinking modes.
      * @return This Pipe object for method chaining
      */
-    fun setReasoning(): Pipe
+    open fun setReasoning(): Pipe
     {
         useModelReasoning = true
         return this
@@ -4936,7 +4936,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Overload to activate token allocation based reasoning used by some models.
      */
-    fun setReasoning(tokens: Int): Pipe
+    open fun setReasoning(tokens: Int): Pipe
     {
         modelReasoningSettingsV2 = tokens
         useModelReasoning = true
@@ -4947,7 +4947,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * Overload to activate custom reasoning used by some models. Some models require magic strings or other
      * api and vendor specific settings to be supplied.
      */
-    fun setReasoning(custom: String): Pipe
+    open fun setReasoning(custom: String): Pipe
     {
         useModelReasoning = true
         modelReasoningSettingsV3 = custom
@@ -4962,7 +4962,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * of a family that do not have it, they will often just crash. So this function exists to help remove some
      * of the pain points of needing to do a model swap due to issues like llm refusals.
      */
-    fun disableReasoning() : Pipe
+    open fun disableReasoning() : Pipe
     {
         useModelReasoning = false
         modelReasoningSettingsV3 = ""

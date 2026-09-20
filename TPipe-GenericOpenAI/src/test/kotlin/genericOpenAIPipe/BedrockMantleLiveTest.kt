@@ -2,7 +2,6 @@ package genericOpenAIPipe
 
 import com.TTT.Debug.PipeTracer
 import genericOpenAIPipe.api.ApiMode
-import genericOpenAIPipe.env.ReasoningConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assumptions.assumeTrue
@@ -170,7 +169,8 @@ class BedrockMantleLiveTest
      * `reasoning: {"effort": "high"}`.
      *
      * This test exercises the surface end-to-end through TPipe:
-     *   - Sets [ReasoningConfig] with `effort = "high"` via [setReasoningConfig].
+     *   - Sets `effort = "high"` via the inherited [com.TTT.Pipe.Pipe.setReasoning]
+     *     overload.
      *   - Calls `pipe.execute(MultimodalContent(...))` and asserts the
      *     visible answer text is non-empty.
      *   - Asserts `response.modelReasoning` is non-blank, confirming the
@@ -188,8 +188,8 @@ class BedrockMantleLiveTest
      *     content=result, ...)` call.
      *
      * No specialty "request builder" is needed for Gemma 4 on TPipe:
-     * `setReasoningConfig` is the standard TPipe builder for thinking
-     * parameters, and [OpenAIResponsesRequestSerializer] translates it
+     * The inherited `setReasoning` overload is the standard TPipe builder for
+     * thinking parameters, and [OpenAIResponsesRequestSerializer] translates it
      * to the OpenAI Responses API wire shape (`reasoning` field).
      */
     @Test
@@ -208,7 +208,7 @@ class BedrockMantleLiveTest
             .also { it.setTemperature(1.0) }
             .also { it.enableTracing(traceConfig()) }
             .also { it.addTraceId("bedrock-mantle-live") }
-            .also { it.setReasoningConfig(ReasoningConfig(effort = "high")) }
+            .also { it.setReasoning("high") }
             .also { it.init() }
 
         println("Sending Mantle Responses API request WITH REASONING (region=$region, model=$DEFAULT_MODEL, effort=high)...")
@@ -296,7 +296,7 @@ class BedrockMantleLiveTest
             .also { it.setStreamingEnabled(true) }
             .also { it.enableTracing(traceConfig()) }
             .also { it.addTraceId("bedrock-mantle-live") }
-            .also { it.setReasoningConfig(ReasoningConfig(effort = "high")) }
+            .also { it.setReasoning("high") }
             .also { it.init() }
 
         println("Sending Mantle Responses API STREAMING request WITH REASONING (region=$region, model=$DEFAULT_MODEL, effort=high)...")

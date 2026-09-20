@@ -179,7 +179,7 @@ Mirrors `setBedrockMantle` but selects `ApiMode.OpenAIResponses`. Requests dispa
 val pipe = GenericOpenAIPipe()
     .setBedrockMantleWithResponses(region = "us-east-2", modelId = "google.gemma-4-31b")
     .setMaxTokens(8192)
-    .setReasoningConfig(ReasoningConfig(effort = "high"))
+    .setReasoning("high")
     .init()
 ```
 
@@ -333,30 +333,15 @@ pipe.setStreamingCallback(
 
 ### Reasoning
 
-#### `setReasoningConfig(config: ReasoningConfig): GenericOpenAIPipe`
-Configures reasoning for capable models (e.g., o3, o4-mini, DeepSeek-R1). Serialized into the request body for the active mode.
+#### `setReasoning(): Pipe`, `setReasoning(tokens: Int): Pipe`, `setReasoning(custom: String): Pipe`, `disableReasoning(): Pipe`
+Configures reasoning through the inherited TPipe API. Generic OpenAI translates these overloads into its internal provider-neutral configuration before serializing the active wire format:
 
-```kotlin
-data class ReasoningConfig(
-    val effort: String? = null,       // "xhigh", "high", "medium", "low", "minimal", "none"
-    @SerialName("max_tokens")
-    val maxTokens: Int? = null,      // max tokens for reasoning output
-    val exclude: Boolean? = null,    // exclude reasoning from final output
-    val enabled: Boolean? = null      // enable/disable reasoning
-)
-```
+- `setReasoning()` enables the provider's default reasoning level.
+- `setReasoning(tokens)` selects a reasoning-token budget.
+- `setReasoning(custom)` passes a provider-supported effort string such as `"high"`.
+- `disableReasoning()` requests an explicit off setting.
 
-**Example:**
-```kotlin
-import genericOpenAIPipe.env.ReasoningConfig
-
-pipe.setReasoningConfig(ReasoningConfig(
-    effort = "high",
-    maxTokens = 8192,
-    exclude = false,
-    enabled = true
-))
-```
+The internal `ReasoningConfig` adapter is not part of the public Generic OpenAI builder API.
 
 ---
 

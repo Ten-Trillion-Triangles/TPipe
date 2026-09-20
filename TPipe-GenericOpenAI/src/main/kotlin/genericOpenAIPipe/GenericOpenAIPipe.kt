@@ -227,7 +227,7 @@ class GenericOpenAIPipe : Pipe()
      * Reasoning configuration for reasoning-capable models.
      */
     @kotlinx.serialization.Transient
-    private var reasoningConfig: ReasoningConfig? = null
+    private var reasoningConfig: ReasoningConfig = ReasoningConfig(enabled = false)
 
     /**
      * Cache control with TTL for Anthropic-style caching.
@@ -587,11 +587,60 @@ class GenericOpenAIPipe : Pipe()
     }
 
     /**
-     * Sets the reasoning configuration for reasoning-capable models.
-     * @param config Reasoning configuration with effort, maxTokens, exclude, enabled
-     * @return This pipe instance for fluent chaining
+     * Maps the base reasoning toggle to the provider-neutral reasoning configuration.
+     *
+     * The base flag remains the source of TPipe trace metadata. The internal
+     * configuration is the source of the Generic OpenAI request body.
      */
-    fun setReasoningConfig(config: ReasoningConfig): GenericOpenAIPipe
+    override fun setReasoning(): GenericOpenAIPipe
+    {
+        super.setReasoning()
+        return setReasoningConfig(ReasoningConfig(enabled = true))
+    }
+
+    /**
+     * Maps token-budget reasoning to the provider-neutral reasoning configuration.
+     *
+     * @param tokens Maximum reasoning tokens supported by the selected provider.
+     * @return This pipe instance for fluent chaining.
+     */
+    override fun setReasoning(tokens: Int): GenericOpenAIPipe
+    {
+        super.setReasoning(tokens)
+        return setReasoningConfig(ReasoningConfig(maxTokens = tokens, enabled = true))
+    }
+
+    /**
+     * Maps provider-specific reasoning strings to the provider-neutral configuration.
+     *
+     * @param custom Provider-supported reasoning value, such as `"high"`.
+     * @return This pipe instance for fluent chaining.
+     */
+    override fun setReasoning(custom: String): GenericOpenAIPipe
+    {
+        super.setReasoning(custom)
+        return setReasoningConfig(ReasoningConfig(effort = custom, enabled = true))
+    }
+
+    /**
+     * Maps the base reasoning disable operation to an explicit provider off state.
+     *
+     * @return This pipe instance for fluent chaining.
+     */
+    override fun disableReasoning(): GenericOpenAIPipe
+    {
+        super.disableReasoning()
+        return setReasoningConfig(ReasoningConfig(enabled = false))
+    }
+
+    /**
+     * Stores the provider-neutral reasoning configuration used by request serializers.
+     *
+     * Callers should use the inherited [Pipe.setReasoning] overloads. This adapter
+     * is internal so provider-specific wire fields do not become a second public
+     * reasoning API.
+     */
+    internal fun setReasoningConfig(config: ReasoningConfig): GenericOpenAIPipe
     {
         reasoningConfig = config
         return this

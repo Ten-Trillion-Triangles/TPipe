@@ -78,7 +78,7 @@ For the Responses API wire format (when the model supports `output` items of typ
 val pipe = GenericOpenAIPipe()
     .setBedrockMantleWithResponses(region = "us-east-2", modelId = "google.gemma-4-31b")
     .setMaxTokens(32)
-    .setReasoningConfig(ReasoningConfig(effort = "high"))
+    .setReasoning("high")
     .init()
 ```
 
@@ -226,7 +226,7 @@ val pipe = GenericOpenAIPipe()
     .setBedrockMantleWithResponses(region = "us-east-2", modelId = "google.gemma-4-31b")
     .setMaxTokens(8192)
     .setTemperature(1.0)
-    .setReasoningConfig(ReasoningConfig(effort = "high"))
+    .setReasoning("high")
     .setStreamingEnabled(true)
     .init()
 

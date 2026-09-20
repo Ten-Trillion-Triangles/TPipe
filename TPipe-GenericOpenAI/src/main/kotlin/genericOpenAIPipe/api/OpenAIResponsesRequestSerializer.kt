@@ -254,14 +254,26 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
 
     /**
      * Converts the normalised [ReasoningConfig] to the Responses-API `reasoning` block.
-     * Returns `null` if every field is null so the wire JSON does not carry an empty object.
+     * Boolean-only settings use the Responses effort vocabulary: enabled maps to
+     * the default `medium` effort and disabled maps to explicit `none`. A token
+     * budget takes precedence over that default effort mapping.
      */
     private fun convertReasoning(reasoning: ReasoningConfig?): OpenAIResponsesReasoning?
     {
         if(reasoning == null) return null
-        if(reasoning.effort == null && reasoning.maxTokens == null) return null
+
+        val effort = when
+        {
+            reasoning.effort != null -> reasoning.effort
+            reasoning.maxTokens != null -> null
+            reasoning.enabled == true -> "medium"
+            reasoning.enabled == false -> "none"
+            else -> null
+        }
+        if(effort == null && reasoning.maxTokens == null) return null
+
         return OpenAIResponsesReasoning(
-            effort = reasoning.effort,
+            effort = effort,
             maxTokens = reasoning.maxTokens
         )
     }
