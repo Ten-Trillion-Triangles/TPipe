@@ -336,10 +336,11 @@ pipe.setStreamingCallback(
 #### `setReasoning(): Pipe`, `setReasoning(tokens: Int): Pipe`, `setReasoning(custom: String): Pipe`, `disableReasoning(): Pipe`
 Configures reasoning through the inherited TPipe API. Generic OpenAI translates these overloads into its internal provider-neutral configuration before serializing the active wire format:
 
+- If no reasoning setter is called, the `reasoning` field is omitted so the provider or selected model can use its own default.
 - `setReasoning()` enables the provider's default reasoning level.
 - `setReasoning(tokens)` selects a reasoning-token budget.
 - `setReasoning(custom)` passes a provider-supported effort string such as `"high"`.
-- `disableReasoning()` requests an explicit off setting.
+- `disableReasoning()` requests an explicit off setting, such as `effort: "none"` where the active wire format supports it.
 
 The internal `ReasoningConfig` adapter is not part of the public Generic OpenAI builder API.
 

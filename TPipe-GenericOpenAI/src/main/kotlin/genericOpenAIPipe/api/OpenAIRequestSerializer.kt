@@ -2,6 +2,7 @@ package genericOpenAIPipe.api
 
 import com.TTT.Util.serialize
 import genericOpenAIPipe.env.GenericOpenAIChatRequest
+import genericOpenAIPipe.env.ReasoningConfig
 
 class OpenAIRequestSerializer : RequestSerializer
 {
@@ -19,7 +20,10 @@ class OpenAIRequestSerializer : RequestSerializer
         val ignored = options
         return when(apiMode)
         {
-            is ApiMode.OpenAI -> serialize(request, encodedefault = false)
+            is ApiMode.OpenAI -> serialize(
+                request.toOpenAIChatCompletionsRequest(),
+                encodedefault = false
+            )
             is ApiMode.Anthropic ->
             {
                 val anthropicRequest = fromGenericOpenAI(request)
@@ -36,6 +40,48 @@ class OpenAIRequestSerializer : RequestSerializer
             }
         }
     }
+}
+
+/**
+ * Converts provider-neutral reasoning state to the official Chat Completions
+ * request fields.
+ *
+ * Chat Completions has no nested `reasoning` object and has no independent
+ * reasoning-token budget. A token overload therefore selects the normal
+ * reasoning effort and uses the requested value as the API's total completion
+ * ceiling. That ceiling includes both reasoning and visible output according
+ * to the OpenAI API contract.
+ */
+private fun GenericOpenAIChatRequest.toOpenAIChatCompletionsRequest(): GenericOpenAIChatRequest
+{
+    val reasoning = reasoning
+    val mappedReasoningEffort = reasoning?.toChatCompletionsEffort() ?: this.reasoningEffort
+    val completionBudget = when
+    {
+        reasoning?.maxTokens != null -> reasoning.maxTokens
+        maxCompletionTokens != null -> maxCompletionTokens
+        else -> null
+    }
+    val legacyMaxTokens = if(reasoning?.maxTokens != null) null else maxTokens
+
+    return copy(
+        maxTokens = legacyMaxTokens,
+        maxCompletionTokens = completionBudget,
+        reasoning = null,
+        reasoningEffort = mappedReasoningEffort
+    )
+}
+
+/**
+ * Maps the shared reasoning representation to Chat Completions' effort values.
+ */
+private fun ReasoningConfig.toChatCompletionsEffort(): String? = when
+{
+    effort != null -> effort
+    maxTokens != null -> "medium"
+    enabled == true -> "medium"
+    enabled == false -> "none"
+    else -> null
 }
 
 /**
@@ -105,12 +151,17 @@ fun fromGenericOpenAI(request: GenericOpenAIChatRequest): AnthropicMessagesReque
         systemMessage.takeIf { it.isNotEmpty() } to null
     }
 
+    val maxTokens = request.maxTokens ?: request.maxCompletionTokens ?: 4096
+    val reasoning = request.reasoning.toAnthropicReasoning(maxTokens)
+
     return AnthropicMessagesRequest(
         model = request.model,
         messages = anthropicMessages,
         system = systemStr,
         systemBlocks = systemBlocks,
-        maxTokens = request.maxTokens ?: request.maxCompletionTokens ?: 4096,
+        maxTokens = maxTokens,
+        thinking = reasoning.thinking,
+        outputConfig = reasoning.outputConfig,
         stream = request.stream,
         cacheControl = null  // cacheControl applied via systemBlocks; not a top-level field
     )

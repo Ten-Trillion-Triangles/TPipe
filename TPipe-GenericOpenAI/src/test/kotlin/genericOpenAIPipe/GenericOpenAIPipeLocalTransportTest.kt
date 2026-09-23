@@ -7,6 +7,7 @@ import com.TTT.Debug.TraceEventType
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Util.deserialize
 import genericOpenAIPipe.api.ApiMode
+import genericOpenAIPipe.env.GenericOpenAIChatRequest
 import genericOpenAIPipe.env.OpenAIResponsesRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -17,6 +18,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.http.content.OutgoingContent
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Test
@@ -30,6 +33,8 @@ import org.junit.jupiter.api.Test
  */
 class GenericOpenAIPipeLocalTransportTest
 {
+
+    private var lastResponsesRequestBody: String = ""
 
 //=========================================Lifecycle===============================================================
 
@@ -256,12 +261,13 @@ class GenericOpenAIPipeLocalTransportTest
     }
 
     @Test
-    fun responsesDefaultReasoningIsExplicitlyDisabled() = runBlocking<Unit>
+    fun responsesDefaultReasoningIsOmitted() = runBlocking<Unit>
     {
-        val reasoning = requireNotNull(executeResponsesRequest { }.reasoning)
+        val request = executeResponsesRequest { }
 
-        Assertions.assertEquals("none", reasoning.effort)
-        Assertions.assertNull(reasoning.maxTokens)
+        Assertions.assertNull(request.reasoning)
+        val requestJson = Json.parseToJsonElement(lastResponsesRequestBody).jsonObject
+        Assertions.assertFalse(requestJson.containsKey("reasoning"))
     }
 
     @Test
@@ -303,7 +309,63 @@ class GenericOpenAIPipeLocalTransportTest
         Assertions.assertNull(reasoning.maxTokens)
     }
 
+    @Test
+    fun chatReasoningOverloadReachesOfficialWireField() = runBlocking<Unit>
+    {
+        val request = executeChatRequest { pipe -> pipe.setReasoning("high") }
+
+        Assertions.assertEquals("high", request.reasoningEffort)
+        Assertions.assertNull(request.reasoning)
+    }
+
+    @Test
+    fun chatReasoningTokenOverloadReachesOfficialCompletionBudget() = runBlocking<Unit>
+    {
+        val request = executeChatRequest { pipe -> pipe.setReasoning(2048) }
+
+        Assertions.assertEquals("medium", request.reasoningEffort)
+        Assertions.assertEquals(2048, request.maxCompletionTokens)
+        Assertions.assertNull(request.maxTokens)
+        Assertions.assertNull(request.reasoning)
+    }
+
 //=========================================Helpers==================================================================
+
+    private suspend fun executeChatRequest(
+        configure: (GenericOpenAIPipe) -> Unit,
+    ): GenericOpenAIChatRequest
+    {
+        var requestBody = ""
+        val engine = MockEngine { request ->
+            requestBody = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            respond(
+                content = cannedChatCompletionsBody,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+            )
+        }
+        val client = HttpClient(engine)
+        val pipe = GenericOpenAIPipe()
+            .setApiKey("test-key")
+            .setBaseUrl("https://mock.openai.test/v1")
+            .setApiMode(ApiMode.OpenAI) as GenericOpenAIPipe
+        pipe.setModel("gpt-5.1")
+        pipe.setStreamingEnabled(false)
+        configure(pipe)
+        pipe.injectHttpClientForTest(client)
+
+        try
+        {
+            pipe.initForTest()
+            pipe.generateTextForTest("reasoning mapping probe")
+            return requireNotNull(deserialize<GenericOpenAIChatRequest>(requestBody))
+        }
+        finally
+        {
+            pipe.abortForTest()
+            client.close()
+        }
+    }
 
     private suspend fun executeResponsesRequest(
         configure: (GenericOpenAIPipe) -> Unit,
@@ -332,6 +394,7 @@ class GenericOpenAIPipeLocalTransportTest
         {
             pipe.initForTest()
             pipe.generateTextForTest("reasoning mapping probe")
+            lastResponsesRequestBody = requestBody
             return requireNotNull(deserialize<OpenAIResponsesRequest>(requestBody))
         }
         finally

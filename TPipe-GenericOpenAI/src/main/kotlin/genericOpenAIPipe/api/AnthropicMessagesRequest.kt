@@ -13,6 +13,9 @@ import kotlinx.serialization.Serializable
  * @property systemBlocks Structured system content blocks with optional per-block
  *        cache control. Takes precedence over [system] when non-null.
  * @property maxTokens Maximum tokens to generate (REQUIRED by Anthropic)
+ * @property thinking Anthropic thinking configuration, when reasoning is
+ *        explicitly enabled or disabled
+ * @property outputConfig Adaptive-thinking effort configuration
  * @property stream Enable streaming (SSE response) - not supported for /v1/messages
  * @property cacheControl Optional cache control to apply at the API level.
  *        The serializer places this on the last system block for explicit caching.
@@ -30,12 +33,36 @@ data class AnthropicMessagesRequest(
     val systemBlocks: List<AnthropicSystemBlock>? = null,
     @SerialName("max_tokens")
     val maxTokens: Int,
+    val thinking: AnthropicThinkingConfig? = null,
+    @SerialName("output_config")
+    val outputConfig: AnthropicOutputConfig? = null,
     val stream: Boolean = false,
     val cacheControl: AnthropicCacheControl? = null,
     @SerialName("system_pparam")
     val systemPparam: Map<String, String>? = null,
     @SerialName("session_id")
     val sessionId: String? = null
+)
+
+/**
+ * Anthropic Messages thinking configuration.
+ *
+ * The API accepts `adaptive`, `enabled`, and `disabled` variants. The
+ * `budget_tokens` field is valid only with the `enabled` variant.
+ */
+@Serializable
+data class AnthropicThinkingConfig(
+    val type: String,
+    @SerialName("budget_tokens")
+    val budgetTokens: Int? = null
+)
+
+/**
+ * Anthropic adaptive-thinking output configuration.
+ */
+@Serializable
+data class AnthropicOutputConfig(
+    val effort: String? = null
 )
 
 /**

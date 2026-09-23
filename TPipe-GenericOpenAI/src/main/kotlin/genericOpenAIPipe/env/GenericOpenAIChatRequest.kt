@@ -31,7 +31,9 @@ import kotlinx.serialization.Serializable
  * @property responseFormat Response format constraint (text, json_object, json_schema)
  * @property structuredOutputs Enable structured outputs via json_schema
  * @property modalities Output modalities (text, image, audio)
- * @property reasoning Reasoning model configuration
+ * @property reasoning Provider-neutral reasoning configuration used before
+ *        provider-specific serialization
+ * @property reasoningEffort OpenAI Chat Completions reasoning effort
  * @property cacheControl Anthropic-style caching with ttl
  * @property user End-user identifier for abuse detection
  * @property n Number of completions to generate
@@ -78,6 +80,8 @@ data class GenericOpenAIChatRequest(
     val structuredOutputs: Boolean? = null,
     val modalities: List<String>? = null,
     val reasoning: ReasoningConfig? = null,
+    @SerialName("reasoning_effort")
+    val reasoningEffort: String? = null,
     @SerialName("cache_control")
     val cacheControl: CacheControl? = null,
     val user: String? = null,

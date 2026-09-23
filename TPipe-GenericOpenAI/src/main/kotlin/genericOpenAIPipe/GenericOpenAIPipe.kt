@@ -224,10 +224,14 @@ class GenericOpenAIPipe : Pipe()
     private var modalities: List<String>? = null
 
     /**
-     * Reasoning configuration for reasoning-capable models.
+     * Optional reasoning configuration for reasoning-capable models.
+     *
+     * A null value means the caller has not selected a reasoning policy and
+     * must remain omitted from provider wire requests. Explicit enablement or
+     * disablement is installed by the reasoning setter overloads.
      */
     @kotlinx.serialization.Transient
-    private var reasoningConfig: ReasoningConfig = ReasoningConfig(enabled = false)
+    private var reasoningConfig: ReasoningConfig? = null
 
     /**
      * Cache control with TTL for Anthropic-style caching.

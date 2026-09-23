@@ -394,7 +394,7 @@ fun main() = runBlocking {
 }
 ```
 
-Reasoning effort values include `"xhigh"`, `"high"`, `"medium"`, `"low"`, `"minimal"`, and `"none"`. Use `setReasoning(tokens)` for APIs that expose a reasoning-token budget. `setReasoning()` enables the default provider reasoning level, while `disableReasoning()` emits an explicit off setting where the active wire format supports it. The Responses API mode (OpenAI) additionally populates `streamingReasoningTokens` from the wire and exposes them via tracing metadata.
+Reasoning effort values include `"xhigh"`, `"high"`, `"medium"`, `"low"`, `"minimal"`, and `"none"`. If no reasoning setter is called, Generic OpenAI omits the `reasoning` field so the selected provider or model can use its own default. Use `setReasoning(tokens)` for APIs that expose a reasoning-token budget. `setReasoning()` enables the default provider reasoning level, while `disableReasoning()` emits an explicit off setting where the active wire format supports it. The Responses API mode (OpenAI) additionally populates `streamingReasoningTokens` from the wire and exposes them via tracing metadata.
 
 ### Bedrock Mantle Reasoning
 

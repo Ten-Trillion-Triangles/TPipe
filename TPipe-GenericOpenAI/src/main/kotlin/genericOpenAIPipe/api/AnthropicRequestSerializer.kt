@@ -4,6 +4,7 @@ import com.TTT.Util.serialize
 import genericOpenAIPipe.env.ChatMessage
 import genericOpenAIPipe.env.GenericOpenAIChatRequest
 import genericOpenAIPipe.env.MessageContent
+import genericOpenAIPipe.env.ReasoningConfig
 
 class AnthropicRequestSerializer : RequestSerializer
 {
@@ -37,6 +38,7 @@ class AnthropicRequestSerializer : RequestSerializer
         val cacheControl = request.cacheControl?.let {
             AnthropicCacheControl(type = it.type, ttl = it.ttl)
         }
+        val reasoning = request.reasoning.toAnthropicReasoning(maxTokens)
 
         val anthropicRequest = AnthropicMessagesRequest(
             model = request.model,
@@ -44,6 +46,8 @@ class AnthropicRequestSerializer : RequestSerializer
             system = system,
             systemBlocks = systemBlocks,
             maxTokens = maxTokens,
+            thinking = reasoning.thinking,
+            outputConfig = reasoning.outputConfig,
             stream = request.stream,
             cacheControl = cacheControl,
             sessionId = null
@@ -171,3 +175,73 @@ private fun convertToAnthropicMessage(chatMessage: ChatMessage): AnthropicMessag
         }
     }
 }
+
+/**
+ * Provider-specific Anthropic reasoning fields produced from the shared
+ * reasoning configuration.
+ */
+internal data class AnthropicReasoningSettings(
+    val thinking: AnthropicThinkingConfig?,
+    val outputConfig: AnthropicOutputConfig?
+)
+
+/**
+ * Maps the shared reasoning configuration to the Anthropic Messages API.
+ *
+ * Boolean and string overloads use the current adaptive-thinking contract.
+ * The integer overload intentionally uses Anthropic's legacy/manual thinking
+ * contract because that is the only wire representation with a reasoning
+ * budget. Anthropic requires that budget to be at least 1024 and below the
+ * request's total max_tokens value.
+ */
+internal fun ReasoningConfig?.toAnthropicReasoning(maxTokens: Int): AnthropicReasoningSettings
+{
+    val config = this ?: return AnthropicReasoningSettings(null, null)
+
+    if(config.effort != null)
+    {
+        require(config.effort in ANTHROPIC_REASONING_EFFORTS)
+        {
+            "Unsupported Anthropic reasoning effort '${config.effort}'."
+        }
+        return AnthropicReasoningSettings(
+            thinking = AnthropicThinkingConfig(type = "adaptive"),
+            outputConfig = AnthropicOutputConfig(effort = config.effort)
+        )
+    }
+
+    if(config.maxTokens != null)
+    {
+        require(config.maxTokens >= ANTHROPIC_MIN_REASONING_BUDGET)
+        {
+            "Anthropic reasoning budget must be at least $ANTHROPIC_MIN_REASONING_BUDGET tokens."
+        }
+        require(config.maxTokens < maxTokens)
+        {
+            "Anthropic reasoning budget must be less than max_tokens."
+        }
+        return AnthropicReasoningSettings(
+            thinking = AnthropicThinkingConfig(
+                type = "enabled",
+                budgetTokens = config.maxTokens
+            ),
+            outputConfig = null
+        )
+    }
+
+    return when(config.enabled)
+    {
+        true -> AnthropicReasoningSettings(
+            thinking = AnthropicThinkingConfig(type = "adaptive"),
+            outputConfig = null
+        )
+        false -> AnthropicReasoningSettings(
+            thinking = AnthropicThinkingConfig(type = "disabled"),
+            outputConfig = null
+        )
+        null -> AnthropicReasoningSettings(null, null)
+    }
+}
+
+private val ANTHROPIC_REASONING_EFFORTS = setOf("low", "medium", "high", "xhigh", "max")
+private const val ANTHROPIC_MIN_REASONING_BUDGET = 1024
