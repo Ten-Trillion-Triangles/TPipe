@@ -19,6 +19,12 @@ import kotlin.test.assertTrue
 internal fun paint(name: String, color: FunctionRegistryColor = FunctionRegistryColor.RED, count: Int = 1): String =
     "$name:$color:$count"
 
+internal fun paintReplacement(
+    name: String,
+    color: FunctionRegistryColor = FunctionRegistryColor.RED,
+    count: Int = 1
+): String = "replacement:$name:$color:$count"
+
 internal fun nullableFn(): String? = null
 
 internal suspend fun slowFn(): String { delay(10); return "done" }
@@ -56,6 +62,47 @@ class FunctionRegistryReflectionTest
     fun `registerFunction captures return type as nullable String`() {
         val sig = FunctionRegistry.registerFunction("nullable", ::nullableFn)
         assertTrue(sig.returnType.isNullable)
+    }
+
+    @Test
+    fun `registerAlias captures the source function and keeps typed invocation`() = runBlocking {
+        FunctionRegistry.registerFunction("paint", ::paint)
+        val aliasSignature = FunctionRegistry.registerAlias("legacyPaint", "paint")
+
+        FunctionRegistry.registerFunction("paint", ::paintReplacement)
+
+        assertEquals("legacyPaint", aliasSignature.name)
+        assertEquals(FunctionRegistry.getSignature("paint")!!.parameters, aliasSignature.parameters)
+
+        val aliasResult = FunctionInvoker().invoke(
+            "legacyPaint",
+            mapOf("name" to "Apex", "color" to "GREEN", "count" to "4")
+        )
+        val currentResult = FunctionInvoker().invoke(
+            "paint",
+            mapOf("name" to "Apex", "color" to "GREEN", "count" to "4")
+        )
+
+        assertTrue(aliasResult.success, aliasResult.error ?: "Alias invocation failed")
+        assertEquals("Apex:GREEN:4", aliasResult.returnValue)
+        assertTrue(currentResult.success, currentResult.error ?: "Current function invocation failed")
+        assertEquals("replacement:Apex:GREEN:4", currentResult.returnValue)
+    }
+
+    @Test
+    fun `registerAliasAndRemoveSource keeps the alias callable without leaving the source binding`() = runBlocking {
+        FunctionRegistry.registerFunction("paint", ::paint)
+        val aliasSignature = FunctionRegistry.registerAliasAndRemoveSource("generationPaint", "paint")
+
+        assertEquals("generationPaint", aliasSignature.name)
+        assertEquals(null, FunctionRegistry.getSignature("paint"))
+        val aliasResult = FunctionInvoker().invoke(
+            "generationPaint",
+            mapOf("name" to "Apex", "color" to "GREEN", "count" to "4")
+        )
+
+        assertTrue(aliasResult.success, aliasResult.error ?: "Alias invocation failed")
+        assertEquals("Apex:GREEN:4", aliasResult.returnValue)
     }
 
     @Test

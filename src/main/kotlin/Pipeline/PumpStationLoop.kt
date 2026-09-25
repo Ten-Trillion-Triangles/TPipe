@@ -31,7 +31,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -695,7 +697,11 @@ internal suspend fun PumpStation.runDispatchPhaseMulti(): PathRequest?
                 val pathInput = buildPathInput(resolvedPath, request)
                 try
 {
-                    launchAsyncPath(resolvedPath, pathInput)
+                    launchAsyncPath(
+                        resolvedPath,
+                        pathInput,
+                        deferParentPublication = true
+                    )
                     succeededCount++
                 }
                 catch (e: Exception)
@@ -908,11 +914,16 @@ internal suspend fun PumpStation.runPathFlow(request: PathRequest): MultimodalCo
 /**
  * Launch an async path execution on the station's asyncScope. Captures the
  * path's result into a [PendingTurnEntry] tagged with a monotonic [seq] and
- * enqueues it for the foreground drain. Exceptions are caught and reported
- * as [PathFailed] events so they don't escape into the harness's exception
- * boundary.
+ * enqueues it for foreground publication. The foreground drain updates path
+ * result state and applies the configured history policy. Exceptions are
+ * caught and reported as [PathFailed] events so they don't escape into the
+ * harness's exception boundary.
  */
-private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalContent)
+private fun PumpStation.launchAsyncPath(
+    path: PathObject,
+    input: MultimodalContent,
+    deferParentPublication: Boolean = true
+)
 {
     val pathName = path.pathName
     val riskLevel = path.riskLevel
@@ -933,9 +944,15 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
         {
             val result = withCapturedContextAccessScope(accessScope) {
                 semaphore.withPermit {
-                    invokePathInternal(path, input, registerAsInteractiveControlPath = false)
+                    invokePathInternal(
+                        path,
+                        input,
+                        registerAsInteractiveControlPath = false,
+                        publishResultToParent = !deferParentPublication
+                    )
                 }
             }
+            currentCoroutineContext().ensureActive()
             val entry = PendingTurnEntry(
                 seq = seq,
                 turnIndex = turnIndexSnapshot,
@@ -978,14 +995,15 @@ private fun PumpStation.launchAsyncPath(path: PathObject, input: MultimodalConte
 /**
  * Build the input MultimodalContent for a path execution.
  *
- * The dispatch LLM's `pathSchema` field carries the path's input shape, but a
- * chat-mode LLM can freely emit non-JSON content there (e.g.
- * `"pathSchema": "Hello I am not valid JSON"`). Concatenating that raw string
+ * A non-empty dispatch `inputData` object is passed to the selected path as JSON. When `inputData` is empty, the
+ * legacy dispatch `pathSchema` field carries the path's input shape, but a chat-mode LLM can freely emit non-JSON
+ * content there (e.g. `"pathSchema": "Hello I am not valid JSON"`). Concatenating that raw string
  * into the path LLM's prompt makes the path obediently research the schema
  * text instead of the user's topic.
  *
  * Warn-and-continue contract:
- *   - When the dispatch emits a non-empty `pathSchema`, we try to round-trip
+ *   - When the dispatch emits a non-empty `inputData`, it is serialized directly as the path input. Otherwise, when
+ *     the dispatch emits a non-empty `pathSchema`, we try to round-trip
  *     it through [extractJson]<[PathRequest]>. If that fails (or produces a
  *     default schema), the dispatch-emitted schema is treated as garbage.
  *     We:
@@ -1003,71 +1021,62 @@ internal fun PumpStation.buildPathInput(path: PathObject, request: PathRequest):
 {
     val base = buildTurnContent()
     /*
-     * Validate the dispatch-emitted schema before merging it with the user's
-     * input. A non-JSON schema is treated as garbage and discarded with a
-     * hint; we then fall back to the path's own canonical schema. The user's
-     * original input is the ground-truth topic — it must reach the path LLM
-     * unconditionally.
+     * Validate the legacy dispatch-emitted schema before merging it with the user's input. A non-JSON schema is
+     * treated as garbage and discarded with a hint; structured inputData bypasses this compatibility path.
      */
-    val dispatchSchema = request.pathSchema
-    /*
-     * Treat the dispatch's pathSchema as valid only when it round-trips
-     * through a JSON parse and yields a JsonObject envelope (the schema ought
-     * to be a JSON object, not a list/scalar/string). This mirrors
-     * [com.TTT.Pipeline.PumpStationHelpers.parseDispatchOutput]'s contract
-     * so the validity bar is consistent: a string that does not decode as a
-     * JSON object is treated as garbage and falls into the [Harness Notice]
-     * path.
-     */
-    /*
-     * We deliberately use [kotlinx.serialization.json.Json.parseToJsonElement]
-     * here (NOT [extractJson]<[PathRequest]>) because round-tripping through
-     * [PathRequest] requires the kotlinx-serialization compiler plugin,
-     * which is unavailable under direct kotlinc execution in this sandbox.
-     * The semantics are identical for the dispatch validation: a non-empty
-     * JSON-object-shaped string passes; everything else (prose, partial JSON,
-     * lists, scalars, etc.) is treated as garbage. The fallback to
-     * [PathObject.pathSchema] and the [Harness Notice] hint are unchanged.
-     */
-    val dispatchSchemaIsValid = dispatchSchema.isNotEmpty() &&
-        runCatching {
-            val element = kotlinx.serialization.json.Json.parseToJsonElement(dispatchSchema)
-            element is kotlinx.serialization.json.JsonObject
-        }.getOrDefault(false)
-    val effectiveSchema = when
+    val structuredInputPresent = request.inputData.isNotEmpty()
+    val effectiveSchema = if (structuredInputPresent)
     {
-        dispatchSchema.isEmpty()       -> path.pathSchema
-        dispatchSchemaIsValid          -> dispatchSchema
-        else                           -> run {
-            /*
-             * Append a [Harness Notice] hint so the next dispatch LLM sees
-             * the constraint and self-corrects. The notice preserves the
-             * dispatch-emitted garbage only when the failure policy allows
-             * rejected output in durable turn history.
-             */
-            turnHistory.add(
-                ConverseData(
-                    role = ConverseRole.harness,
-                    content = MultimodalContent(
-                        text = buildPathSchemaFallbackMessage(
-                            mapOf(
-                                "pathName" to request.pathName,
-                                "output" to dispatchSchema
+        ""
+    }
+    else
+    {
+        val dispatchSchema = request.pathSchema
+        /*
+         * Treat the legacy pathSchema as valid only when it round-trips through a JSON parse and yields a JsonObject
+         * envelope. A non-object value is treated as garbage and falls into the [Harness Notice] fallback path.
+         */
+        val dispatchSchemaIsValid = dispatchSchema.isNotEmpty() &&
+            runCatching {
+                val element = kotlinx.serialization.json.Json.parseToJsonElement(dispatchSchema)
+                element is kotlinx.serialization.json.JsonObject
+            }.getOrDefault(false)
+        when
+        {
+            dispatchSchema.isEmpty()       -> path.pathSchema
+            dispatchSchemaIsValid          -> dispatchSchema
+            else                           -> run {
+                turnHistory.add(
+                    ConverseData(
+                        role = ConverseRole.harness,
+                        content = MultimodalContent(
+                            text = buildPathSchemaFallbackMessage(
+                                mapOf(
+                                    "pathName" to request.pathName,
+                                    "output" to dispatchSchema
+                                )
                             )
                         )
                     )
                 )
-            )
-            path.pathSchema
+                path.pathSchema
+            }
         }
     }
     val originalInputText = taskState.originalInput?.text?.takeIf { it.isNotBlank() }
-    base.text = when
+    if (structuredInputPresent)
     {
-        originalInputText != null && effectiveSchema.isNotEmpty() -> "$originalInputText\n\n$effectiveSchema"
-        originalInputText != null -> originalInputText
-        effectiveSchema.isNotEmpty() -> effectiveSchema
-        else -> base.text
+        base.text = request.inputData.toString()
+    }
+    else
+    {
+        base.text = when
+        {
+            originalInputText != null && effectiveSchema.isNotEmpty() -> "$originalInputText\n\n$effectiveSchema"
+            originalInputText != null -> originalInputText
+            effectiveSchema.isNotEmpty() -> effectiveSchema
+            else -> base.text
+        }
     }
     base.metadata.putAll(
         mutableMapOf<Any, Any>(
@@ -2658,6 +2667,7 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
                                 val result = agent.executeLocal(this@runBackgroundAgentsPhase.buildTurnContent())
                                 if (appends)
                                 {
+                                    currentCoroutineContext().ensureActive()
                                     val entry = PendingTurnEntry(
                                         seq = seq,
                                         turnIndex = turnIndexSnapshot,
@@ -2702,6 +2712,74 @@ internal fun PumpStation.generateStashId(): String =
     "stash-${System.currentTimeMillis()}-${stashIdCounter.incrementAndGet()}"
 
 /**
+ * Store a full output outside conversation context and create its compact reference.
+ * The placeholder preserves path identity and pipeline control flags for downstream consumers.
+ */
+internal fun PumpStation.stashOutputForContext(
+    content: MultimodalContent,
+    sourcePath: String?,
+    createdTurn: Int
+): MultimodalContent
+{
+    val stashId = generateStashId()
+    val stashedContent = content.deepCopy()
+    stashInternal[stashId] = ConverseData(role = ConverseRole.assistant, content = stashedContent)
+    stashManifestInternal.add(StashEntry(
+        id = stashId,
+        sourcePath = sourcePath,
+        createdTurn = createdTurn,
+        reason = StashReason.TokenOverflow,
+        tokenEstimate = content.approximateContextSize().coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        byteSize = content.approximateContextSize(),
+        preview = content.text.take(200)
+    ))
+    emitEventInternal(StashCreated(
+        runId = taskState.runId,
+        turnIndex = createdTurn,
+        stashId = stashId,
+        sourcePath = sourcePath,
+        reason = StashReason.TokenOverflow,
+        tokenEstimate = content.approximateContextSize().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    ))
+    val placeholder = MultimodalContent(
+        text = "[Stashed: $stashId — content was ${content.toString().length} chars due to context blowout. See stash manifest.]"
+    )
+    sourcePath?.let { placeholder.metadata["pathName"] = it }
+    placeholder.metadata["turnIndex"] = createdTurn
+    content.metadata["asyncPathSeq"]?.let { placeholder.metadata["asyncPathSeq"] = it }
+    placeholder.metadata["stashId"] = stashId
+    placeholder.passPipeline = content.passPipeline
+    placeholder.terminatePipeline = content.terminatePipeline
+    if (taskState.lastPathResult === content)
+    {
+        taskState.lastPathResult = placeholder
+    }
+    return placeholder
+}
+
+/**
+ * Stash an async path result when merging it would exceed the configured context threshold.
+ */
+internal fun PumpStation.stashAsyncPathOutputIfNeeded(
+    content: MultimodalContent,
+    sourcePath: String?,
+    createdTurn: Int
+): MultimodalContent
+{
+    val fillRatio = contextFillRatio()
+    if (!failurePolicy.stashOversizedOutputs || fillRatio <= blowoutThresholdInternal) return content
+
+    emitEventInternal(ContextBlowoutDetected(
+        runId = taskState.runId,
+        turnIndex = createdTurn,
+        fillRatio = fillRatio,
+        threshold = blowoutThresholdInternal,
+        afterPhase = PumpStationPhase.PathExecution
+    ))
+    return stashOutputForContext(content, sourcePath, createdTurn)
+}
+
+/**
  * Detect context blowout and handle it. Called at every phase boundary.
  * Returns true if blowout was detected and handled, false otherwise.
  */
@@ -2720,34 +2798,37 @@ internal suspend fun PumpStation.detectAndHandleContextBlowout(afterPhase: PumpS
     ))
     if (failurePolicy.stashOversizedOutputs)
 {
-        val stashId = generateStashId()
         val currentContent = taskState.latestContent ?: MultimodalContent()
-        stashInternal[stashId] = ConverseData(role = ConverseRole.assistant, content = currentContent)
-        stashManifestInternal.add(StashEntry(
-            id = stashId,
+        val placeholder = stashOutputForContext(
+            currentContent,
             sourcePath = taskState.selectedPathName,
-            createdTurn = taskState.turnIndex,
-            reason = StashReason.TokenOverflow,
-            tokenEstimate = currentContent.toString().length,
-            byteSize = currentContent.toString().toByteArray().size.toLong(),
-            preview = currentContent.text.take(200)
-        ))
-        emitEventInternal(StashCreated(
-            runId = taskState.runId,
-            turnIndex = taskState.turnIndex,
-            stashId = stashId,
-            sourcePath = taskState.selectedPathName,
-            reason = StashReason.TokenOverflow,
-            tokenEstimate = currentContent.toString().length
-        ))
-        // Replace with placeholder
-        val placeholder = MultimodalContent(
-            text = "[Stashed: $stashId — content was ${currentContent.toString().length} chars due to context blowout. See stash manifest.]",
-            context = currentContent.context
+            createdTurn = taskState.turnIndex
         )
-        placeholder.metadata.putAll(currentContent.metadata)
-        placeholder.metadata["stashId"] = stashId
         taskState.latestContent = placeholder
+
+        if (afterPhase == PumpStationPhase.PathExecution)
+        {
+            taskState.lastPathResult = placeholder
+            val pathName = taskState.selectedPathName
+            if (pathName != null)
+            {
+                listOf(turnHistory, rawTurnHistory).forEach { history ->
+                    val outputIndex = history.history.indexOfLast { entry ->
+                        entry.role == ConverseRole.assistant &&
+                            entry.content.metadata["pathName"] == pathName &&
+                            entry.content.metadata["turnIndex"] == taskState.turnIndex
+                    }
+                    if (outputIndex >= 0)
+                    {
+                        val historyPlaceholder = MultimodalContent(text = placeholder.text)
+                        historyPlaceholder.metadata.putAll(placeholder.metadata)
+                        historyPlaceholder.passPipeline = placeholder.passPipeline
+                        historyPlaceholder.terminatePipeline = placeholder.terminatePipeline
+                        history.history[outputIndex].content = historyPlaceholder
+                    }
+                }
+            }
+        }
     }
 
     preCompactionFunctionInternal?.invoke(
@@ -3108,10 +3189,13 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     // Phase boundary: AfterPathExecution.
     injectInterruptForPhase(PumpStationPausePhase.AfterPathExecution, turnSnapshot)
     injectSteeringForPhase(PumpStationPausePhase.AfterPathExecution)
-    detectAndHandleContextBlowout(PumpStationPhase.PathExecution)
     if (pathResult != null)
     {
         taskState.latestContent = pathResult
+    }
+    detectAndHandleContextBlowout(PumpStationPhase.PathExecution)
+    if (pathResult != null)
+    {
         if (pathResult.passPipeline)
         {
             return if (goalAgent == null)
@@ -3221,21 +3305,26 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent
         turnHistory.add(ConverseData(role = ConverseRole.harness, content = e.content))
     }
     injectSteeringForPhase(PumpStationPausePhase.BeforeExit)
-    // 1. Drain async turn results from in-flight async paths / harness
-    //    agents. We do this BEFORE the cancel so any work that has already
-    //    enqueued a PendingTurnEntry gets merged into turnHistory.
+    // 1. Drain results that are already queued before teardown begins.
     drainPendingAsyncResults()
-    // 2. Cancel the station-scoped async jobs. cancelAsyncJobs respects
-    //    asyncJobGracePeriodMs and uses the new pathway so coroutines
-    //    cannot outlive executeLocal (closes the orphan-after-timeout
-    //    hazard from the prior analysis). backgroundJobs is still drained
-    //    here for backward compatibility with any pre-substrate callers
-    //    that joined via backgroundJobs.forEach.
+    // 2. Cancel the station-scoped async jobs. Producers check cancellation
+    //    before enqueueing so a handler that returns after a finite grace
+    //    period cannot publish into the completed turn. backgroundJobs is
+    //    still drained here for backward compatibility with any pre-substrate
+    //    callers that joined via backgroundJobs.forEach.
     cancelAsyncJobs()
     withTimeoutOrNull(memoryUpdateTimeoutMsInternal) {
         backgroundJobs.forEach { it.join() }
     }
     backgroundJobs.clear()
+    // Close atomically fences sends from workers that were already past their
+    // cancellation check when the grace period expired. Buffered entries
+    // remain readable and are published by the final drain below.
+    pendingAsyncResultsInternal.close()
+    // Async paths can finish during the cancellation yield or while background
+    // jobs are joining. Drain after teardown so completed results are reflected
+    // in final state and history before the final output is emitted.
+    drainPendingAsyncResults()
 
     if (contextFillRatio() > compactionThresholdInternal)
 {

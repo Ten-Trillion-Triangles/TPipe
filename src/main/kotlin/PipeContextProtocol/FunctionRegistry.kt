@@ -48,6 +48,82 @@ object FunctionRegistry
         functions[name] = wrapper
         return signature
     }
+
+    /**
+     * Register an alternate public name for the function currently bound to [sourceName].
+     * The alias captures that function object, advertises the same parameter and return
+     * contract under [aliasName], and continues to invoke the captured binding if the
+     * source registry entry is later replaced.
+     *
+     * @param aliasName Name exposed to PCP callers for the captured function.
+     * @param sourceName Name of the currently registered function to capture.
+     * @return The alias signature with the captured contract and alias name.
+     * @throws IllegalArgumentException if either name is blank, the names are identical,
+     * or no function is currently registered under [sourceName].
+     */
+    fun registerAlias(aliasName: String, sourceName: String): FunctionSignature
+    {
+        require(aliasName.isNotBlank()) { "Alias function name must not be blank." }
+        require(sourceName.isNotBlank()) { "Source function name must not be blank." }
+        require(aliasName != sourceName) { "Alias and source function names must differ." }
+
+        val source = functions[sourceName]
+            ?: throw IllegalArgumentException("Cannot alias unregistered function '$sourceName'.")
+        val aliasSignature = source.signature.copy(name = aliasName)
+        val alias = object : NativeFunction()
+        {
+            override val signature: FunctionSignature = aliasSignature
+
+            override suspend fun invoke(parameters: Map<String, Any?>): Any?
+            {
+                return source.invoke(parameters)
+            }
+
+            override fun validate(): Boolean = source.validate()
+        }
+
+        functions[aliasName] = alias
+        return aliasSignature
+    }
+
+    /**
+     * Register an alias for the current source function, then remove that source binding if it still points to the
+     * captured function. This lets generation-scoped callers retain the implementation without leaving its canonical
+     * process-wide name callable after staging.
+     *
+     * @param aliasName Name exposed to callers for the captured function.
+     * @param sourceName Name of the currently registered function to capture and remove.
+     * @return The alias signature with the captured contract and alias name.
+     * @throws IllegalArgumentException if either name is blank, the names are identical, or the source is unregistered.
+     */
+    fun registerAliasAndRemoveSource(aliasName: String, sourceName: String): FunctionSignature
+    {
+        require(aliasName.isNotBlank()) { "Alias function name must not be blank." }
+        require(sourceName.isNotBlank()) { "Source function name must not be blank." }
+        require(aliasName != sourceName) { "Alias and source function names must differ." }
+
+        val source = functions[sourceName]
+            ?: throw IllegalArgumentException("Cannot alias unregistered function '$sourceName'.")
+        val aliasSignature = source.signature.copy(name = aliasName)
+        val alias = object : NativeFunction()
+        {
+            override val signature: FunctionSignature = aliasSignature
+
+            override suspend fun invoke(parameters: Map<String, Any?>): Any? = source.invoke(parameters)
+
+            override fun validate(): Boolean = source.validate()
+        }
+
+        try
+        {
+            functions[aliasName] = alias
+            return aliasSignature
+        }
+        finally
+        {
+            functions.remove(sourceName, source)
+        }
+    }
     
     /**
      * Register a lambda function with explicit signature.

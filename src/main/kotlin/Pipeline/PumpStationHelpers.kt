@@ -9,6 +9,7 @@ import com.TTT.Debug.TracePhase
 import com.TTT.Enums.PumpStationGoalHistorySource
 import com.TTT.Enums.PumpStationHistoryTransport
 import com.TTT.Enums.PumpStationLatestContentPosition
+import com.TTT.Pipe.BinaryContent
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.Util.extractAllJsonObjects
@@ -823,11 +824,21 @@ internal fun PumpStation.resolvePath(name: String): PathObject?
  */
 internal fun PumpStation.contextFillRatio(): Double
 {
-    val historySize = turnHistory.history.sumOf { it.content.toString().length }
-    val contentSize = taskState.latestContent?.toString()?.length ?: 0
+    val historySize = turnHistory.history.sumOf { it.content.approximateContextSize() }
+    val contentSize = taskState.latestContent?.approximateContextSize() ?: 0L
     val totalSize = historySize + contentSize
-    val maxSize = (tokenBudgetSettings?.contextWindowSize ?: 100_000) * 4  // rough chars/token
-    return if (maxSize == 0) 0.0 else (totalSize.toDouble() / maxSize)
+    val maxSize = (tokenBudgetSettings?.contextWindowSize ?: 100_000).toLong() * 4  // rough bytes/token
+    return if (maxSize == 0L) 0.0 else (totalSize.toDouble() / maxSize)
+}
+
+/** Estimates serialized text and raw binary payload size for context-pressure checks. */
+internal fun MultimodalContent.approximateContextSize(): Long
+{
+    val serializedSize = toString().toByteArray(Charsets.UTF_8).size.toLong()
+    val rawBinarySize = binaryContent.sumOf { binary ->
+        (binary as? BinaryContent.Bytes)?.data?.size?.toLong() ?: 0L
+    }
+    return serializedSize + rawBinarySize
 }
 
 //=========================================Error Ratio=========================================================

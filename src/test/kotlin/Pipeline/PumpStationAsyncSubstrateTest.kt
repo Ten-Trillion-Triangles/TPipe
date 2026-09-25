@@ -10,16 +10,21 @@ import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.TokenBudgetSettings
 import com.TTT.Structs.PipeSettings
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Test
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -233,7 +238,7 @@ class PumpStationAsyncSubstrateTest
         val station = buildTestStation()
         val started = AtomicInteger(0)
         val completed = AtomicInteger(0)
-        station.asyncScope.launch {
+        val job = station.asyncScope.launch {
             try
             {
                 started.incrementAndGet()
@@ -251,7 +256,63 @@ class PumpStationAsyncSubstrateTest
             while (station.isAsyncScopeActive()) delay(5)
         }
         assertFalse(station.isAsyncScopeActive())
+        assertTrue(job.isCompleted)
         assertEquals(0, completed.get())
+    }
+
+    @Test
+    fun testCancelAsyncJobsGracePeriodBoundsNonCancellableChildJoin() = runBlocking {
+        val station = buildTestStation()
+        val started = AtomicInteger(0)
+        val job = station.asyncScope.launch {
+            started.incrementAndGet()
+            withContext(NonCancellable)
+            {
+                delay(1_500)
+            }
+        }
+        withTimeout(2_000) { while (started.get() == 0) delay(5) }
+
+        val cancelStartedAtNanos = System.nanoTime()
+        station.cancelAsyncJobs(gracePeriodMs = 50L)
+        val elapsedMs = (System.nanoTime() - cancelStartedAtNanos) / 1_000_000L
+
+        assertTrue(elapsedMs < 500L, "Configured grace period should bound the cancellation join")
+        assertFalse(job.isCompleted, "Non-cooperative child should outlive the finite grace period")
+        job.join()
+    }
+
+    @Test
+    @kotlinx.coroutines.ExperimentalCoroutinesApi
+    fun testCanceledAsyncHarnessAgentCannotEnqueueAfterFinalization() = runBlocking {
+        val station = buildTestStation()
+            .setDispatchAgent(Pipeline())
+            .setBackgroundTurnInterval(1)
+            .setAsyncAgentsAppendToTurnHistory(true)
+            .setAsyncJobGracePeriodMs(50L)
+            .setMemoryUpdateTimeoutMs(50L)
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val agent = StubAgent { content ->
+            started.countDown()
+            release.await(5, TimeUnit.SECONDS)
+            MultimodalContent(text = "late harness result: ${content.text}")
+        }
+        station.addHarnessAgent(agent, PumpStationConcurrencyMode.Async)
+        station.P2PInit()
+        station.taskState.turnIndex = 1
+        station.runBackgroundAgentsPhase()
+        assertTrue(started.await(2, TimeUnit.SECONDS))
+        val scopeJob = station.asyncScope.coroutineContext[Job]
+        assertNotNull(scopeJob)
+
+        station.runFinalizationPhase()
+
+        release.countDown()
+        withTimeout(2_000) {
+            while (scopeJob.children.any()) delay(5)
+        }
+        assertEquals(0, station.drainPendingAsyncResults())
     }
 
     //=====================================station defaults========================================================
@@ -316,11 +377,13 @@ class PumpStationAsyncSubstrateTest
         result = MultimodalContent(text = text)
     )
 
-    private class StubAgent : P2PInterface
+    private class StubAgent(
+        private val execute: suspend (MultimodalContent) -> MultimodalContent = { it }
+    ) : P2PInterface
     {
         override var killSwitch: KillSwitch? = null
         override suspend fun P2PInit() {}
-        override suspend fun executeLocal(content: MultimodalContent): MultimodalContent = content
+        override suspend fun executeLocal(content: MultimodalContent): MultimodalContent = execute(content)
         override suspend fun executeP2PRequest(request: P2PRequest): P2PResponse? = null
         override fun setParentInterface(parent: P2PInterface) {}
         override fun getParentP2PInterface(): P2PInterface? = null

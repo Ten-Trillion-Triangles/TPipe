@@ -38,11 +38,11 @@ import com.TTT.Util.writeStringToFile
 import com.TTT.Util.deepCopy
 import com.TTT.Util.extractJson
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -218,9 +218,8 @@ data class PathDescriptionList(
 )
 
 /**
- * Request object called by the llm to invoke a given path. Requires a path name to be passed, and the schema to be
- * supplied. This might be a custom JSON schema, a data class, or [PcpContext]. If PcpContext is supplied, then
- * the instructions on how to supply pcp will be auto-injected into the agent as well.
+ * Request object called by the llm to invoke a given path. The [inputData] object carries the selected path's
+ * structured input. The legacy [pathSchema] string remains supported for dispatchers that supply a schema inline.
  *
  * The optional [pathSelectionRationale] field captures the LLM's free-text reasoning for why it picked
  * this specific path from the available list. The rationale rides into the trace and is consumed by the
@@ -232,7 +231,8 @@ data class PathDescriptionList(
 data class PathRequest(
     var pathName: String = "",
     var pathSchema: String = "",
-    var pathSelectionRationale: String? = null
+    var pathSelectionRationale: String? = null,
+    var inputData: JsonObject = JsonObject(emptyMap())
 )
 
 /**
@@ -3327,10 +3327,11 @@ private fun pathKey(name: String): String = name.lowercase()
     internal suspend fun invokePathInternal(
         path: PathObject,
         input: MultimodalContent,
-        registerAsInteractiveControlPath: Boolean = true
+        registerAsInteractiveControlPath: Boolean = true,
+        publishResultToParent: Boolean = true
     ): MultimodalContent
     {
-        return invokePath(path, input, registerAsInteractiveControlPath)
+        return invokePath(path, input, registerAsInteractiveControlPath, publishResultToParent)
     }
 
     /**
@@ -3708,11 +3709,16 @@ private fun pathKey(name: String): String = name.lowercase()
     private suspend fun invokePath(
         path: PathObject,
         input: MultimodalContent,
-        registerAsInteractiveControlPath: Boolean = true
+        registerAsInteractiveControlPath: Boolean = true,
+        publishResultToParent: Boolean = true
     ): MultimodalContent
     {
         val pathName = path.pathName
         val riskLevel = path.riskLevel
+        if (publishResultToParent)
+        {
+            taskState.selectedPathName = pathName
+        }
 
         // Emit PathSelected event
         emitEventInternal(PathSelected(
@@ -3841,8 +3847,15 @@ private fun pathKey(name: String): String = name.lowercase()
                         error = PumpStationError.LoopGuardTriggered,
                         errorMessage = "maxConsecutiveSamePath exceeded for path '${pathName}'"
                     ))
-                    taskState.latestContent = (taskState.latestContent ?: MultimodalContent())
-                        .also { it.terminatePipeline = true }
+                    if (publishResultToParent)
+                    {
+                        taskState.latestContent = (taskState.latestContent ?: MultimodalContent())
+                            .also { it.terminatePipeline = true }
+                    }
+                    else
+                    {
+                        input.terminatePipeline = true
+                    }
                     taskState.lastError = PumpStationError.LoopGuardTriggered
                     taskState.exitReason = PumpStationExitReason.LoopGuardTripped
                     consecutivePathCount = 0
@@ -3894,7 +3907,14 @@ private fun pathKey(name: String): String = name.lowercase()
                 }
                 PathLimitExceededPolicy.Halt ->
                 {
-                    taskState.latestContent?.terminatePipeline = true
+                    if (publishResultToParent)
+                    {
+                        taskState.latestContent?.terminatePipeline = true
+                    }
+                    else
+                    {
+                        input.terminatePipeline = true
+                    }
                     taskState.lastError = PumpStationError.MaxTurnsExceeded
                     emitEventInternal(PathFailed(
                         runId = taskState.runId,
@@ -4009,8 +4029,11 @@ private fun pathKey(name: String): String = name.lowercase()
             path.checkKillSwitch(pathInputTokens, pathOutputTokens, runStartElapsedMs)
         }
 
-        taskState.lastPathResult = result
-        taskState.latestContent = result
+        if (publishResultToParent)
+        {
+            taskState.lastPathResult = result
+            taskState.latestContent = result
+        }
 
         // --- Path validation ---
         if (pathValidationFunction != null)
@@ -4030,11 +4053,16 @@ private fun pathKey(name: String): String = name.lowercase()
         val transformed = pathTransformationFunction?.invoke(result, this) ?: result
 
         // --- Update turn history ---
-        val resultContent = MultimodalContent()
-        resultContent.addText(transformed.toString())
-        val turnEntry = ConverseData(role = ConverseRole.assistant, content = resultContent)
-        turnHistory.add(turnEntry)
-        rawTurnHistory.add(turnEntry)
+        if (publishResultToParent)
+        {
+            val resultContent = MultimodalContent()
+            resultContent.addText(transformed.toString())
+            resultContent.metadata["pathName"] = pathName
+            resultContent.metadata["turnIndex"] = taskState.turnIndex
+            val turnEntry = ConverseData(role = ConverseRole.assistant, content = resultContent)
+            turnHistory.add(turnEntry)
+            rawTurnHistory.add(turnEntry)
+        }
 
         return transformed
     }
@@ -5594,10 +5622,11 @@ private fun pathKey(name: String): String = name.lowercase()
     }
 
     /**
-     * Drain all entries currently buffered in [pendingAsyncResults] and merge
-     * them into [turnHistory] in [PendingTurnEntry.seq] order. Returns the
-     * number of entries merged. This is called by the foreground at safe phase
-     * boundaries (start of judge, start of finalization).
+     * Drain entries currently buffered in [pendingAsyncResults] in
+     * [PendingTurnEntry.seq] order, publish async path results, and append
+     * entries to history when their source policy allows it. Returns the
+     * number of entries appended. The foreground calls this at safe phase
+     * boundaries, including the start of judge and finalization phases.
      *
      * The drain is best-effort and lock-free relative to the producer channel:
      * it batches entries until the channel reports empty. Producers may
@@ -5606,7 +5635,6 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     internal fun drainPendingAsyncResults(): Int
     {
-        if (!asyncPathsAppendToTurnHistory) return 0
         // Batch-pull everything currently buffered. We tolerate the channel
         // being concurrently appended to by async producers — anything that
         // arrives after this loop runs is picked up by the next drain.
@@ -5625,6 +5653,7 @@ private fun pathKey(name: String): String = name.lowercase()
         // AtomicLong counter guarantees no two entries share a seq.
         drained.sortBy { it.seq }
         var merged = 0
+        val mergedContents = mutableMapOf<Long, MultimodalContent>()
         kotlinx.coroutines.runBlocking {
             historyMutex.withLock {
                 for (entry in drained)
@@ -5635,13 +5664,43 @@ private fun pathKey(name: String): String = name.lowercase()
                     // pathName -> path object here.
                     val path = entry.pathName?.let { name -> pathList[pathKey(name)] ?: reservePaths[pathKey(name)] }
                     val suppressed = path?.isSuppressHistoryEmit == true
-                    if (suppressed) continue
+                    val content = entry.result
+                    entry.pathName?.let { content.metadata["pathName"] = it }
+                    content.metadata["turnIndex"] = entry.turnIndex
+                    var publishedContent = content
+                    if (entry.source == "asyncPath")
+                    {
+                        content.metadata["asyncPathSeq"] = entry.seq
+                        if (entry.passPipeline) content.passPipeline = true
+                        if (entry.terminatePipeline) content.terminatePipeline = true
+                        taskState.selectedPathName = entry.pathName
+                        taskState.lastPathResult = content
+                        taskState.latestContent = content
+                        publishedContent = stashAsyncPathOutputIfNeeded(
+                            content,
+                            sourcePath = entry.pathName,
+                            createdTurn = entry.turnIndex
+                        )
+                        taskState.lastPathResult = publishedContent
+                        taskState.latestContent = publishedContent
+                        mergedContents[entry.seq] = publishedContent
+                    }
+                    val shouldAppend = when (entry.source)
+                    {
+                        "asyncPath" -> asyncPathsAppendToTurnHistory && !suppressed
+                        else -> !suppressed
+                    }
+                    if (!shouldAppend)
+                    {
+                        continue
+                    }
                     val turnEntry = ConverseData(
                         role = ConverseRole.assistant,
-                        content = entry.result
+                        content = publishedContent
                     )
                     turnHistory.add(turnEntry)
                     rawTurnHistory.add(turnEntry)
+                    mergedContents[entry.seq] = publishedContent
                     merged++
                 }
             }
@@ -5652,6 +5711,8 @@ private fun pathKey(name: String): String = name.lowercase()
         {
             val path = entry.pathName?.let { name -> pathList[pathKey(name)] ?: reservePaths[pathKey(name)] }
             if (path?.isSuppressHistoryEmit == true) continue
+            if (entry.source == "asyncPath" && !asyncPathsAppendToTurnHistory) continue
+            val mergedContent = mergedContents[entry.seq] ?: entry.result
             emitEventInternal(AsyncTurnAppended(
                 runId = taskState.runId,
                 turnIndex = taskState.turnIndex,
@@ -5660,7 +5721,7 @@ private fun pathKey(name: String): String = name.lowercase()
                 pathName = entry.pathName,
                 agentName = entry.agentName,
                 seq = entry.seq,
-                content = entry.result
+                content = mergedContent
             ))
         }
         return merged
@@ -5679,39 +5740,61 @@ private fun pathKey(name: String): String = name.lowercase()
      * [asyncJobGracePeriodMs] to a value that matches their worst-case
      * LLM round-trip plus safety margin.
      *
-     * After this call returns, [asyncScope] is in a cancelled state and any
-     * further [appendTurnEntryAsync] calls will still succeed (they write to
-     * the foreground-owned history lists) but the launched coroutines that
-     * produced them have been stopped.
+     * After this call returns, the station-scoped async job is cancelled.
+     * Its child coroutines have completed unless a configured grace period
+     * expires first. Further [appendTurnEntryAsync] calls still write to the
+     * foreground-owned history lists.
      *
      * Called automatically by [runFinalizationPhase] before [executeLocal]
      * returns. Safe to call multiple times.
      *
-     * @param gracePeriodMs Optional timeout for the polite-wait phase. When
-     *  null, the wait is unbounded (a single [yield] is performed so any
-     *  in-flight suspend can make progress before the scope is cancelled).
+     * @param gracePeriodMs Optional total timeout for the polite-wait and
+     *  cancellation-join phases. When null, the wait is unbounded (a single
+     *  [yield] is performed so any in-flight suspend can make progress before
+     *  the scope is cancelled).
      */
     fun cancelAsyncJobs(gracePeriodMs: Long? = asyncJobGracePeriodMs)
     {
         val scope = if (asyncJobsScopedToStation) asyncScope else null
+        val startedAtNanos = System.nanoTime()
+        val effectiveGracePeriodMs = gracePeriodMs?.coerceAtLeast(0L)
         // Polite-wait phase: give in-flight work a chance to drain history
         // writes. When gracePeriodMs is null we just yield once and proceed
         // to cancel; long-running work will be cancelled but its cancel
         // handlers (the catch(CancellationException) { throw it } in the
         // launch sites) will be honoured.
         kotlinx.coroutines.runBlocking {
-            if (gracePeriodMs == null)
+            if (effectiveGracePeriodMs == null)
             {
                 kotlinx.coroutines.yield()
             }
             else
             {
-                kotlinx.coroutines.withTimeoutOrNull(gracePeriodMs) {
+                kotlinx.coroutines.withTimeoutOrNull(effectiveGracePeriodMs) {
                     kotlinx.coroutines.yield()
                 }
             }
         }
-        scope?.cancel()
+        val scopeJob = scope?.coroutineContext?.get(Job)
+        scopeJob?.cancel()
+        if (scopeJob != null)
+        {
+            if (effectiveGracePeriodMs == null)
+            {
+                kotlinx.coroutines.runBlocking { scopeJob.join() }
+            }
+            else
+            {
+                val elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
+                val remainingMs = (effectiveGracePeriodMs - elapsedMs).coerceAtLeast(0L)
+                if (remainingMs > 0L)
+                {
+                    kotlinx.coroutines.runBlocking {
+                        kotlinx.coroutines.withTimeoutOrNull(remainingMs) { scopeJob.join() }
+                    }
+                }
+            }
+        }
     }
 
     /**

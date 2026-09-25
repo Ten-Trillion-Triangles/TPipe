@@ -1,6 +1,8 @@
 package com.TTT.Pipeline
 
 import com.TTT.Pipe.MultimodalContent
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -89,5 +91,29 @@ class BuildContentTest
             "buildPathInput() must merge originalInput.text with dispatch pathSchema — " +
                 "never replace the original task with dispatch garbage."
         )
+    }
+
+    @Test
+    fun testBuildPathInput_usesStructuredInputWithoutLegacySchemaFallback()
+    {
+        val station = PumpStation()
+        station.taskState.originalInput = MultimodalContent(text = researchTopic)
+        val path = PathObject().apply {
+            pathName = "structured"
+            pathSchema = "{\"canonical\":true}"
+        }
+        val inputData = Json.parseToJsonElement(
+            """{"tPipeContextOptions":{"functionName":"lookup"},"argumentsOrFunctionParams":["id-7"]}"""
+        ) as JsonObject
+        val historySizeBefore = station.turnHistory.history.size
+
+        val input = station.buildPathInput(
+            path = path,
+            request = PathRequest(pathName = "structured", pathSchema = "stale legacy value", inputData = inputData)
+        )
+
+        assertEquals(inputData.toString(), input.text)
+        assertEquals(historySizeBefore, station.turnHistory.history.size,
+            "Authoritative inputData must skip pathSchema fallback notices.")
     }
 }
