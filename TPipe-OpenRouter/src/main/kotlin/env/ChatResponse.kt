@@ -174,11 +174,47 @@ data class StreamingChoice(
  *
  * @property role Role of the message sender (if first chunk)
  * @property content Text content delta
+ * @property reasoning Plain-text model reasoning delta (reasoning models
+ * stream it ahead of visible content; see [ReasoningDetail])
+ * @property reasoningDetails Structured reasoning delta entries (used by
+ * providers that deliver reasoning as typed detail objects instead of a
+ * plain string)
  */
 @Serializable
 data class DeltaMessage(
     val role: String? = null,
-    val content: String? = null
+    val content: String? = null,
+    val reasoning: String? = null,
+    @SerialName("reasoning_details")
+    val reasoningDetails: List<ReasoningDetail>? = null
+)
+
+/**
+ * A single structured reasoning detail entry from a streaming delta.
+ *
+ * OpenRouter reasoning models deliver `choices[].delta.reasoning_details`
+ * as a list of these objects. `text` carries full thinking content;
+ * `summary` carries abbreviated reasoning; `signature` is provider
+ * verification metadata. All fields are optional — entries may carry
+ * any subset depending on the provider.
+ *
+ * @property type Reasoning detail type (e.g. "thinking", "summary")
+ * @property text Full reasoning text for this detail entry
+ * @property summary Abbreviated reasoning summary
+ * @property id Provider-assigned detail identifier
+ * @property format Content format identifier
+ * @property index Position of this detail within the detail list
+ * @property signature Provider verification signature
+ */
+@Serializable
+data class ReasoningDetail(
+    val type: String? = null,
+    val text: String? = null,
+    val summary: String? = null,
+    val id: String? = null,
+    val format: String? = null,
+    val index: Int? = null,
+    val signature: String? = null
 )
 
 /**

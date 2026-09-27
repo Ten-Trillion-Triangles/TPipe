@@ -1776,6 +1776,17 @@ class GenericOpenAIPipe : Pipe()
                                     {
                                         if(parsed.delta.isNotEmpty())
                                         {
+                                            /**
+                                             * Reasoning segment may still be open from the
+                                             * reasoning deltas above; close it so subscribers
+                                             * see the close marker before the text resumes
+                                             * (idempotent - no-op when no segment is open).
+                                             */
+                                            if(reasoningSegmentOpen)
+                                            {
+                                                emitReasoningStreamingEnd()
+                                            }
+
                                             textBuilder.append(parsed.delta)
                                             emitStreamingChunk(parsed.delta)
                                         }
@@ -1785,6 +1796,13 @@ class GenericOpenAIPipe : Pipe()
                                         if(parsed.delta.isNotEmpty())
                                         {
                                             reasoningBuilder.append(parsed.delta)
+                                            /**
+                                             * Deliver the reasoning delta to the streaming
+                                             * callbacks; the base hook gates delivery on
+                                             * streamModelReasoning while capture into
+                                             * reasoningBuilder stays unconditional.
+                                             */
+                                            emitReasoningStreamingChunk(parsed.delta)
                                         }
                                     }
                                     is OpenAIResponsesStreamEvent.ResponseCompleted ->
@@ -1833,10 +1851,36 @@ class GenericOpenAIPipe : Pipe()
                                 choicesArr?.forEach { choiceEl ->
                                     val choiceObj = choiceEl as? JsonObject
                                     val deltaObj = choiceObj?.get("delta") as? JsonObject
+                                    /**
+                                     * Reasoning content rides `delta.reasoning_content` on
+                                     * reasoning-capable chat-completions models (e.g. OpenAI
+                                     * o-series / o3). Emitted to the streaming callbacks
+                                     * before the visible text; the base hook gates on
+                                     * streamModelReasoning.
+                                     */
+                                    val reasoningContentEl = deltaObj?.get("reasoning_content")
+                                    val reasoningContent = (reasoningContentEl as? JsonPrimitive)?.content
+                                    if(!reasoningContent.isNullOrEmpty())
+                                    {
+                                        emitReasoningStreamingChunk(reasoningContent)
+                                    }
+
                                     val contentEl = deltaObj?.get("content")
                                     val content = (contentEl as? JsonPrimitive)?.content
                                     if(!content.isNullOrEmpty())
                                     {
+                                        /**
+                                         * Reasoning segment may still be open from the
+                                         * reasoning_content deltas above; close it so
+                                         * subscribers see the close marker before the
+                                         * text resumes (idempotent - no-op when no
+                                         * segment is open).
+                                         */
+                                        if(reasoningSegmentOpen)
+                                        {
+                                            emitReasoningStreamingEnd()
+                                        }
+
                                         textBuilder.append(content)
                                         emitStreamingChunk(content)
                                     }
@@ -1888,6 +1932,18 @@ class GenericOpenAIPipe : Pipe()
                                     {
                                         if(delta.text.isNotEmpty())
                                         {
+                                            /**
+                                             * A thinking segment may still be open from the
+                                             * ThinkingDelta chunks above; close it so
+                                             * subscribers see the close marker before the
+                                             * visible text resumes (idempotent - no-op
+                                             * when no segment is open).
+                                             */
+                                            if(reasoningSegmentOpen)
+                                            {
+                                                emitReasoningStreamingEnd()
+                                            }
+
                                             textBuilder.append(delta.text)
                                             emitStreamingChunk(delta.text)
                                         }
@@ -1897,6 +1953,13 @@ class GenericOpenAIPipe : Pipe()
                                         if(delta.thinking.isNotEmpty())
                                         {
                                             reasoningBuilder.append(delta.thinking)
+                                            /**
+                                             * Deliver the thinking delta to the streaming
+                                             * callbacks; the base hook gates delivery on
+                                             * streamModelReasoning while capture into
+                                             * reasoningBuilder stays unconditional.
+                                             */
+                                            emitReasoningStreamingChunk(delta.thinking)
                                         }
                                     }
                                     is AnthropicDelta.InputJsonDelta ->

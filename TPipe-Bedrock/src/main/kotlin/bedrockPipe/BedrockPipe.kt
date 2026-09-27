@@ -5087,16 +5087,29 @@ put("system", if(enableCaching && cacheControl != null) {
                         val blockIndex = deltaEvent.contentBlockIndex
                         // Extract text deltas and emit to callback
                         deltaEvent.delta?.asTextOrNull()?.let { deltaText ->
+                            /**
+                             * A reasoning segment may still be open from
+                             * earlier deltas in this stream; close it before
+                             * text bytes so subscribers see
+                             * [ReasoningStream.OPEN_TAG]...[CLOSE_TAG]text.
+                             */
+                            if(reasoningSegmentOpen)
+                            {
+                                emitReasoningStreamingEnd()
+                            }
+
                             textBuilder.append(deltaText)
                             emitStreamingChunk(deltaText)
                         }
-                        // Extract reasoning deltas for models that support it
+                        /**
+                         * Extract reasoning deltas for models that support it.
+                         * Base hooks gate on [streamModelReasoning] and wrap
+                         * the segment in ReasoningStream markers; raw capture
+                         * into reasoningBuilder stays unconditional.
+                         */
                         deltaEvent.delta?.asReasoningContentOrNull()?.asTextOrNull()?.let { reasoningDelta ->
                             reasoningBuilder.append(reasoningDelta)
-                            if(streamModelReasoning)
-                            {
-                                emitStreamingChunk(reasoningDelta)
-                            }
+                            emitReasoningStreamingChunk(reasoningDelta)
                         }
                         // NEW: ToolUse delta — accumulate input JSON fragments.
                         // ConverseStream splits tool-use input across many delta events;
@@ -5424,18 +5437,30 @@ put("system", if(enableCaching && cacheControl != null) {
                             // Accumulate text deltas and emit to callback
                             if(textDelta.isNotEmpty())
                             {
+                                /**
+                                 * A reasoning segment may still be open from
+                                 * earlier deltas; close it before text bytes
+                                 * so subscribers see the closed segment first.
+                                 */
+                                if(reasoningSegmentOpen)
+                                {
+                                    emitReasoningStreamingEnd()
+                                }
+
                                 textBuilder.append(textDelta)
                                 emitStreamingChunk(textDelta)
                             }
-                            
-                            // Accumulate reasoning deltas for tracing
+
+                            /**
+                             * Accumulate reasoning deltas for tracing. Base
+                             * hooks gate on [streamModelReasoning] and wrap
+                             * the segment in ReasoningStream markers; raw
+                             * capture into reasoningBuilder stays unconditional.
+                             */
                             if(reasoningDelta.isNotEmpty())
                             {
                                 reasoningBuilder.append(reasoningDelta)
-                                if(streamModelReasoning)
-                                {
-                                    emitStreamingChunk(reasoningDelta)
-                                }
+                                emitReasoningStreamingChunk(reasoningDelta)
                             }
                         }
                     }

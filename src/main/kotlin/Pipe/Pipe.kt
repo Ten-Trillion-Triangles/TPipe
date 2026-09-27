@@ -47,6 +47,7 @@ import com.TTT.Structs.extractReasoningContent
 import com.TTT.Structs.extractReasoningStream
 import com.TTT.Util.deepCopy
 import com.TTT.Util.deserialize
+import com.TTT.Util.ReasoningStream
 import com.TTT.Util.examplePromptFor
 import com.TTT.Util.extractAllJsonObjects
 import com.TTT.Util.extractNonJsonText
@@ -1201,6 +1202,18 @@ abstract class Pipe : P2PInterface, ProviderInterface
         this.streamingEnabled = enabled
         return this
     }
+
+    /**
+     * Per-stream segment state for reasoning streaming. When true, an open
+     * reasoning segment is still unclosed, so [emitReasoningStreamingStart] /
+     * [emitReasoningStreamingChunk] will not re-emit the open marker, and
+     * [emitReasoningStreamingEnd] (or the [emitStreamEnd] safety net) emits
+     * the close marker exactly once.
+     *
+     * Transient: never serialized; regenerated per streaming execution.
+     */
+    @kotlinx.serialization.Transient
+    protected var reasoningSegmentOpen: Boolean = false
 
     /**
      * Model to use for this pipe. Useful for logic that needs to behave differently depending on the model.
@@ -2440,7 +2453,125 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     protected open suspend fun emitStreamEnd()
     {
+        /**
+         * Safety net: close an open reasoning segment exactly once — a provider
+         * that emitted reasoning but never closed it (error mid-stream) would
+         * otherwise leave subscribers with an unclosed marker. Routed through
+         * [emitStreamingChunk] so provider overrides (e.g. Bedrock's legacy
+         * callback field) receive the close marker on the same path as every
+         * other byte of the stream.
+         */
+        if(reasoningSegmentOpen)
+        {
+            emitStreamingChunk(ReasoningStream.CLOSE_TAG)
+            reasoningSegmentOpen = false
+        }
+
         streamingCallbackManager?.emitCompleteToAll()
+    }
+
+    /**
+     * Sets whether internal model reasoning deltas are delivered to the
+     * streaming callback channel when this pipe streams. When true (the
+     * default, Bedrock parity), reasoning deltas ride the same chunk
+     * callbacks as text, wrapped in a [ReasoningStream.OPEN_TAG] /
+     * [ReasoningStream.CLOSE_TAG] segment; when false, zero reasoning bytes
+     * reach the callbacks (providers still accumulate reasoning into
+     * the result's [MultimodalContent.modelReasoning] — the flag gates
+     * delivery, not capture).
+     *
+     * @param enabled Whether to stream model reasoning to callbacks.
+     * @return This Pipe object for method chaining.
+     */
+    fun setStreamModelReasoning(enabled: Boolean): Pipe
+    {
+        this.streamModelReasoning = enabled
+        return this
+    }
+
+    /**
+     * Opens the reasoning segment on the streaming callback channel.
+     *
+     * Emits [ReasoningStream.OPEN_TAG] exactly once per open segment: the
+     * first call (or after a close) emits the marker; repeated calls while
+     * the segment is open are no-ops. Gated on [streamModelReasoning] —
+     * when the flag is off, this is a silent no-op.
+     *
+     * Providers call this when the first reasoning delta of a segment
+     * arrives. Openers are idempotent so providers need not track
+     * "did I already open" state themselves.
+     */
+    protected open suspend fun emitReasoningStreamingStart()
+    {
+        if(!streamModelReasoning)
+        {
+            return
+        }
+
+        if(!reasoningSegmentOpen)
+        {
+            /**
+             * Routed through [emitStreamingChunk] so provider overrides
+             * (e.g. Bedrock's legacy callback field) receive the open marker
+             * on the same path as every other byte of the stream.
+             */
+            emitStreamingChunk(ReasoningStream.OPEN_TAG)
+            reasoningSegmentOpen = true
+        }
+    }
+
+    /**
+     * Delivers a single internal model reasoning delta to the streaming
+     * callback channel, auto-opening the reasoning segment when needed.
+     *
+     * The delta is emitted raw (no marker); the segment framing is handled
+     * by [emitReasoningStreamingStart] / [emitReasoningStreamingEnd].
+     * Gated on [streamModelReasoning] — when the flag is off, this is a
+     * silent no-op.
+     *
+     * @param chunk The reasoning delta text.
+     */
+    protected open suspend fun emitReasoningStreamingChunk(chunk: String)
+    {
+        if(!streamModelReasoning)
+        {
+            return
+        }
+
+        if(!reasoningSegmentOpen)
+        {
+            emitStreamingChunk(ReasoningStream.OPEN_TAG)
+            reasoningSegmentOpen = true
+        }
+
+        /**
+         * Routed through [emitStreamingChunk]: reasoning deltas reach
+         * provider-level delivery hooks (legacy callback fields, traces,
+         * stall detectors) exactly like text deltas do.
+         */
+        emitStreamingChunk(chunk)
+    }
+
+    /**
+     * Closes the reasoning segment on the streaming callback channel.
+     *
+     * Emits [ReasoningStream.CLOSE_TAG] exactly once, only when the segment
+     * is open; no-op otherwise (including when [streamModelReasoning] is
+     * off). Providers call this at the reasoning→text transition point;
+     * [emitStreamEnd] provides the terminal safety net for streams that
+     * never make that transition.
+     */
+    protected open suspend fun emitReasoningStreamingEnd()
+    {
+        if(reasoningSegmentOpen)
+        {
+            /**
+             * Routed through [emitStreamingChunk] so provider overrides
+             * receive the close marker on the same path as other bytes.
+             */
+            emitStreamingChunk(ReasoningStream.CLOSE_TAG)
+            reasoningSegmentOpen = false
+        }
     }
 
     /**
@@ -6674,6 +6805,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
         val executionStartTime = System.currentTimeMillis()
+
+        /**
+         * Fresh streaming segment state per execution: a prior run's open
+         * reasoning segment (e.g. aborted mid-stream before emitStreamEnd's
+         * safety net) must not leak its close marker into the next stream.
+         */
+        reasoningSegmentOpen = false
 
         /**
          * Declare local function to address the multiple times we need to call this internal wrapping.

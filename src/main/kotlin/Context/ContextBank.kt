@@ -305,10 +305,12 @@ object ContextBank
         {
             backend.resourceExists(kind, key)
         }
+
         catch(e: ContextAccessDeniedException)
         {
             throw ContextAccessDeniedException(operation, kind, key, e.reason)
         }
+
         when(exists)
         {
             true -> Unit
@@ -379,12 +381,14 @@ object ContextBank
             {
                 return
             }
+
             val exists = resourceExistsForAuthorization(
                 ContextResourceKind.CONTEXT_WINDOW,
                 key,
                 mode,
                 skipRemote
             )
+
             throw ContextAccessDeniedException(
                 if(exists == false) ContextAccessOperation.CREATE else ContextAccessOperation.WRITE,
                 ContextResourceKind.CONTEXT_WINDOW,
@@ -411,6 +415,7 @@ object ContextBank
                     key,
                     ContextAccessDenialReason.METADATA_UNAVAILABLE
                 )
+
             try
             {
                 metadataBackend.resourceExists(ContextResourceKind.CONTEXT_WINDOW, key)
@@ -421,6 +426,7 @@ object ContextBank
                         ContextAccessDenialReason.METADATA_UNAVAILABLE
                     )
             }
+
             catch(e: ContextAccessDeniedException)
             {
                 throw ContextAccessDeniedException(
@@ -431,19 +437,23 @@ object ContextBank
                 )
             }
         }
+
         else
         {
             bank.containsKey(key) || retrievalFunctions.containsKey(key) ||
                 File("${TPipeConfig.getLorebookDir()}/$key.bank").exists()
         }
+
         val operation = if(!resourceExists)
         {
             ContextAccessOperation.CREATE
         }
+
         else
         {
             ContextAccessOperation.WRITE
         }
+
         if(!scope.allows(operation, metadata))
         {
             throw ContextAccessDeniedException(operation, ContextResourceKind.CONTEXT_WINDOW, key)
@@ -1034,6 +1044,7 @@ object ContextBank
         val candidates = storageMetadata.values
             .filter { it.storageMode == StorageMode.DISK_WITH_CACHE && bank.containsKey(it.key) }
         val authorized = mutableSetOf<String>()
+
         for(candidate in candidates)
         {
             try
@@ -1047,15 +1058,18 @@ object ContextBank
                 )
                 authorized += candidate.key
             }
+
             catch(e: CancellationException)
             {
                 throw e
             }
+
             catch(_: Exception)
             {
                 // A protected or unavailable resource must remain cached.
             }
         }
+
         return authorized
     }
 

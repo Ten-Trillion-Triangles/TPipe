@@ -99,3 +99,7 @@ pipe.setGpuSettings(numGpu = 35) // Offload 35 layers to GPU
 ## Next Steps
 
 - [Pipe Class API](../api/pipe.md) - Continue into the core API reference.
+
+## See also
+
+- [Reasoning Streaming](../core-concepts/reasoning-streaming.md) — electing model reasoning on the stream and splitting the trace back with ReasoningStream.split.

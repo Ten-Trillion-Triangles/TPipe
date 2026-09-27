@@ -807,3 +807,7 @@ This comprehensive guide covers everything needed to get started with TPipe-Bedr
 Now that you have TPipe-Bedrock set up, learn about advanced configuration:
 
 **→ [AWS Bedrock Inference Binding](inference-binding.md)** - Cross-region model access and configuration
+
+## See also
+
+- [Reasoning Streaming](../core-concepts/reasoning-streaming.md) — electing model reasoning on the stream and splitting the trace back with ReasoningStream.split.

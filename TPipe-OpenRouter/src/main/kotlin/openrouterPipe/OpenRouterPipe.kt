@@ -794,13 +794,7 @@ class OpenRouterPipe : Pipe()
                     }
 
                     val chunk = SseParser.parseChunk(sseLine.content) ?: continue
-                    val contentDelta = SseParser.extractContent(chunk)
-
-                    if(contentDelta.isNotEmpty())
-                    {
-                        textBuilder.append(contentDelta)
-                        emitStreamingChunk(contentDelta)
-                    }
+                    handleStreamDataChunk(chunk, textBuilder)
                 }
                 is SseParser.SseLine.Invalid -> continue
             }
@@ -821,6 +815,49 @@ class OpenRouterPipe : Pipe()
         emitStreamEnd()
 
         return resultText
+    }
+
+    /**
+     * Processes one parsed SSE data chunk: delivers any reasoning delta on
+     * the reasoning streaming channel, then delivers visible content on the
+     * streaming channel.
+     *
+     * Reasoning precedence: `delta.reasoning` (the plain string) when
+     * present; otherwise the concatenated non-empty `text`/`summary` fields
+     * of `delta.reasoning_details` (entries fall back from `text` to
+     * `summary`). The reasoning→content transition calls
+     * [emitReasoningStreamingEnd] ahead of the first visible content
+     * delta — idempotent, so later content deltas are no-ops there and the
+     * close marker is emitted exactly once.
+     *
+     * This is the seam [executeStreaming]'s Data branch delegates to, and
+     * the unit-test entry point for reasoning-stream delivery.
+     *
+     * @param chunk The parsed SSE data chunk
+     * @param visibleText Visible-response accumulator maintained by executeStreaming
+     */
+    suspend fun handleStreamDataChunk(chunk: StreamingChunk, visibleText: StringBuilder)
+    {
+        val delta = chunk.choices.firstOrNull()?.delta ?: return
+        val contentDelta = delta.content ?: ""
+
+        val reasoningText = delta.reasoning?.takeIf { it.isNotEmpty() }
+            ?: delta.reasoningDetails
+                ?.map { detail -> detail.text?.takeIf { it.isNotEmpty() } ?: detail.summary?.takeIf { it.isNotEmpty() } }
+                ?.filterNotNull()
+                ?.joinToString("")
+
+        if(!reasoningText.isNullOrEmpty())
+        {
+            emitReasoningStreamingChunk(reasoningText)
+        }
+
+        if(contentDelta.isNotEmpty())
+        {
+            emitReasoningStreamingEnd()
+            visibleText.append(contentDelta)
+            emitStreamingChunk(contentDelta)
+        }
     }
 
 //=========================================Context Management==========================================================

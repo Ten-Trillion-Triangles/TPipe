@@ -47,6 +47,8 @@ data class GeneratedRequest(
  * @property promptEvalDuration Prompt eval time.
  * @property evalCount Eval token count.
  * @property evalDuration Eval time.
+ * @property thinking Optional chain-of-thought trace emitted by thinking models
+ *                   (top-level wire field `thinking` on /api/generate responses).
  */
 @Serializable
 data class GeneratedResponse(
@@ -55,6 +57,7 @@ data class GeneratedResponse(
     val createdAt: String,
     val response: String? = null,
     val done: Boolean,
+    val thinking: String? = null,
     val context: List<Int>? = null,
     @SerialName("total_duration")
     val totalDuration: Long? = null,

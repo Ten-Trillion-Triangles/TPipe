@@ -7,6 +7,7 @@
 - [Schema.kt - JSON Schema Generation](#schemakt---json-schema-generation)
 - [Rest.kt - HTTP Utilities](#restkt---http-utilities)
 - [JsonCleaner.kt - JSON Cleaning](#jsoncleanerkt---json-cleaning)
+- [ReasoningStream.kt - Reasoning Stream Splitting](#reasoningstreamkt---reasoning-stream-splitting)
 
 ## Overview
 
@@ -343,6 +344,45 @@ Async operations use coroutines for non-blocking execution, and caching mechanis
 
 ### AI-Friendly Design
 JSON schema generation and repair mechanisms are specifically designed to work well with LLM-generated content and provide LLM-friendly output formats.
+## ReasoningStream.kt - Reasoning Stream Splitting
+
+Reasoning-stream contract constants and the split-back helper for recovering
+the model reasoning trace from a collected streaming stream. See
+[Reasoning Streaming](../core-concepts/reasoning-streaming.md) for the
+streaming contract this parses.
+
+#### `object ReasoningStream`
+
+Constants:
+
+| Constant | Meaning |
+|---|---|
+| `OPEN_TAG` | Open marker that begins a streamed reasoning segment (the think tag, emitted exactly once per open segment). |
+| `CLOSE_TAG` | Close marker that ends a streamed reasoning segment. |
+
+Both follow the Ollama think-model wire convention, so the parser also reads
+legacy think/close-tag markers embedded in non-streaming text.
+
+#### `data class ReasoningSplit(val reasoning: String, val text: String)`
+A recovered pair: `reasoning` is the concatenated trace (segments joined with
+a newline), `text` is the visible answer with all segments removed and
+trimmed.
+
+#### `ReasoningStream.split(content: String): ReasoningSplit`
+Splits a collected stream into reasoning and text.
+
+**Behavior:**
+- No markers present: entire input returned as `text`, empty `reasoning`.
+- One or more complete open...close segments: interiors joined with a newline
+  into `reasoning`; everything outside the segments (trimmed) is `text`.
+- Unclosed trailing open marker (stream aborted mid-reasoning): everything
+  after it is `reasoning`, whatever preceded it is `text`.
+- Empty input: empty pair.
+- Matching is case-insensitive, so legacy embedded tag variants parse
+  identically to the emitted canonical form.
+
+---
+
 ## Next Steps
 
 - [TPipe-MCP Package API](tpipe-mcp-package.md) - Continue into the MCP bridge package.

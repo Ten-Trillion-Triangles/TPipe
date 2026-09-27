@@ -104,3 +104,7 @@ judge and dispatch agents.
 TPipe PCP remains TPipe's sandboxed tool execution system. Codex native tool
 translation is intentionally not performed by this module, and no OAuth
 tokens are logged or placed in serialized pipe configuration.
+
+## See also
+
+- [Reasoning Streaming](../core-concepts/reasoning-streaming.md) — electing model reasoning on the stream and splitting the trace back with ReasoningStream.split.

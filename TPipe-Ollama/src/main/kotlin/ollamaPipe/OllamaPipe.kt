@@ -183,6 +183,20 @@ class OllamaPipe : Pipe()
     @kotlinx.serialization.Serializable
     private var numThread: Int? = null
 
+    /**
+     * Test seam: when non-null, [executeChatStream] feeds these NDJSON lines
+     * to the chunk loop instead of opening a real /api/chat connection.
+     * Per-instance so each test builds a fresh pipe.
+     */
+    var chatStreamLinesForTest: List<String>? = null
+
+    /**
+     * Test seam: when non-null, [executeGenerateStream] feeds these NDJSON
+     * lines to the chunk loop instead of opening a real /api/generate
+     * connection.
+     */
+    var generateStreamLinesForTest: List<String>? = null
+
 //================================================ Builder ===========================================================//
 
     /**
@@ -980,44 +994,53 @@ class OllamaPipe : Pipe()
                   "toolCount" to (request.tools?.size ?: 0)
               ))
         
-        val client = HttpClient(CIO)
-        {
-            install(HttpTimeout)
-            {
-                requestTimeoutMillis = 300000 // 5 minutes
-            }
-        }
-
         val textBuilder = StringBuilder()
         val toolCalls = mutableListOf<OllamaToolCall>()
+        val injectedLines = chatStreamLinesForTest
 
         return try
         {
-            client.preparePost(Endpoints.chatEndpoint)
+            if(injectedLines != null)
             {
-                contentType(ContentType.Application.Json)
-                setBody(serialize(request))
-            }.execute { response ->
-                val channel = response.bodyAsChannel()
-                while(!channel.isClosedForRead)
+                for(line in injectedLines)
                 {
-                    val line = channel.readUTF8Line() ?: break
                     if(line.isEmpty()) continue
 
                     val chunk = deserialize<ChatResponse>(line) ?: continue
-                    val contentDelta = chunk.message?.content ?: ""
-
-                    if(contentDelta.isNotEmpty())
+                    if(handleChatStreamChunk(chunk, textBuilder, toolCalls)) break
+                }
+            }
+            else
+            {
+                val client = HttpClient(CIO)
+                {
+                    install(HttpTimeout)
                     {
-                        textBuilder.append(contentDelta)
-                        emitStreamingChunk(contentDelta)
+                        requestTimeoutMillis = 300000 // 5 minutes
                     }
+                }
 
-                    chunk.message?.toolCalls?.let { calls ->
-                        toolCalls.addAll(calls)
+                try
+                {
+                    client.preparePost(Endpoints.chatEndpoint)
+                    {
+                        contentType(ContentType.Application.Json)
+                        setBody(serialize(request))
+                    }.execute { response ->
+                        val channel = response.bodyAsChannel()
+                        while(!channel.isClosedForRead)
+                        {
+                            val line = channel.readUTF8Line() ?: break
+                            if(line.isEmpty()) continue
+
+                            val chunk = deserialize<ChatResponse>(line) ?: continue
+                            if(handleChatStreamChunk(chunk, textBuilder, toolCalls)) break
+                        }
                     }
-
-                    if(chunk.done) break
+                }
+                finally
+                {
+                    client.close()
                 }
             }
 
@@ -1062,10 +1085,41 @@ class OllamaPipe : Pipe()
                   ))
             throw e
         }
-        finally
+    }
+
+    /**
+     * Processes a single NDJSON chunk from an /api/chat stream.
+     *
+     * Thinking-model trace tokens ([OllamaMessage.thinking]) are delivered
+     * through the base reasoning streaming hooks; the first content delta
+     * closes the reasoning segment before visible text begins.
+     * @param chunk The deserialized stream chunk.
+     * @param textBuilder Accumulator for content deltas.
+     * @param toolCalls Accumulator for tool call deltas.
+     * @return True when the stream is finished (chunk.done).
+     */
+    private suspend fun handleChatStreamChunk(chunk: ChatResponse, textBuilder: StringBuilder, toolCalls: MutableList<OllamaToolCall>): Boolean
+    {
+        val contentDelta = chunk.message?.content ?: ""
+        val thinkingDelta = chunk.message?.thinking
+
+        if(!thinkingDelta.isNullOrEmpty())
         {
-            client.close()
+            emitReasoningStreamingChunk(thinkingDelta)
         }
+
+        if(contentDelta.isNotEmpty())
+        {
+            emitReasoningStreamingEnd()
+            textBuilder.append(contentDelta)
+            emitStreamingChunk(contentDelta)
+        }
+
+        chunk.message?.toolCalls?.let { calls ->
+            toolCalls.addAll(calls)
+        }
+
+        return chunk.done
     }
 
     /**
@@ -1171,39 +1225,52 @@ class OllamaPipe : Pipe()
                   "hasImages" to (request.images?.isNotEmpty() == true)
               ))
         
-        val client = HttpClient(CIO)
-        {
-            install(HttpTimeout)
-            {
-                requestTimeoutMillis = 300000
-            }
-        }
-        
         val textBuilder = StringBuilder()
+        val injectedLines = generateStreamLinesForTest
 
         return try
         {
-            client.preparePost(Endpoints.generateEndpoint)
+            if(injectedLines != null)
             {
-                contentType(ContentType.Application.Json)
-                setBody(serialize(request))
-            }.execute { response ->
-                val channel = response.bodyAsChannel()
-                while(!channel.isClosedForRead)
+                for(line in injectedLines)
                 {
-                    val line = channel.readUTF8Line() ?: break
                     if(line.isEmpty()) continue
 
                     val chunk = deserialize<GeneratedResponse>(line) ?: continue
-                    val contentDelta = chunk.response ?: ""
-
-                    if(contentDelta.isNotEmpty())
+                    if(handleGenerateStreamChunk(chunk, textBuilder)) break
+                }
+            }
+            else
+            {
+                val client = HttpClient(CIO)
+                {
+                    install(HttpTimeout)
                     {
-                        textBuilder.append(contentDelta)
-                        emitStreamingChunk(contentDelta)
+                        requestTimeoutMillis = 300000
                     }
+                }
 
-                    if(chunk.done) break
+                try
+                {
+                    client.preparePost(Endpoints.generateEndpoint)
+                    {
+                        contentType(ContentType.Application.Json)
+                        setBody(serialize(request))
+                    }.execute { response ->
+                        val channel = response.bodyAsChannel()
+                        while(!channel.isClosedForRead)
+                        {
+                            val line = channel.readUTF8Line() ?: break
+                            if(line.isEmpty()) continue
+
+                            val chunk = deserialize<GeneratedResponse>(line) ?: continue
+                            if(handleGenerateStreamChunk(chunk, textBuilder)) break
+                        }
+                    }
+                }
+                finally
+                {
+                    client.close()
                 }
             }
 
@@ -1233,10 +1300,37 @@ class OllamaPipe : Pipe()
                   ))
             throw e
         }
-        finally
+    }
+
+    /**
+     * Processes a single NDJSON chunk from an /api/generate stream.
+     *
+     * Thinking-model trace tokens ([GeneratedResponse.thinking]) are
+     * delivered through the base reasoning streaming hooks; the first
+     * content delta closes the reasoning segment before visible text
+     * begins.
+     * @param chunk The deserialized stream chunk.
+     * @param textBuilder Accumulator for content deltas.
+     * @return True when the stream is finished (chunk.done).
+     */
+    private suspend fun handleGenerateStreamChunk(chunk: GeneratedResponse, textBuilder: StringBuilder): Boolean
+    {
+        val contentDelta = chunk.response ?: ""
+        val thinkingDelta = chunk.thinking
+
+        if(!thinkingDelta.isNullOrEmpty())
         {
-            client.close()
+            emitReasoningStreamingChunk(thinkingDelta)
         }
+
+        if(contentDelta.isNotEmpty())
+        {
+            emitReasoningStreamingEnd()
+            textBuilder.append(contentDelta)
+            emitStreamingChunk(contentDelta)
+        }
+
+        return chunk.done
     }
 
     /**
@@ -1463,5 +1557,29 @@ class OllamaPipe : Pipe()
     {
         val response = httpGet(Endpoints.listEndpoint)
         return deserialize<JsonElement>(response)
+    }
+
+    /**
+     * Test entry point that routes a [ChatRequest] through the /api/chat
+     * streaming chunk loop. Pair with [chatStreamLinesForTest] to feed
+     * fake NDJSON chunks instead of a live connection.
+     * @param request The chat request.
+     * @return Accumulated multimodal content.
+     */
+    internal suspend fun executeChatStreamForTest(request: ChatRequest): MultimodalContent
+    {
+        return executeChatStream(request)
+    }
+
+    /**
+     * Test entry point that routes a [GeneratedRequest] through the
+     * /api/generate streaming chunk loop. Pair with [generateStreamLinesForTest]
+     * to feed fake NDJSON chunks instead of a live connection.
+     * @param request The generate request.
+     * @return Accumulated multimodal content.
+     */
+    internal suspend fun executeGenerateStreamForTest(request: GeneratedRequest): MultimodalContent
+    {
+        return executeGenerateStream(request)
     }
 }

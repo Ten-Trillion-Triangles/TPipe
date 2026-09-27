@@ -808,6 +808,33 @@ Enables reasoning with custom settings.
 
 ### Streaming
 
+#### `setStreamModelReasoning(enabled: Boolean): Pipe`
+Elects whether internal model reasoning deltas ride the streaming callback
+channel. When `true` (the default, Bedrock parity), reasoning deltas emitted
+by a provider are delivered to the same chunk callbacks as text, wrapped in
+a `ReasoningStream.OPEN_TAG` / `ReasoningStream.CLOSE_TAG` segment. When
+`false`, zero reasoning bytes reach the callbacks — the provider still
+accumulates reasoning into the result's `modelReasoning`; the flag gates
+delivery, not capture.
+
+**Behavior:** Sets the base `streamModelReasoning` flag. All provider
+streaming paths that emit reasoning route through the base
+`emitReasoningStreamingChunk` / `emitReasoningStreamingEnd` hooks, which
+consult this flag. See [Reasoning Streaming](../core-concepts/reasoning-streaming.md)
+for the full contract and the `ReasoningStream.split` read-back helper.
+
+**Example:**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setModel("reasoning-model")
+    .setStreamModelReasoning(true)
+    .setStreamingCallback { chunk ->
+        // reasoning segment arrives delimited: open marker, reasoning
+        // bytes, close marker — then text deltas.
+        print(chunk)
+    }
+```
+
 #### `obtainStreamingCallbackManager(): StreamingCallbackManager`
 Gets or creates the streaming callback manager for this pipe.
 

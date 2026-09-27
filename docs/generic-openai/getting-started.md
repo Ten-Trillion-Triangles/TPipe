@@ -634,3 +634,7 @@ Even if you re-call `setApiMode(...)` between calls, the second call throws. Re-
 - [`GenericOpenAIPipe` Class API](../api/generic-openai-pipe.md) — Full builder reference, env singleton, error mapping, and `ApiMode` details.
 - [`Pipe` Class API](../api/pipe.md) — Core pipe abstraction and base-class builders (`setModel`, `setTemperature`, `setMaxTokens`, `setSystemPrompt`, etc.).
 - [Pipe Context Protocol](../advanced-concepts/pipe-context-protocol.md) — Attach PCP tools to a `GenericOpenAIPipe` for sandboxed multi-language tool execution.
+
+## See also
+
+- [Reasoning Streaming](../core-concepts/reasoning-streaming.md) — electing model reasoning on the stream and splitting the trace back with ReasoningStream.split.

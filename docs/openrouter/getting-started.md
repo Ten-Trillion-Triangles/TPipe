@@ -123,3 +123,6 @@ val pipe = OpenRouterPipe()
 
 - [OpenRouterPipe Class API](../api/openrouter-pipe.md) - Full API reference for OpenRouterPipe.
 - [Pipe Class API](../api/pipe.md) - Core pipe abstraction.
+## See also
+
+- [Reasoning Streaming](../core-concepts/reasoning-streaming.md) — electing model reasoning on the stream and splitting the trace back with ReasoningStream.split.
