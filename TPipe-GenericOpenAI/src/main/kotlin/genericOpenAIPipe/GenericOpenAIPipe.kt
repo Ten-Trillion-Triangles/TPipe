@@ -2077,17 +2077,40 @@ class GenericOpenAIPipe : Pipe()
         // done-event, completed-response output). Without this check the pipe records
         // success=true with responseLength=0, which downstream validators misclassify
         // as a validator-pipe termination.
-        if((apiMode is ApiMode.OpenAIResponses || apiMode is ApiMode.OpenAI) && resultText.isEmpty())
+        //
+        // Exception: when a stall detector aborted this stream, an empty result is the
+        // expected consequence of that abort. The stall path already recorded its own
+        // retry, so reporting the abort here as `emptyProviderResponse` would put a
+        // phantom provider defect in the trace and throw a second retryable transport
+        // failure for the same attempt.
+        if((apiMode is ApiMode.OpenAIResponses || apiMode is ApiMode.OpenAI) &&
+           resultText.isEmpty() && !isStallAbortInFlight())
         {
+            val reasoningChars = streamingReasoning.length
+            val finishReason = streamingFinishReason ?: "unknown"
+            // Three-way classification. Collapsing these into a single label is what made
+            // an earlier investigation chase a stall that never fired: a stream that
+            // delivered reasoning, a stream cut off at the output ceiling, and a stream
+            // that delivered nothing at all are three different defects.
+            val classification = when
+            {
+                reasoningChars > 0 -> "reasoningOnlyExhaustion"
+                finishReason == "length" || finishReason == "max_tokens" -> "outputTokenCeiling"
+                else -> "emptyProviderResponse"
+            }
             val errMessage = "OpenAI streaming produced no output text " +
                 "(mode=${if(apiMode is ApiMode.OpenAIResponses) "ResponsesAPI" else "ChatAPI"}, " +
                 "inputTokens=$streamingInputTokens, outputTokens=$streamingOutputTokens, " +
-                "model=$model)"
+                "model=$model, finishReason=$finishReason, reasoningChars=$reasoningChars, " +
+                "reasoningTokens=$streamingReasoningTokens, classification=$classification)"
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                   metadata = mapOf(
-                      "reason" to "emptyProviderResponse",
+                      "reason" to classification,
                       "inputTokens" to streamingInputTokens,
                       "outputTokens" to streamingOutputTokens,
+                      "finishReason" to finishReason,
+                      "reasoningChars" to reasoningChars,
+                      "reasoningTokens" to streamingReasoningTokens,
                       "streaming" to true,
                       "apiType" to if(apiMode is ApiMode.OpenAIResponses) "ResponsesAPI" else "ChatAPI"
                   ))
@@ -2282,17 +2305,36 @@ class GenericOpenAIPipe : Pipe()
 
         // Mirror of the HttpURLConnection empty-failure guard: a completed-but-empty
         // OpenAI family stream is a typed provider failure, not API success.
-        if((apiMode is ApiMode.OpenAIResponses || apiMode is ApiMode.OpenAI) && resultText.isEmpty())
+        // Exception: a stall-detector abort legitimately empties the stream, and the
+        // stall path has already recorded that retry — see the twin guard above.
+        if((apiMode is ApiMode.OpenAIResponses || apiMode is ApiMode.OpenAI) &&
+           resultText.isEmpty() && !isStallAbortInFlight())
         {
+            val reasoningChars = streamingReasoning.length
+            val finishReason = streamingFinishReason ?: "unknown"
+            // Three-way classification. Collapsing these into a single label is what made
+            // an earlier investigation chase a stall that never fired: a stream that
+            // delivered reasoning, a stream cut off at the output ceiling, and a stream
+            // that delivered nothing at all are three different defects.
+            val classification = when
+            {
+                reasoningChars > 0 -> "reasoningOnlyExhaustion"
+                finishReason == "length" || finishReason == "max_tokens" -> "outputTokenCeiling"
+                else -> "emptyProviderResponse"
+            }
             val errMessage = "OpenAI streaming produced no output text " +
                 "(mode=${if(apiMode is ApiMode.OpenAIResponses) "ResponsesAPI" else "ChatAPI"}, " +
                 "inputTokens=$streamingInputTokens, outputTokens=$streamingOutputTokens, " +
-                "model=$model)"
+                "model=$model, finishReason=$finishReason, reasoningChars=$reasoningChars, " +
+                "reasoningTokens=$streamingReasoningTokens, classification=$classification)"
             trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION,
                   metadata = mapOf(
-                      "reason" to "emptyProviderResponse",
+                      "reason" to classification,
                       "inputTokens" to streamingInputTokens,
                       "outputTokens" to streamingOutputTokens,
+                      "finishReason" to finishReason,
+                      "reasoningChars" to reasoningChars,
+                      "reasoningTokens" to streamingReasoningTokens,
                       "streaming" to true,
                       "apiType" to if(apiMode is ApiMode.OpenAIResponses) "ResponsesAPI" else "ChatAPI"
                   ))

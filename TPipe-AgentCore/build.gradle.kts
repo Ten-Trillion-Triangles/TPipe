@@ -59,6 +59,24 @@ dependencies {
     testImplementation("io.ktor:ktor-client-websockets:3.3.3")
 }
 
+// TPipe-MCP's `jar` task is an uber-JAR (`-all`) that shades its whole
+// dependency tree. On a test classpath it shadows every library it bundles —
+// notably kotlinx-coroutines, whose shaded BuildersKt lacks the
+// `runBlockingK` symbols that coroutines 1.11.0 declares — so any test calling
+// runBlocking dies with
+// `NoSuchMethodError: kotlinx.coroutines.BuildersKt.runBlockingK$default`.
+// Consume MCP's compiled classes directly instead of its assembled jar.
+// Mirrors the shadowJar wiring in agentcore-live-smoke/build.gradle.kts and
+// the root project's tasks.test.
+tasks.test {
+    dependsOn(":TPipe-MCP:classes")
+    classpath = classpath.filter { !it.name.endsWith("-all.jar") } +
+        files(
+            project(":TPipe-MCP").layout.buildDirectory.dir("classes/kotlin/main"),
+            project(":TPipe-MCP").layout.buildDirectory.dir("resources/main")
+        )
+}
+
 /**
  * Prevent accidental resolution of a mixed AWS Kotlin SDK generation.
  */

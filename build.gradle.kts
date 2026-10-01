@@ -174,6 +174,21 @@ tasks.test {
         jvmArgs("-agentlib:jdwp=transport=dt_socket,server=y,suspend=$suspend,address=*:$debugPort")
         println("[build.gradle.kts] test JVM JDWP listener enabled on port $debugPort (suspend=$suspend)")
     }
+
+    // TPipe-MCP's `jar` task is an uber-JAR (`-all`) that shades its whole
+    // dependency tree. Placed on the test classpath as a project dependency it
+    // shadows every library it bundles — notably kotlinx-coroutines, whose
+    // shaded BuildersKt predates the `runBlocking` -> `runBlockingK` rename —
+    // so any test calling runBlocking dies with
+    // `NoSuchMethodError: kotlinx.coroutines.BuildersKt.runBlockingK$default`.
+    // Consume MCP's compiled classes directly instead of its assembled jar.
+    // Mirrors the shadowJar wiring in agentcore-live-smoke/build.gradle.kts.
+    dependsOn(":TPipe-MCP:classes")
+    classpath = classpath.filter { !it.name.endsWith("-all.jar") } +
+        files(
+            project(":TPipe-MCP").layout.buildDirectory.dir("classes/kotlin/main"),
+            project(":TPipe-MCP").layout.buildDirectory.dir("resources/main")
+        )
 }
 
 // =====================================================================

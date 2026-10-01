@@ -8,6 +8,7 @@
   - [Pipeline Access](#pipeline-access)
   - [Execution Methods](#execution-methods)
   - [Recursive Propagation](#recursive-propagation)
+  - [Stall-Abort Attribution](#stall-abort-attribution)
 
 ## Overview
 
@@ -238,6 +239,41 @@ tree.enablePipeTimeoutRecursive(
 ```
 
 **Custom logic preserved:** Custom retry functions set on individual pipes via `setRetryFunction(...)` are not replaced by the recursive call. To replace custom logic across the tree, call `setRetryFunction(...)` on each leaf directly via the existing `*Recursive` overrides or by iterating `getPipes()`.
+
+## Stall-Abort Attribution
+
+#### `isStallAbortInFlight(): Boolean`
+
+Reports whether a stall detector's `abort()` is currently the reason this pipe's in-flight provider call is failing.
+
+The stall detector retries by aborting the in-flight stream so the outer execution loop re-runs the pipe. That abort reaches the provider layer as an interrupted or empty response, which is indistinguishable from a genuine provider or transport failure unless the pipe records that the stall caused it. This accessor exposes that record:
+
+- **`true`** — a stall abort is in flight. Consumers must not re-report the resulting failure as a provider or transport defect.
+- **`false`** — no stall abort is in flight; ordinary failure attribution applies.
+
+**Who consults it:**
+
+| Consumer | Behavior when `true` |
+|:---|:---|
+| `PipeTimeoutManager.handleExceptionSignal` | Returns content unchanged — no `reason=transportFailure` row, transport retry counter not charged |
+| Streaming OpenAI-family pipes | Skip completed-but-empty failure reporting — no `reason=emptyProviderResponse` row, no `P2PException(P2PError.transport)` thrown |
+
+**Lifecycle:** The marker is per-execution. It is cleared at the start of every `execute()` and again in that execution's cleanup, so a stall abort in one execution can never suppress a genuine provider failure in the next. It is set only when there is an active job to abort, so a throwing `abort()` cannot leave it latched.
+
+**Trace contract:** Stall-emitted rows carry `reason=stallTimeout` (`PIPE_RETRY`), `reason=stallTimeoutGaveUp` (`PIPE_FAILURE`, budget exhausted), or `reason=stallTimeout` (`PIPE_FAILURE`, no snapshot available), each with `stallDetectorKilled=true` and the stall measurements. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for the full vocabulary.
+
+**Example:**
+
+```kotlin
+// Provider-side guard: an empty result caused by a stall abort is not a provider defect.
+if(resultText.isEmpty() && !isStallAbortInFlight())
+{
+    // report the genuine empty-response failure
+}
+```
+
+**Note:** `isStallAbortInFlight()` is declared on `Pipe`, not on the `P2PInterface` contract, because the marker describes a single pipe's in-flight provider call rather than a tree-level operation. `PipeTimeoutManager.isStallAbortInFlight(pipe)` is the equivalent accessor for callers that work through the manager.
+
 ## Next Steps
 
 - [P2P Package API](p2p-package.md) - Continue into the distributed agent package.

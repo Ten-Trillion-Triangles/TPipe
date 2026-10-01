@@ -652,6 +652,20 @@ object PipeTimeoutManager
         exception: Throwable
     ): MultimodalContent
     {
+        /**
+         * A stall-detector abort surfaces here as an ordinary transport-shaped
+         * exception, because aborting the stream is how the detector forces a retry.
+         * The stall path has already recorded its own retry against the stall counter,
+         * so re-reporting this as a transport failure would (a) put a
+         * `reason=transportFailure` row in the trace for a failure the provider did not
+         * cause, and (b) consume the transport retry budget a second time for the same
+         * attempt. Decline the re-attribution and let the stall retry stand alone.
+         */
+        if(pipe.isStallAbortInFlight())
+        {
+            return content
+        }
+
         if(pipe.timeoutStrategy != PipeTimeoutStrategy.Retry ||
             pipe.maxRetryAttempts <= 0 ||
             !isRetryableTransportException(exception))
@@ -745,6 +759,19 @@ object PipeTimeoutManager
     }
 
     /**
+     * Reports whether the pipe is currently unwinding from a stall-detector abort.
+     *
+     * Streaming provider pipes (for example the OpenAI Responses API path) consult this
+     * before reporting a completed-but-empty response as a provider failure: when the
+     * stall detector aborted the stream, an empty result is the expected consequence of
+     * that abort, not a provider defect.
+     *
+     * @param pipe Pipe to query.
+     * @return True while a stall abort is in flight for `pipe`.
+     */
+    public fun isStallAbortInFlight(pipe: Pipe): Boolean = pipe.isStallAbortInFlight()
+
+    /**
      * Determines the next action for a pipe that has experienced a detected stall.
      * Mirrors [handleTimeoutSignal] but keyed on stall detection (separate retry counter).
      *
@@ -770,6 +797,8 @@ object PipeTimeoutManager
                 TraceEventType.PIPE_RETRY, TracePhase.EXECUTION,
                 metadata = mapOf(
                     "attempt" to getStallRetryCount(pipe),
+                    "reason" to "stallTimeout",
+                    "stallDetectorKilled" to true,
                     "stallElapsedMs" to stallEvent.elapsedMs,
                     "stallTokensSeen" to stallEvent.tokensSeen,
                     "stallSilenceMs" to stallEvent.silenceMs,
@@ -788,6 +817,10 @@ object PipeTimeoutManager
             {
                 pipe.timeoutTrace(
                     TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
+                    metadata = mapOf(
+                        "reason" to "stallTimeout",
+                        "stallDetectorKilled" to true
+                    ),
                     error = Exception("Stall retry failed: No snapshot available to restore state.")
                 )
                 content.terminate()
@@ -798,6 +831,12 @@ object PipeTimeoutManager
         {
             pipe.timeoutTrace(
                 TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION,
+                metadata = mapOf(
+                    "reason" to "stallTimeoutGaveUp",
+                    "stallDetectorKilled" to true,
+                    "stallTokensSeen" to stallEvent.tokensSeen,
+                    "stallSilenceMs" to stallEvent.silenceMs
+                ),
                 error = Exception("Pipe stalled ${attempts} times and gave up.")
             )
             content.terminate()
@@ -1068,6 +1107,25 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @kotlinx.serialization.Transient
     private var activeStallDetectorCallback: (suspend (String) -> Unit)? = null
+
+    /**
+     * Set while a stall detector's [abort] is the reason the in-flight provider call
+     * is failing.
+     *
+     * The stall detector retries by aborting the stream so the outer execution loop's
+     * `repeatPipe` check re-runs the pipe. That abort surfaces to the provider layer as
+     * an interrupted/empty response, which is indistinguishable from a genuine provider
+     * or transport failure unless the pipe records that the stall caused it. While this
+     * flag is set, [PipeTimeoutManager.handleExceptionSignal] declines to re-report the
+     * failure as a transport error, and streaming provider pipes skip their
+     * empty-response failure reporting.
+     *
+     * The flag is per-execution: it is cleared at the start of every execution and in
+     * the execution's cleanup, so a stall in one execution can never suppress a genuine
+     * failure in the next.
+     */
+    @kotlinx.serialization.Transient
+    private var stallAbortInFlight: Boolean = false
 
 //============================================= properties ===========================================================//
 
@@ -5208,6 +5266,31 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Reports whether a stall detector's [abort] is currently the reason this pipe's
+     * in-flight provider call is failing.
+     *
+     * Streaming provider implementations consult this before reporting a
+     * completed-but-empty response as a provider defect: when the stall detector
+     * aborted the stream, an empty result is the expected consequence of that abort
+     * and must not be re-reported as `emptyProviderResponse` or `transportFailure`.
+     *
+     * @return True while a stall abort is in flight for this pipe.
+     */
+    public fun isStallAbortInFlight(): Boolean = stallAbortInFlight
+
+    /**
+     * Test seam: marks this pipe as unwinding from a stall-detector abort.
+     *
+     * Production code sets the marker inside the stall callback, which requires a live
+     * streaming execution to reach. This seam lets a unit test drive the downstream
+     * consumers of that marker deterministically.
+     */
+    internal fun markStallAbortInFlight()
+    {
+        this.stallAbortInFlight = true
+    }
+
+    /**
      * Sets the validator function for the pipe. This function will be used to validate the multimodal output
      * of the AI model. If the function returns true, the pipeline will continue to the next pipe.
      * If the function returns false, the pipeline will exit here.
@@ -6792,6 +6875,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
          */
         PipeTimeoutManager.clearStallRetryCount(this@Pipe)
 
+        /**
+         * Fresh stall-abort marker per execution. The flag exists so the provider layer
+         * can attribute an aborted (empty) stream to the stall detector instead of
+         * reporting a phantom provider/transport failure. It must never survive into a
+         * later execution, or it would suppress that execution's genuine failures.
+         */
+        stallAbortInFlight = false
+
         var result = executeMultimodal(content)
         while(result.repeatPipe)
         {
@@ -6889,7 +6980,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     // 2. Compute retry/terminate decision via PipeTimeoutManager.
                     PipeTimeoutManager.handleStallSignal(this@Pipe, inputContent, stallEvent)
 
-                    // 3. Abort the in-flight stream so the outer loop's repeatPipe check re-executes.
+                    // 3. Mark the abort as stall-caused BEFORE tearing the stream down,
+                    //    so the provider layer and PipeTimeoutManager can attribute the
+                    //    resulting empty/aborted stream to the stall detector instead of
+                    //    reporting a phantom provider or transport failure. Only latched
+                    //    when there is an in-flight job to abort: if abort() throws the
+                    //    flag would otherwise stay set and suppress a later genuine
+                    //    failure in this execution.
+                    if(activeJob?.isActive == true)
+                    {
+                        stallAbortInFlight = true
+                    }
+
+                    // 4. Abort the in-flight stream so the outer loop's repeatPipe check re-executes.
                     abort()
                 }
             )
@@ -7871,6 +7974,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
                                 pipelineRef?.miniBank?.merge(miniContextBank, emplaceLorebook, appendLoreBook)
                             }
 
+                            // This position is reached after a validation failure was recorded.
+                            // When the branch produces usable output the failure has been
+                            // resolved, so the retained error must be cleared. Otherwise the
+                            // pipeline reports a failure for an execution that succeeded and
+                            // the caller replays it until its retry budget is exhausted.
+                            clearError()
                             trace(TraceEventType.PIPE_SUCCESS, TracePhase.CLEANUP, branchResult,
                                   metadata = mapOf("outputText" to branchResult.text))
                             
@@ -7942,6 +8051,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
                         trace(TraceEventType.PIPE_SUCCESS, TracePhase.TRANSFORMATION,
                             metadata = mapOf("output" to "${failureResult.text}"))
 
+                        // The failure function produced content that does not terminate the
+                        // pipeline: the failure has been handled, so the retained error must
+                        // be cleared or the caller will treat this resolved attempt as
+                        // terminal and replay it until the retry budget is exhausted.
+                        clearError()
                         if(!failureResult.repeatPipe)
                         {
                             PipeTimeoutManager.clearRetryCount(this@Pipe)
@@ -7990,6 +8104,13 @@ abstract class Pipe : P2PInterface, ProviderInterface
             }
             activeStallDetectorCallback = null
             activeStallDetector = null
+
+            /**
+             * Clear the stall-abort marker with the rest of the per-execution stall
+             * state. Leaving it set would let one execution's stall abort suppress the
+             * next execution's genuine provider/transport failure reporting.
+             */
+            stallAbortInFlight = false
         }
     }
 

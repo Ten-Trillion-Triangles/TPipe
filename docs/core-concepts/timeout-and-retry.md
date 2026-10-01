@@ -416,12 +416,45 @@ Both can fire on the same stream. After `maxStallRetries` exhausted, the stall p
 
 ### Tracing
 
-```
-PIPE_RETRY    — stall retry triggered, attempts incremented, snapshot restored
-PIPE_FAILURE  — stall retry exhausted, stream terminated
-```
+The stall detector stamps its own `reason` on every row it emits, so a trace reader can
+tell a stall-kill apart from a wall-clock timeout or a provider failure without guessing
+from the metadata shape:
 
-Both events carry full stall metadata in the trace event.
+| Event | `reason` | Meaning |
+|:---|:---|:---|
+| `PIPE_RETRY` | `stallTimeout` | Stall detected, retry budget remains, stream re-executed from the restored snapshot |
+| `PIPE_FAILURE` | `stallTimeoutGaveUp` | All `maxStallRetries` attempts consumed, stream terminated |
+| `PIPE_FAILURE` | `stallTimeout` | Stall retry could not proceed because no snapshot was available to restore |
+
+Every stall-emitted row also carries `stallDetectorKilled = true` plus the stall
+measurements (`stallElapsedMs`, `stallTokensSeen`, `stallSilenceMs`,
+`stallExpectedIntervalMs`, `stallActualIntervalMs`, `stallStddevMultiplier`,
+`stallRetryAttempt`).
+
+A stall retry is additionally *suppressed* from being re-reported downstream. The stall
+detector retries by aborting the in-flight stream, which reaches the provider layer as an
+interrupted or empty response — indistinguishable from a real provider or transport
+failure unless the pipe says otherwise. While the abort is in flight the pipe reports
+`isStallAbortInFlight() == true`, and consumers decline to re-attribute the failure:
+
+- `PipeTimeoutManager.handleExceptionSignal` returns the content unchanged, so no
+  `reason=transportFailure` row is emitted and the transport retry counter is not
+  charged a second time for the same attempt.
+- Streaming OpenAI-family pipes skip their completed-but-empty failure reporting, so no
+  `reason=emptyProviderResponse` row is emitted and no `P2PException(P2PError.transport)`
+  is thrown for the aborted stream.
+
+The marker is per-execution: it is cleared at the start of every `execute()` and in that
+execution's cleanup, so a stall in one execution can never suppress a genuine provider
+failure in the next.
+
+For contrast, the wall-clock timeout path emits `PIPE_RETRY` with only `attempt`, and the
+transport-failure path emits `PIPE_RETRY` with `reason=transportFailure`,
+`attempt`, and `exceptionType`. A `PIPE_RETRY` row therefore identifies its origin by its
+`reason` (and, for the timeout path, by the absence of one).
+
+The reason vocabulary is stable and asserted by tests in
+`StallDetectorTraceAttributionTest`. Both events carry full stall metadata in the trace event.
 
 ### Threshold Selection
 
@@ -481,6 +514,39 @@ val pipe = BedrockPipe()
 
 pipe.execute("Give me a detailed history of computing.")
 ```
+
+#### Identifying a Stall-Kill in the Trace
+
+Trace rows are attributed, so a consumer can count stall-kills without inferring them from
+the metadata shape:
+
+```kotlin
+val rows = PipeTracer.getTrace(pipeline.getTraceId())
+
+// Stall retries: fired, budget remained, stream re-executed.
+val stallRetries = rows.filter {
+    it.eventType == TraceEventType.PIPE_RETRY && it.metadata["reason"] == "stallTimeout"
+}
+
+// Stall give-ups: retry budget exhausted, stream terminated.
+val stallGiveUps = rows.filter {
+    it.eventType == TraceEventType.PIPE_FAILURE && it.metadata["reason"] == "stallTimeoutGaveUp"
+}
+
+// Wall-clock timeout retries carry no `reason` at all.
+val timeoutRetries = rows.filter {
+    it.eventType == TraceEventType.PIPE_RETRY && it.metadata["reason"] == null
+}
+
+// Genuine provider/transport failures — a stall abort is NOT reported here.
+val transportFailures = rows.filter {
+    it.metadata["reason"] == "transportFailure"
+}
+```
+
+Without the suppression, a stall-kill also produced a `reason=transportFailure` row and a
+`reason=emptyProviderResponse` row for the same attempt, so `transportFailures` silently
+counted stall aborts and every stall looked like a provider defect.
 
 #### Pipeline-Level Propagation
 

@@ -65,6 +65,17 @@ tasks.test {
             .orElse(false)
             .get()
     }
+    // Same reasoning as tasks.named<JavaExec>("run") below: TPipe-MCP's `jar`
+    // task produces an all-in-one application jar whose bundled (older)
+    // kotlinx-coroutines classes shadow the coroutines 1.11.0 selected for this
+    // module — its BuildersKt lacks `runBlockingK`, so any test calling
+    // runBlocking dies with
+    // `NoSuchMethodError: kotlinx.coroutines.BuildersKt.runBlockingK$default`.
+    // (src/test uses runBlocking.) Use MCP's compiled classes instead.
+    dependsOn(":TPipe-MCP:classes")
+    val mcpClasses = project(":TPipe-MCP").layout.buildDirectory.dir("classes/kotlin/main")
+    val mcpResources = project(":TPipe-MCP").layout.buildDirectory.dir("resources/main")
+    classpath = classpath.filter { !it.name.endsWith("-all.jar") } + files(mcpClasses, mcpResources)
 }
 
 tasks.register("liveSmoke") {
