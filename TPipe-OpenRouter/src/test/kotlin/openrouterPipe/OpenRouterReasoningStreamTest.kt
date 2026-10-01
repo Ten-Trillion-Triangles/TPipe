@@ -6,8 +6,8 @@ import env.StreamingChunk
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlin.test.assertNull
 
 /**
@@ -202,18 +202,55 @@ class OpenRouterReasoningStreamTest
         assertEquals("Hi", capture.visibleText.toString())
     }
 
-    @Test
-    fun testStreamModelReasoningDisabledEmitsNoReasoningBytes() = runBlocking<Unit>
-    {
-        val capture = driveStream(
-            listOf(reasoningChunkJson, reasoningDetailsChunkJson, contentChunkJson))
-        { pipe -> pipe.setStreamModelReasoning(false) }
+//=========================================Election Surface Seam Tests================================================
 
-        assertEquals("Hello", capture.rawStream)
-        assertFalse(capture.rawStream.contains(ReasoningStream.OPEN_TAG))
-        assertFalse(capture.rawStream.contains(ReasoningStream.CLOSE_TAG))
-        assertFalse(capture.rawStream.contains("Let me think"))
-        assertFalse(capture.rawStream.contains("step one"))
+    private val reasoningChunkJsons = listOf(reasoningChunkJson, contentChunkJson)
+
+    @Test
+    fun testEnableStreamingDefaultReasoningElectionDeliversSegmentMarkers() = runBlocking<Unit>
+    {
+        val capture = driveStream(reasoningChunkJsons)
+        { pipe -> pipe.enableStreaming() }
+
+        assertTrue(capture.events.first() == ReasoningStream.OPEN_TAG,
+            "default election (streamReasoning=true) must deliver the open marker")
+        assertEquals(ReasoningStream.CLOSE_TAG, capture.events[2],
+            "reasoning->text transition must land the close marker before content")
+    }
+
+    @Test
+    fun testEnableStreamingStreamReasoningFalseSuppressesMarkers() = runBlocking<Unit>
+    {
+        val capture = driveStream(reasoningChunkJsons)
+        { pipe -> pipe.enableStreaming(null, showReasoning = false, streamReasoning = false) }
+
+        assertEquals(listOf("Hello"), capture.events,
+            "streamReasoning=false must deliver zero reasoning bytes and zero markers")
         assertEquals("Hello", capture.visibleText.toString())
     }
+
+    @Test
+    fun testEnableStreamingReturnsTheSamePipeForChaining()
+    {
+        val pipe = OpenRouterPipe()
+        val returned = pipe.enableStreaming(null, showReasoning = false, streamReasoning = true)
+        assertEquals(pipe, returned)
+    }
+
+    @Test
+    fun testEnableStreamingWithCallbackRegistersItForChunks() = runBlocking<Unit>
+    {
+        val chunks = mutableListOf<String>()
+        val pipe = OpenRouterPipe().setApiKey("test-key")
+        val captured = pipe.enableStreaming({ chunk -> chunks.add(chunk) })
+
+        val chunk = deserialize<StreamingChunk>(reasoningChunkJson)
+        assertNotNull(chunk)
+        captured.handleStreamDataChunk(chunk!!, StringBuilder())
+
+        assertTrue(chunks.any { it.contains("Let me think") },
+            "the enableStreaming-registered callback must receive streamed chunks: $chunks")
+    }
+
 }
+

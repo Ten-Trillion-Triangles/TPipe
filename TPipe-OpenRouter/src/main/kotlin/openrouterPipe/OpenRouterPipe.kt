@@ -283,6 +283,52 @@ class OpenRouterPipe : Pipe()
     }
 
     /**
+     * Enables streaming with optional callback registration and reasoning
+     * election.
+     *
+     * The provider-unified reasoning election surface:
+     * [bedrockPipe.BedrockPipe.enableStreaming],
+     * [genericOpenAIPipe.GenericOpenAIPipe.enableStreaming] and
+     * [ollamaPipe.OllamaPipe.enableStreaming] expose the same
+     * `(callback, showReasoning, streamReasoning)` shape, so a caller can
+     * elect internal-reasoning streaming uniformly across every provider
+     * module through one method.
+     *
+     * @param callback Optional suspending callback receiving text chunks
+     * @param showReasoning If true, attempts to propagate streaming settings
+     *   to CoT reasoning pipes. Accepted for signature parity; OpenRouter's
+     *   binder does not carry a separate reasoning-pipe wire.
+     * @param streamReasoning If true, internal model reasoning chunks are
+     *   emitted to streaming callbacks via the base reasoning hooks; the
+     *   base [com.TTT.Pipe.Pipe.setStreamModelReasoning] flag is the single
+     *   election point providers consult. Defaults to true (Bedrock parity).
+     * @return This pipe instance for method chaining
+     */
+    fun enableStreaming(
+        callback: (suspend (String) -> Unit)? = null,
+        showReasoning: Boolean = false,
+        streamReasoning: Boolean = true
+    ): OpenRouterPipe
+    {
+        this.streamingEnabled = true
+        this.streamModelReasoning = streamReasoning
+
+        if(callback != null)
+        {
+            setStreamingCallback(callback)
+        }
+
+        // [showReasoning] is accepted for Bedrock-signature parity; OpenRouter's
+        // streaming binder does not carry a separate reasoning-pipe wire, so
+        // no additional work is required. The streamReasoning election above
+        // is what routes reasoning deltas through the base hooks.
+        @Suppress("UNUSED_PARAMETER")
+        val unusedShowReasoning = showReasoning
+
+        return this
+    }
+
+    /**
      * Sets the tools for function calling.
      * @param tools List of tool definitions
      * @return This pipe instance for fluent chaining

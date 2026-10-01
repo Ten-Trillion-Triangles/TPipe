@@ -78,8 +78,8 @@ class GenericOpenAIPipeStreamingCallbacksLiveTest
         runBlocking { pipe.init() }
 
         // Register two callbacks via enableStreaming
-        pipe.enableStreaming { chunk -> chunksA.add(chunk) }
-        pipe.enableStreaming { chunk -> chunksB.add(chunk) }
+        pipe.enableStreaming({ chunk -> chunksA.add(chunk) })
+        pipe.enableStreaming({ chunk -> chunksB.add(chunk) })
 
         runBlocking {
             pipe.generateText("Reply with exactly three words: hello world test")

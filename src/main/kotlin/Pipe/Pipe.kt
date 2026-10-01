@@ -1058,6 +1058,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
     @kotlinx.serialization.Transient
     private var activeStallDetector: StreamingStallDetector? = null
 
+    /**
+     * The chunk subscription registered by the current execution's stall detector.
+     *
+     * Held so the subscription can be removed when the execution ends. The streaming
+     * callback manager is per-Pipe (it outlives the execution) while the detector is
+     * per-execution, so without an explicit removal every execution leaves a live
+     * detector behind that keeps the previous execution's last-token timestamp.
+     */
+    @kotlinx.serialization.Transient
+    private var activeStallDetectorCallback: (suspend (String) -> Unit)? = null
+
 //============================================= properties ===========================================================//
 
     /**
@@ -6773,6 +6784,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
      * @return The multimodal result of the AI api call.
      */
     open suspend fun execute(content: MultimodalContent): MultimodalContent = coroutineScope {
+        /**
+         * Fresh stall-retry budget per execution. The counter is keyed on the Pipe
+         * and is only ever incremented, so without this reset a pipe that spent its
+         * budget during an earlier execution stays permanently terminal and every
+         * later stall — including a fabricated one — fails instantly.
+         */
+        PipeTimeoutManager.clearStallRetryCount(this@Pipe)
+
         var result = executeMultimodal(content)
         while(result.repeatPipe)
         {
@@ -6877,9 +6896,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
             activeStallDetector = detector
 
             // Register a per-chunk timestamp callback with the streaming manager.
-            obtainStreamingCallbackManager().addCallback { chunk ->
+            // The lambda is bound to a local and held in a field because the manager
+            // dedups by reference identity, so an inline lambda could never be removed
+            // again — and this subscription must not outlive the execution.
+            val detectorCallback: suspend (String) -> Unit = { chunk ->
                 detector.onTokenReceived(chunk, System.currentTimeMillis())
             }
+            activeStallDetectorCallback = detectorCallback
+            obtainStreamingCallbackManager().addCallback(detectorCallback)
         }
 
         try {
@@ -7952,6 +7976,20 @@ abstract class Pipe : P2PInterface, ProviderInterface
         } finally {
             PipeTimeoutManager.stopTracking(this@Pipe)
             activeJob = null
+            /**
+             * Remove this execution's stall-detector subscription. The callback
+             * manager is per-Pipe and outlives the execution, so a subscription left
+             * in place keeps its detector alive holding the last chunk timestamp from
+             * THIS execution. On the next execution that stale anchor turns the
+             * legitimate retry gap (teardown + reconnect) into a fabricated stall
+             * measured as silence. Contract: a detector subscription lives exactly
+             * as long as the execution that created it.
+             */
+            activeStallDetectorCallback?.let { callback ->
+                streamingCallbackManager?.removeCallback(callback)
+            }
+            activeStallDetectorCallback = null
+            activeStallDetector = null
         }
     }
 
