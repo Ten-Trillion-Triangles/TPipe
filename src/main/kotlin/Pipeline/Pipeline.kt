@@ -1232,6 +1232,33 @@ class Pipeline : P2PInterface
     }
 
     /**
+     * Records a pipeline-level [eventType] on this pipeline's trace.
+     *
+     * Pipeline-level decisions — retry scheduling, budget exhaustion — are not produced by any
+     * pipe, so without this they exist only as log lines and a trace reader cannot see that the
+     * pipeline was replayed or that it gave up. Honors the pipeline's own tracing configuration
+     * and detail level, and is a no-op when tracing is disabled.
+     *
+     * @param eventType The pipeline-level event to record.
+     * @param phase The execution phase the decision belongs to.
+     * @param content Optional content to attach to the event.
+     * @param metadata Additional metadata, such as the retry number.
+     * @param error Optional error describing why the pipeline gave up.
+     * @return This Pipeline object for method chaining.
+     */
+    fun tracePipelineEvent(
+        eventType: TraceEventType,
+        phase: TracePhase,
+        content: MultimodalContent? = null,
+        metadata: Map<String, Any> = emptyMap(),
+        error: Throwable? = null
+    ): Pipeline
+    {
+        trace(eventType, phase, content, metadata, error)
+        return this
+    }
+
+    /**
      * Binds a delegate function that will be called everytime a pipe in the pipeline has completed. Passes the reference
      * to the pipe, and the content object it produced forward.
      * @param func The delegate function object to bind to this pipeline.

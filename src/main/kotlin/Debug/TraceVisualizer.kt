@@ -51,7 +51,8 @@ class TraceVisualizer
                 // Existing pipe events
                 TraceEventType.PIPE_START -> "▶️"
                 TraceEventType.PIPE_SUCCESS -> "✅"
-                TraceEventType.PIPE_FAILURE -> "❌"
+                TraceEventType.PIPE_FAILURE, TraceEventType.PIPELINE_FAILURE -> "❌"
+                TraceEventType.PIPE_RETRY -> "❌"
                 TraceEventType.API_CALL_START -> "🔄"
                 TraceEventType.API_CALL_SUCCESS -> "✅"
                 TraceEventType.API_CALL_FAILURE -> "❌"
@@ -255,6 +256,7 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED,
                 TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED -> "[SUCCESS]"
                 TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE,
+                TraceEventType.PIPE_RETRY,
                 TraceEventType.PUMP_STATION_FAILED, TraceEventType.PUMP_STATION_PATH_FAILED,
                 TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED, TraceEventType.PUMP_STATION_CONTEXT_BLOWOUT_DETECTED -> "[FAILURE]"
                 else -> "[INFO]"
@@ -314,7 +316,7 @@ class TraceVisualizer
 
             val status = when {
                 event.eventType.name.contains("SUCCESS") -> "SUCCESS"
-                event.eventType.name.contains("FAILURE") -> "FAILURE"
+                event.eventType.name.contains("FAILURE") || event.eventType.name.contains("RETRY") -> "FAILURE"
                 else -> "INFO"
             }
             md.append("| ${event.timestamp} | $label | ${event.eventType} | ${event.phase} | $status |\n")
@@ -380,7 +382,9 @@ class TraceVisualizer
             graph.append("    click ${node.nodeId} scrollToEvent\n")  // ADD: Click handler
         }
         
-        // Add connections && styling based on events
+        // Add connections in event order. Styling is applied once per node below, from the
+        // node's aggregated status — a per-event class line lets a later benign event
+        // overwrite an earlier failure, which drew retrying pipes neutral instead of red.
         var prevNode: String? = null
         trace.forEach { event ->
             val nodeKey = TraceNodeMapper.resolveNodeKey(event)
@@ -394,24 +398,16 @@ class TraceVisualizer
                 graph.append("    $prevNode --> $currentNode\n")
             }
             
-            // Add styling based on event type
-            when(event.eventType)
-            {
-                TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS -> {
-                    currentNode?.let { graph.append("    $it:::success\n") }
-                }
-                TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE -> {
-                    currentNode?.let { graph.append("    $it:::failure\n") }
-                }
-                else -> {
-                    currentNode?.let { graph.append("    $it:::info\n") }
-                }
-            }
-            
             if(currentNode != null)
             {
                 prevNode = currentNode
             }
+        }
+        
+        // Emit exactly one style class per node: a node that failed or retried stays red even
+        // if its final event was a success, matching TraceNodeMapper's failure-dominant status.
+        nodes.forEach { node ->
+            graph.append("    ${node.nodeId}:::${styleClassForStatus(node.status)}\n")
         }
         
         // Add CSS classes
@@ -420,6 +416,22 @@ class TraceVisualizer
         graph.append("    classDef info fill:#d1ecf1,stroke:#007bff,stroke-width:2px\n")
         
         return graph.toString()
+    }
+
+    /**
+     * Map an aggregated node status onto the Mermaid style class used by the flow graph.
+     *
+     * @param status The aggregated status of the node.
+     * @return The CSS class name emitted after the node declaration.
+     */
+    private fun styleClassForStatus(status: NodeStatus): String
+    {
+        return when(status)
+        {
+            NodeStatus.SUCCESS -> "success"
+            NodeStatus.FAILURE -> "failure"
+            NodeStatus.INFO, NodeStatus.WARNING -> "info"
+        }
     }
     
     private fun generateDetailsTable(trace: List<TraceEvent>): String {
@@ -442,13 +454,13 @@ class TraceVisualizer
             val elapsed = event.timestamp - startTime
             val statusClass = when(event.eventType) {
                 TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "success"
-                TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "failure"
+                TraceEventType.PIPE_FAILURE, TraceEventType.PIPELINE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE, TraceEventType.PIPE_RETRY -> "failure"
                 else -> "info"
             }
             
             val status = when(event.eventType) {
                 TraceEventType.PIPE_SUCCESS, TraceEventType.API_CALL_SUCCESS, TraceEventType.VALIDATION_SUCCESS -> "✅ SUCCESS"
-                TraceEventType.PIPE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE -> "❌ FAILURE"
+                TraceEventType.PIPE_FAILURE, TraceEventType.PIPELINE_FAILURE, TraceEventType.API_CALL_FAILURE, TraceEventType.VALIDATION_FAILURE, TraceEventType.PIPE_RETRY -> "❌ FAILURE"
                 else -> "ℹ️ INFO"
             }
             
@@ -2406,7 +2418,9 @@ class TraceVisualizer
                 pipeName = label,
                 eventIds = events.map { it.id },
                 status = when {
-                    events.any { it.eventType.name.contains("FAILURE") } -> NodeStatus.FAILURE
+                    // Retries colour the node as a failure: a pipe that retried has failed at
+                    // least once. Matching only the "FAILURE" substring drew them as info.
+                    events.any { it.eventType.name.contains("FAILURE") || it.eventType.name.contains("RETRY") } -> NodeStatus.FAILURE
                     events.any { it.eventType.name.contains("SUCCESS") } -> NodeStatus.SUCCESS
                     else -> NodeStatus.INFO
                 }
@@ -2760,7 +2774,9 @@ class TraceVisualizer
                 pipeName = label,
                 eventIds = events.map { it.id },
                 status = when {
-                    events.any { it.eventType.name.contains("FAILURE") } -> NodeStatus.FAILURE
+                    // Retries colour the node as a failure: a pipe that retried has failed at
+                    // least once. Matching only the "FAILURE" substring drew them as info.
+                    events.any { it.eventType.name.contains("FAILURE") || it.eventType.name.contains("RETRY") } -> NodeStatus.FAILURE
                     events.any { it.eventType.name.contains("SUCCESS") } -> NodeStatus.SUCCESS
                     else -> NodeStatus.INFO
                 }
@@ -2902,7 +2918,8 @@ class TraceVisualizer
 
     private fun createManifoldNode(nodeId: String, label: String, events: List<TraceEvent>): TraceNode {
         val status = when {
-            events.any { it.eventType.name.contains("FAILURE") } -> NodeStatus.FAILURE
+            // Retries colour the node as a failure: a pipe that retried has failed at least once.
+            events.any { it.eventType.name.contains("FAILURE") || it.eventType.name.contains("RETRY") } -> NodeStatus.FAILURE
             events.any { it.eventType.name.contains("SUCCESS") } -> NodeStatus.SUCCESS
             events.isNotEmpty() -> NodeStatus.INFO
             else -> NodeStatus.INFO
@@ -3221,7 +3238,7 @@ class TraceVisualizer
             val elapsed = event.timestamp - startTime
             val status = when {
                 event.eventType.name.contains("SUCCESS") -> "✅ SUCCESS"
-                event.eventType.name.contains("FAILURE") -> "❌ FAILURE"
+                event.eventType.name.contains("FAILURE") || event.eventType.name.contains("RETRY") -> "❌ FAILURE"
                 else -> "ℹ️ INFO"
             }
             val nodeKey = TraceNodeMapper.resolveNodeKey(event)

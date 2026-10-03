@@ -28,6 +28,10 @@ object EventPriorityMapper
         return when(eventType) {
             // Existing CRITICAL events
             TraceEventType.PIPE_FAILURE,
+            // A retry is a failing pipe's first symptom: a pipe that retries is a pipe that
+            // has failed at least once, and a run that exhausts its budget ends the turn.
+            // Keeping it below CRITICAL silently drops the retry steps from a MINIMAL capture.
+            TraceEventType.PIPE_RETRY,
             TraceEventType.API_CALL_FAILURE,
             TraceEventType.PIPELINE_TERMINATION,
             // New Manifold / Junction CRITICAL events

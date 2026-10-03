@@ -95,7 +95,10 @@ object TraceNodeMapper
     private fun determineNodeStatus(events: List<TraceEvent>): NodeStatus
     {
         return when {
-            events.any { it.eventType.name.contains("FAILURE") } -> NodeStatus.FAILURE
+            // A retry means the pipe failed at least once, so it must colour the node as a
+            // failure. Matching on the "FAILURE" substring alone misses PIPE_RETRY and drew
+            // retrying pipes as neutral info instead of red.
+            events.any { it.eventType.name.contains("FAILURE") || it.eventType.name.contains("RETRY") } -> NodeStatus.FAILURE
             events.any { it.eventType.name.contains("SUCCESS") } -> NodeStatus.SUCCESS
             else -> NodeStatus.INFO
         }

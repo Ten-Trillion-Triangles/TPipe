@@ -60,6 +60,73 @@ class TraceNodeMapperTest
         assertTrue(nodes.any { it.pipeName.contains("DistributionGrid-Listing-listing-123") })
     }
 
+    @Test
+    fun testFailureDominatesSuccessForRetryingPipe()
+    {
+        val events = listOf(
+            createTraceEvent("retrying-pipe", TraceEventType.PIPE_SUCCESS),
+            createTraceEvent("retrying-pipe", TraceEventType.PIPE_RETRY),
+            createTraceEvent("retrying-pipe", TraceEventType.PIPE_SUCCESS)
+        )
+
+        val node = TraceNodeMapper.mapEventsToNodes(events).single()
+
+        assertEquals(
+            NodeStatus.FAILURE,
+            node.status,
+            "a later successful recovery must not hide that this pipe retried after a failure"
+        )
+    }
+
+    @Test
+    fun testRetryingPipeStaysRedInFlowGraphDespiteLaterSuccess()
+    {
+        // Mirrors the live failure: the resource-detection pipe hit PIPE_FAILURE six times
+        // interleaved with successful recoveries, and the graph rendered it neutral because the
+        // last emitted class line for the node came from a benign event.
+        val events = listOf(
+            createTraceEvent("resource detection pipe", TraceEventType.PIPE_SUCCESS),
+            createTraceEvent("resource detection pipe", TraceEventType.PIPE_FAILURE),
+            createTraceEvent("resource detection pipe", TraceEventType.PIPE_SUCCESS),
+            createTraceEvent("resource detection pipe", TraceEventType.PIPE_FAILURE),
+            createTraceEvent("resource detection pipe", TraceEventType.PIPE_SUCCESS)
+        )
+
+        val visualizer = TraceVisualizer()
+        val html = visualizer.generateHtmlReport(events)
+
+        val node = TraceNodeMapper.mapEventsToNodes(events).single()
+        assertEquals(NodeStatus.FAILURE, node.status)
+
+        val classLines = Regex("""^\s*${Regex.escape(node.nodeId)}:::(\w+)$""", RegexOption.MULTILINE)
+            .findAll(html)
+            .map { it.groupValues[1] }
+            .toList()
+
+        assertEquals(
+            listOf("failure"),
+            classLines,
+            "the flow graph must emit exactly one style class per node, and a node that failed must stay red"
+        )
+    }
+
+    @Test
+    fun testPipeRetryMapsToFailureAndRendersAsRed()
+    {
+        val events = listOf(createTraceEvent("retrying-pipe", TraceEventType.PIPE_RETRY))
+
+        val node = TraceNodeMapper.mapEventsToNodes(events).single()
+        val visualizer = TraceVisualizer()
+        val graph = visualizer.generateFlowChart(events)
+        val timeline = visualizer.generateTimeline(events)
+        val markdown = visualizer.generateMarkdownOutput(events)
+        val html = visualizer.generateHtmlReport(events)
+        assertTrue(graph.contains("❌ retrying-pipe -> PIPE_RETRY"))
+        assertTrue(html.contains(":::failure"))
+        assertTrue(markdown.contains("| FAILURE |"))
+        assertEquals(NodeStatus.FAILURE, node.status)
+    }
+
     private fun createTraceEvent(
         pipeName: String,
         eventType: TraceEventType,
