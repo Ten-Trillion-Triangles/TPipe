@@ -13,6 +13,7 @@ import com.TTT.Context.MemoryIntrospectionConfig
 import com.TTT.Context.MemoryIntrospectionTools
 import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
+import com.TTT.Context.SerializedFrameEstimator
 import com.TTT.Debug.*
 import com.TTT.Debug.EventPriorityMapper
 import com.TTT.Enums.ContextWindowSettings
@@ -4260,7 +4261,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 continue
             }
 
-            val requiredTokens = countContextWindowTokens(contextWindow, truncationSettings)
+            val requiredTokens = estimateContextWindowTokens(contextWindow, truncationSettings)
             if(requiredTokens <= 0)
             {
                 allocations[pageKey] = 0
@@ -4339,7 +4340,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             val contextWindow = miniContextBank.contextMap[pageKey]
             val size = if(contextWindow == null || contextWindow.isEmpty()) 0
-                      else countContextWindowTokens(contextWindow, truncationSettings)
+                      else estimateContextWindowTokens(contextWindow, truncationSettings)
             contextSizes[pageKey] = size
         }
 
@@ -4405,7 +4406,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 truncationSettings
             )
 
-            usage[pageKey] = countContextWindowTokens(tempWindow, truncationSettings)
+            usage[pageKey] = estimateContextWindowTokens(tempWindow, truncationSettings)
         }
 
         return usage
@@ -4476,7 +4477,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             val contextWindow = miniContextBank.contextMap[pageKey] ?: continue
             if(contextWindow.isEmpty()) continue
 
-            val fullContentTokens = countContextWindowTokens(contextWindow, truncationSettings)
+            val fullContentTokens = estimateContextWindowTokens(contextWindow, truncationSettings)
             val additionalNeed = maxOf(0, fullContentTokens - currentBudget)
 
             if(additionalNeed > 0)
@@ -6281,11 +6282,42 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
     /**
      * Counts tokens inside a ContextWindow snapshot after truncation.
+     *
+     * The EXACT reference counter: it serializes the whole window, which is costly. Hot budgeting
+     * paths use [estimateContextWindowTokens] instead. This method is `open` so tests can override it
+     * and verify that a code path no longer performs full-window serialization.
      */
-    internal fun countContextWindowTokens(contextWindow: ContextWindow, truncationSettings: TruncationSettings): Int
+    internal open fun countContextWindowTokens(contextWindow: ContextWindow, truncationSettings: TruncationSettings): Int
     {
         val serializedWindow = serialize(contextWindow)
         return Dictionary.countTokens(serializedWindow, truncationSettings)
+    }
+
+    /**
+     * Estimates the tokens a ContextWindow will bill when sent: the serialized JSON framing cost
+     * plus the raw content tokens, measured with the same tokenizer the budgeting uses.
+     *
+     * Hot-path replacement for [countContextWindowTokens]: the framing constants are probed once
+     * per tokenizer configuration and cached, so this call performs no serialization at all.
+     * The estimate is a conservative over-bound of the exact serialized count, which is the safe
+     * direction when reserving budget.
+     *
+     * @see com.TTT.Context.SerializedFrameEstimator
+     */
+    internal fun estimateContextWindowTokens(contextWindow: ContextWindow, truncationSettings: TruncationSettings): Int
+    {
+        return SerializedFrameEstimator.estimateTokens(contextWindow, truncationSettings)
+    }
+
+    /**
+     * Estimates the tokens an entire MiniBank will bill when sent via `serialize(miniContextBank)`:
+     * the bank-level framing, each page window's framing, and all raw content. No serialization.
+     *
+     * @see com.TTT.Context.SerializedFrameEstimator
+     */
+    internal fun estimateMiniBankTokens(miniBank: MiniBank, truncationSettings: TruncationSettings): Int
+    {
+        return SerializedFrameEstimator.estimateMiniBankTokens(miniBank, truncationSettings)
     }
 
     /**
@@ -6360,7 +6392,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
 
         // Step 2: Capture before state - total context tokens before simulation
-        val contextTokensBefore = countContextWindowTokens(contextWindow, truncationSettings)
+        val contextTokensBefore = estimateContextWindowTokens(contextWindow, truncationSettings)
 
         // Step 3: Simulate MiniBank page truncation if miniContextBank is not empty
         val perPagePreviews = mutableMapOf<String, PagePreview>()
@@ -6380,7 +6412,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
             for((pageKey, contextWindow) in miniContextBank.contextMap)
             {
-                val originalTokens = countContextWindowTokens(contextWindow, truncationSettings)
+                val originalTokens = estimateContextWindowTokens(contextWindow, truncationSettings)
                 val allocatedBudget = allocations[pageKey] ?: 0
 
                 // Simulate truncation on a copy
@@ -6400,7 +6432,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                     loreBookTokenAccounting = workingBudget.loreBookTokenAccounting
                 )
 
-                val actualTokensAfter = countContextWindowTokens(copy, truncationSettings)
+                val actualTokensAfter = estimateContextWindowTokens(copy, truncationSettings)
                 val wouldBeTruncated = actualTokensAfter < originalTokens
 
                 perPagePreviews[pageKey] = PagePreview(
@@ -6431,7 +6463,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             preserveTextMatches = workingBudget.preserveTextMatches,
             loreBookTokenAccounting = workingBudget.loreBookTokenAccounting
         )
-        val mainContextTokensAfter = countContextWindowTokens(mainContextCopy, truncationSettings)
+        val mainContextTokensAfter = estimateContextWindowTokens(mainContextCopy, truncationSettings)
 
         // Step 5: Calculate totals
         val totalTokensAfter = totalPageTokensAfter + mainContextTokensAfter
@@ -6500,7 +6532,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         // Capture before state for onContextTruncated callback
         val truncationSettings = getTruncationSettings()
-        val contextTokensBefore = countContextWindowTokens(contextWindow, truncationSettings)
+        val contextTokensBefore = estimateContextWindowTokens(contextWindow, truncationSettings)
         var finalRemainingFreeSpace = 0
 
         try
@@ -6723,7 +6755,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         finally
         {
-            val contextTokensAfter = countContextWindowTokens(contextWindow, truncationSettings)
+            val contextTokensAfter = estimateContextWindowTokens(contextWindow, truncationSettings)
             val wasTruncated = contextTokensAfter < contextTokensBefore
             onContextTruncated?.invoke(wasTruncated, finalRemainingFreeSpace)
             restoreTokenBudgetExecutionSnapshot(executionSnapshot)
@@ -6794,8 +6826,6 @@ abstract class Pipe : P2PInterface, ProviderInterface
             budget.reserveEmptyPageBudget
         )
 
-        var totalUsedBudget = 0
-
         for((pageKey, contextWindow) in miniContextBank.contextMap)
         {
             val allocatedBudget = pageBudgets[pageKey] ?: 0
@@ -6813,9 +6843,11 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 fillMode = loreBookFillMode,
                 preserveTextMatches = budget.preserveTextMatches
             )
-
-            totalUsedBudget += countContextWindowTokens(contextWindow, truncationSettings)
         }
+
+        //The send path serializes the entire MiniBank, so verify the whole bank (frame + content
+        //of every page) against the budget. The estimate performs no serialization at runtime.
+        val totalUsedBudget = estimateMiniBankTokens(miniContextBank, truncationSettings)
 
         if(totalUsedBudget > totalBudget)
         {

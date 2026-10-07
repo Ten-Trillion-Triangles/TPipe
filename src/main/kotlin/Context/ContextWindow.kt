@@ -1269,6 +1269,34 @@ data class ContextWindow(
     }
 
     /**
+     * Synthesizes a [TruncationSettings] that mirrors the raw tokenizer parameters of the full-param
+     * `selectAndTruncateContext*` calls (default dictionary). Used to estimate the serialized-framing
+     * cost under the same tokenizer configuration the truncation decisions run on.
+     */
+    private fun frameEstimationSettings(
+        countSubWordsInFirstWord: Boolean,
+        favorWholeWords: Boolean,
+        countOnlyFirstWordFound: Boolean,
+        splitForNonWordChar: Boolean,
+        alwaysSplitIfWholeWordExists: Boolean,
+        countSubWordsIfSplit: Boolean,
+        nonWordSplitCount: Int,
+        tokenCountingBias: Double
+    ): TruncationSettings
+    {
+        return TruncationSettings(
+            countSubWordsInFirstWord = countSubWordsInFirstWord,
+            favorWholeWords = favorWholeWords,
+            countOnlyFirstWordFound = countOnlyFirstWordFound,
+            splitForNonWordChar = splitForNonWordChar,
+            alwaysSplitIfWholeWordExists = alwaysSplitIfWholeWordExists,
+            countSubWordsIfSplit = countSubWordsIfSplit,
+            nonWordSplitCount = nonWordSplitCount,
+            tokenCountingBias = tokenCountingBias
+        )
+    }
+
+    /**
      * Combined helper that manages token budget between lorebook, context elements, and conversation history.
      * Uses three-way split when converseHistory is present, falls back to two-way split when empty.
      * Truncates this context object in place by filtering lorebook keys, context elements, and conversation history.
@@ -1311,6 +1339,23 @@ data class ContextWindow(
         if(multiplyWindowSizeBy > 0)
         {
             multipliedTokenBudget = totalTokenBudget * multiplyWindowSizeBy
+        }
+
+        //Reserve the serialized JSON framing. Truncation decisions run on raw content tokens, but the
+        //prompt actually sent is the serialized window, whose syntax is billed on top of the content.
+        //Subtracting the frame here gives both the split and fill paths a content budget that keeps
+        //content + frame within the window. When the budget is too small to absorb the frame (small test
+        //budgets, pathological configs), behavior degrades to the legacy un-reserved split.
+        val frameOverhead = SerializedFrameEstimator.frameCost(
+            this,
+            frameEstimationSettings(
+                countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit,
+                nonWordSplitCount, tokenCountingBias
+            ))
+        if(multipliedTokenBudget > frameOverhead)
+        {
+            multipliedTokenBudget -= frameOverhead
         }
 
         val hasContextElements = contextElements.isNotEmpty()
@@ -1572,6 +1617,23 @@ data class ContextWindow(
         if(multiplyWindowSizeBy > 0)
         {
             multipliedTokenBudget = totalTokenBudget * multiplyWindowSizeBy
+        }
+
+        //Reserve the serialized JSON framing. Truncation decisions run on raw content tokens, but the
+        //prompt actually sent is the serialized window, whose syntax is billed on top of the content.
+        //Subtracting the frame here gives both the split and fill paths a content budget that keeps
+        //content + frame within the window. When the budget is too small to absorb the frame (small test
+        //budgets, pathological configs), behavior degrades to the legacy un-reserved split.
+        val frameOverhead = SerializedFrameEstimator.frameCost(
+            this,
+            frameEstimationSettings(
+                countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
+                splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit,
+                nonWordSplitCount, tokenCountingBias
+            ))
+        if(multipliedTokenBudget > frameOverhead)
+        {
+            multipliedTokenBudget -= frameOverhead
         }
 
         val hasContextElements = contextElements.isNotEmpty()
