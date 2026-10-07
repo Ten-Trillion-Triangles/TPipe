@@ -4428,9 +4428,18 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
 
         val totalUsed = simulatedUsage.values.sum()
-        var unusedBudget = totalBudget - totalUsed
 
-        if(unusedBudget <= 0) return optimizedAllocations
+        if(totalUsed > totalBudget)
+        {
+            // Measured usage can exceed the budget: countContextWindowTokens counts the serialized
+            // window (JSON framing included) while selectAndTruncateContext budgets on raw element
+            // tokens. Cap allocations proportionally so the sum never exceeds totalBudget.
+            return optimizedAllocations.mapValues { (_, allocated) ->
+                (allocated.toLong() * totalBudget / totalUsed).toInt()
+            }
+        }
+
+        var unusedBudget = totalBudget - totalUsed
 
         repeat(3)
         {
@@ -8528,8 +8537,29 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 ContextWindowSettings.TruncateBottom,
                 truncationSettings)
 
-            //Copy back now that we've reduced it to fit our budget.
-           contentCopy.modelReasoning = newContextWindow.contextElements.first()
+            //Copy back now that we've reduced it to fit our budget. Element-level truncation discards whole
+            //elements, so a reasoning payload that exceeds the budget empties the list entirely. Degrade to
+            //an empty reasoning stream and trace the discard instead of throwing NoSuchElementException.
+            val truncatedReasoning = newContextWindow.contextElements.firstOrNull()
+            if(truncatedReasoning == null)
+            {
+                trace(
+                    TraceEventType.CONTEXT_TRUNCATE,
+                    TracePhase.CONTEXT_PREPARATION,
+                    contentCopy,
+                    metadata = mapOf(
+                        "reasoningElementDiscarded" to true,
+                        "reasoningBudget" to reasoningBudget,
+                        "preTruncationCharCount" to contentCopy.modelReasoning.length
+                    ))
+
+                contentCopy.modelReasoning = ""
+            }
+
+            else
+            {
+                contentCopy.modelReasoning = truncatedReasoning
+            }
         }
 
         return contentCopy

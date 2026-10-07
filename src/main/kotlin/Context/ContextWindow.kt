@@ -1191,7 +1191,8 @@ data class ContextWindow(
      * Wrapper for selectAndTruncateContext using TruncationSettings.
      * 
      * @param text Input text to scan for matching lorebook keys
-     * @param totalTokenBudget Total token budget to divide between lorebook and context elements
+     * @param totalTokenBudget Total token budget for the window. Divided only among the regions actually
+     * present — no space is reserved for a lorebook that has no entries
      * @param truncateSettings Truncation strategy for context elements
      * @param settings TruncationSettings containing all tokenization parameters
      */
@@ -1229,7 +1230,8 @@ data class ContextWindow(
      * Wrapper for remote-aware context truncation using [TruncationSettings].
      *
      * @param text Input text to scan for matching lorebook keys.
-     * @param totalTokenBudget Total token budget to divide between lorebook and context elements.
+     * @param totalTokenBudget Total token budget for the window. Divided only among the regions actually
+     * present — no space is reserved for a lorebook that has no entries.
      * @param truncateSettings Truncation strategy for context elements.
      * @param settings TruncationSettings containing all tokenization parameters.
      * @param fillMode If true, fill the remaining lorebook budget by weight after priority selection.
@@ -1271,7 +1273,8 @@ data class ContextWindow(
      * Uses three-way split when converseHistory is present, falls back to two-way split when empty.
      * Truncates this context object in place by filtering lorebook keys, context elements, and conversation history.
      * @param text Input text to scan for matching lorebook keys
-     * @param totalTokenBudget Total token budget to divide between components
+     * @param totalTokenBudget Total token budget for the window, divided only among the regions actually
+     * present (lorebook, context elements, conversation history)
      * @param multiplyWindowSizeBy Multiplier for window size calculation
      * @param truncateSettings Truncation strategy for context elements and conversation history
      * @param countSubWordsInFirstWord Token counting parameter
@@ -1413,11 +1416,12 @@ data class ContextWindow(
 
         else if(!hasContextElements && hasConverseHistory)
         {
-            // Two-way split: lorebook and converseHistory
-            val halfBudget = multipliedTokenBudget / 2
+            // Two-way split: lorebook and converseHistory. When no lorebook is present on this window,
+            // there is nothing to share the budget with, so the history gets the full budget.
+            val componentBudget = if(loreBookKeys.isEmpty()) multipliedTokenBudget else multipliedTokenBudget / 2
 
             truncateConverseHistory(
-                halfBudget, 1, truncateSettings,
+                componentBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                 inputText = text,
@@ -1442,11 +1446,12 @@ data class ContextWindow(
 
         else if(hasContextElements && !hasConverseHistory)
         {
-            // Two-way split: lorebook and contextElements
-            val halfBudget = multipliedTokenBudget / 2
+            // Two-way split: lorebook and contextElements. When no lorebook is present on this window,
+            // there is nothing to share the budget with, so the elements get the full budget.
+            val componentBudget = if(loreBookKeys.isEmpty()) multipliedTokenBudget else multipliedTokenBudget / 2
 
             truncateContextElements(
-                halfBudget, 1, truncateSettings,
+                componentBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                 inputText = text,
@@ -1474,12 +1479,13 @@ data class ContextWindow(
 
         else
         {
-            // Three-way split: lorebook, contextElements, and converseHistory
-            val thirdBudget = multipliedTokenBudget / 3
+            // Three-way split: lorebook, contextElements, and converseHistory. When no lorebook is present
+            // on this window the budget divides two ways between the remaining components instead of three.
+            val componentBudget = if(loreBookKeys.isEmpty()) multipliedTokenBudget / 2 else multipliedTokenBudget / 3
 
             // Truncate each component to its allocated budget
             truncateContextElements(
-                thirdBudget, 1, truncateSettings,
+                componentBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                 inputText = text,
@@ -1487,7 +1493,7 @@ data class ContextWindow(
             )
 
             truncateConverseHistory(
-                thirdBudget, 1, truncateSettings,
+                componentBudget, 1, truncateSettings,
                 countSubWordsInFirstWord, favorWholeWords, countOnlyFirstWordFound,
                 splitForNonWordChar, alwaysSplitIfWholeWordExists, countSubWordsIfSplit, nonWordSplitCount, tokenCountingBias,
                 inputText = text,
@@ -1526,7 +1532,8 @@ data class ContextWindow(
      * honoring remote lock state for lorebook selection.
      *
      * @param text Input text to scan for matching lorebook keys.
-     * @param totalTokenBudget Total token budget to divide between components.
+     * @param totalTokenBudget Total token budget for the window, divided only among the regions actually
+     * present (lorebook, context elements, conversation history).
      * @param multiplyWindowSizeBy Multiplier for window size calculation.
      * @param truncateSettings Truncation strategy for context elements and conversation history.
      * @param countSubWordsInFirstWord Token counting parameter.
@@ -1708,10 +1715,12 @@ data class ContextWindow(
 
         else if(!hasContextElements && hasConverseHistory)
         {
-            val halfBudget = multipliedTokenBudget / 2
+            // Two-way split: lorebook and converseHistory. When no lorebook is present on this window,
+            // there is nothing to share the budget with, so the history gets the full budget.
+            val componentBudget = if(loreBookKeys.isEmpty()) multipliedTokenBudget else multipliedTokenBudget / 2
 
             truncateConverseHistory(
-                halfBudget,
+                componentBudget,
                 1,
                 truncateSettings,
                 countSubWordsInFirstWord,
@@ -1757,10 +1766,12 @@ data class ContextWindow(
 
         else if(hasContextElements && !hasConverseHistory)
         {
-            val halfBudget = multipliedTokenBudget / 2
+            // Two-way split: lorebook and contextElements. When no lorebook is present on this window,
+            // there is nothing to share the budget with, so the elements get the full budget.
+            val componentBudget = if(loreBookKeys.isEmpty()) multipliedTokenBudget else multipliedTokenBudget / 2
 
             truncateContextElements(
-                halfBudget,
+                componentBudget,
                 1,
                 truncateSettings,
                 countSubWordsInFirstWord,
@@ -1809,10 +1820,12 @@ data class ContextWindow(
 
         else
         {
-            val thirdBudget = multipliedTokenBudget / 3
+            // Three-way split: lorebook, contextElements, and converseHistory. When no lorebook is present
+            // on this window the budget divides two ways between the remaining components instead of three.
+            val componentBudget = if(loreBookKeys.isEmpty()) multipliedTokenBudget / 2 else multipliedTokenBudget / 3
 
             truncateContextElements(
-                thirdBudget,
+                componentBudget,
                 1,
                 truncateSettings,
                 countSubWordsInFirstWord,
@@ -1828,7 +1841,7 @@ data class ContextWindow(
             )
 
             truncateConverseHistory(
-                thirdBudget,
+                componentBudget,
                 1,
                 truncateSettings,
                 countSubWordsInFirstWord,
