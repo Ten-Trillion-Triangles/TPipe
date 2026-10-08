@@ -571,6 +571,20 @@ object PipeTimeoutManager
     }
 
     /**
+     * Test seam: marks this pipe as timed out without waiting on a live timer.
+     *
+     * The production path adds the mark inside [startTracking] at timer expiry, immediately
+     * before [Pipe.abort]. Unit tests of the exception-routing consumers need the mark
+     * deterministically, without sleeping on a timer.
+     *
+     * @param pipe Pipe to mark timed out.
+     */
+    internal fun markTimedOutForTest(pipe: Pipe)
+    {
+        timedOutPipes.add(pipe)
+    }
+
+    /**
      * Gets the current retry count for a pipe.
      */
     fun getRetryCount(pipe: Pipe): Int = retryAttempts.getOrDefault(pipe, 0)
@@ -665,6 +679,19 @@ object PipeTimeoutManager
         if(pipe.isStallAbortInFlight())
         {
             return content
+        }
+
+        // A wall-clock timeout abort surfaces here as an ordinary transport-shaped exception:
+        // startTracking marks the pipe timed out and calls pipe.abort(), which closes the
+        // in-flight connection; the streaming read loop then throws "Stream closed". That
+        // self-close is our own doing, not a provider defect. startTracking clears the mark at
+        // the start of every fresh attempt, so a mark present here belongs to THIS attempt's
+        // timer. The timeout policy owns this decision — strategy, retry budget, and trace
+        // reason — so hand it to handleTimeoutSignal instead of laundering our own abort into
+        // a `reason=transportFailure` provider fault that re-fires the same pipe.
+        if(isTimeout(pipe))
+        {
+            return handleTimeoutSignal(pipe, content)
         }
 
         if(pipe.timeoutStrategy != PipeTimeoutStrategy.Retry ||

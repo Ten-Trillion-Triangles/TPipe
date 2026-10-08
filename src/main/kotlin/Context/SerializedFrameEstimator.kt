@@ -168,9 +168,16 @@ object SerializedFrameEstimator
 
     /**
      * True when [window] carries any of the deep `MultimodalContent` sub-fields that the fast
-     * renderer does not model: a non-default PCP `tools` request, non-empty `binaryContent`, or a
-     * nested non-empty `miniBankContext` on a converse entry. Note `MultimodalContent.context` is
+     * renderer does not model: a non-default PCP `tools` request, non-empty `binaryContent`, a
+     * nested non-empty `miniBankContext`, or a set branch flag (`terminatePipeline` /
+     * `interuptPipeline`) on a converse entry. Note `MultimodalContent.context` is
      * never serialized (see class KDoc), so it is intentionally not a rare-content trigger.
+     *
+     * The branch flags matter: `@EncodeDefault(NEVER)` means the real `serialize()` emits
+     * `terminatePipeline` / `interuptPipeline` only when non-default, so a window the executor
+     * stamped with `terminate()` undercounts every time it stays on the fast path. Routing
+     * those windows to the exact `serialize()` fallback (one call, not a per-entry loop) keeps
+     * the estimate byte-exact.
      */
     private fun hasRareContent(window: ContextWindow): Boolean
     {
@@ -179,7 +186,9 @@ object SerializedFrameEstimator
             val content = entry.content
             if(content.tools != PcPRequest() ||
                 content.binaryContent.isNotEmpty() ||
-                content.miniBankContext.contextMap.isNotEmpty())
+                content.miniBankContext.contextMap.isNotEmpty() ||
+                content.terminatePipeline ||
+                content.interuptPipeline)
             {
                 return true
             }
