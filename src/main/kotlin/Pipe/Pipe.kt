@@ -6992,6 +6992,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
         reasoningSegmentOpen = false
 
         /**
+         * Per-execution registration handle for this run's stall-detector
+         * streaming callback. The streaming callback manager is per-Pipe and
+         * persistent, so each execution must remove the *exact* callback it
+         * registered. Holding that identity locally (rather than reading back
+         * the shared [activeStallDetectorCallback] field in teardown) keeps a
+         * nested/overlapping execution from clobbering the shared field and
+         * orphaning this execution's armed detector — the cross-generation
+         * stall-anchor leak. The shared fields stay for abort-time semantics
+         * only; only this execution's own callback is removed in the finally.
+         */
+        var detectorCallbackToRemove: (suspend (String) -> Unit)? = null
+
+        /**
          * Declare local function to address the multiple times we need to call this internal wrapping.
          * This is intended to be an internal mechanism of pipe execution so we want to leverage Kotlin's ability
          * to have true local functions.
@@ -7041,6 +7054,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             val detector = StreamingStallDetector(
                 pipeName = this@Pipe.pipeName,
                 config = stallDetectorConfig,
+                executionStartMs = executionStartTime,
                 onStall = { stallEvent ->
                     // 1. Fire user callback.
                     stallCallback?.invoke(stallEvent)
@@ -7074,6 +7088,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 detector.onTokenReceived(chunk, System.currentTimeMillis())
             }
             activeStallDetectorCallback = detectorCallback
+            detectorCallbackToRemove = detectorCallback
             obtainStreamingCallbackManager().addCallback(detectorCallback)
         }
 
@@ -8166,10 +8181,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
              * legitimate retry gap (teardown + reconnect) into a fabricated stall
              * measured as silence. Contract: a detector subscription lives exactly
              * as long as the execution that created it.
+             *
+             * Remove by the execution-local handle [detectorCallbackToRemove] rather
+             * than the shared [activeStallDetectorCallback] field: on overlapping
+             * executions a nested run overwrites the shared field, so reading it
+             * back here would remove the *inner* run's callback and orphan this
+             * run's armed detector (the cross-generation leak).
              */
-            activeStallDetectorCallback?.let { callback ->
+            detectorCallbackToRemove?.let { callback ->
                 streamingCallbackManager?.removeCallback(callback)
             }
+            detectorCallbackToRemove = null
             activeStallDetectorCallback = null
             activeStallDetector = null
 

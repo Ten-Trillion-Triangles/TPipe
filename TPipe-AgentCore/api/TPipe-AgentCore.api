@@ -1,0 +1,2033 @@
+public final class com/TTT/AgentCore/AgentCoreClients : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/AgentCore/AgentCoreConfig;Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/AgentCoreConfig;Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun getControl ()Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;
+	public final fun getData ()Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;
+}
+
+public final class com/TTT/AgentCore/AgentCoreConfig {
+	public fun <init> (Ljava/lang/String;Laws/smithy/kotlin/runtime/auth/awscredentials/CredentialsProvider;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Laws/smithy/kotlin/runtime/auth/awscredentials/CredentialsProvider;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Laws/smithy/kotlin/runtime/auth/awscredentials/CredentialsProvider;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Laws/smithy/kotlin/runtime/auth/awscredentials/CredentialsProvider;Ljava/lang/String;)Lcom/TTT/AgentCore/AgentCoreConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/AgentCoreConfig;Ljava/lang/String;Laws/smithy/kotlin/runtime/auth/awscredentials/CredentialsProvider;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/AgentCoreConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCredentialsProvider ()Laws/smithy/kotlin/runtime/auth/awscredentials/CredentialsProvider;
+	public final fun getRegion ()Ljava/lang/String;
+	public final fun getUserAgent ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/Evaluations/AgentCoreEvaluationAliasesKt {
+	public static final fun simulate (Lcom/TTT/AgentCore/evaluations/AgentCoreUserSimulator;Laws/smithy/kotlin/runtime/content/Document;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun simulate$default (Lcom/TTT/AgentCore/evaluations/AgentCoreUserSimulator;Laws/smithy/kotlin/runtime/content/Document;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/Payments/AgentCorePaymentAliasesKt {
+	public static final fun parseAgentCorePaymentChallenge (Ljava/lang/String;)Lcom/TTT/AgentCore/payments/AgentCorePaymentChallenge;
+	public static final fun paymentAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/payments/AgentCorePaymentAdmin;
+	public static final fun paymentsClient (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/payments/AgentCorePaymentsClient;
+}
+
+public final class com/TTT/AgentCore/Registry/AgentRegistryAliasesKt {
+	public static final fun agentSkillsDefinitionDescriptor (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;)Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsDefinitionDescriptor;
+	public static synthetic fun agentSkillsDefinitionDescriptor$default (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;ILjava/lang/Object;)Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsDefinitionDescriptor;
+	public static final fun custom (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;)V
+	public static final fun customDescriptor (Ljava/lang/String;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+	public static final fun customDescriptorModel (Ljava/lang/String;)Laws/sdk/kotlin/services/agentregistrycontrol/model/CustomDescriptor;
+	public static final fun isDiscoverable (Laws/sdk/kotlin/services/agentregistry/model/RegistryRecordStatus;)Z
+	public static final fun isDiscoverable (Laws/sdk/kotlin/services/agentregistrycontrol/model/RegistryRecordStatus;)Z
+	public static final fun isTerminal (Laws/sdk/kotlin/services/agentregistry/model/RegistryRecordStatus;)Z
+	public static final fun isTerminal (Laws/sdk/kotlin/services/agentregistrycontrol/model/RegistryRecordStatus;)Z
+	public static final fun mcp (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;)V
+	public static synthetic fun mcp$default (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;ILjava/lang/Object;)V
+	public static final fun mcpDescriptor (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+	public static synthetic fun mcpDescriptor$default (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;ILjava/lang/Object;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+	public static final fun mcpServerDescriptor (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;)Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerDescriptor;
+	public static synthetic fun mcpServerDescriptor$default (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;ILjava/lang/Object;)Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerDescriptor;
+	public static final fun registryAdmin (Lcom/TTT/AgentCore/registry/AgentRegistryClients;)Lcom/TTT/AgentCore/registry/AgentRegistryAdmin;
+	public static final fun registryDiscovery (Lcom/TTT/AgentCore/registry/AgentRegistryClients;)Lcom/TTT/AgentCore/registry/AgentRegistryDiscovery;
+	public static final fun skill (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;)V
+	public static synthetic fun skill$default (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;ILjava/lang/Object;)V
+	public static final fun skillDescriptor (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+	public static synthetic fun skillDescriptor$default (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;ILjava/lang/Object;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDelta ()Ljava/lang/String;
+	public final fun getError ()Ljava/lang/String;
+	public final fun getMessageId ()Ljava/lang/String;
+	public final fun getRole ()Ljava/lang/String;
+	public final fun getRunId ()Ljava/lang/String;
+	public final fun getThreadId ()Ljava/lang/String;
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEventEncoder {
+	public static final field INSTANCE Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEventEncoder;
+	public final fun encodeJson (Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent;)Ljava/lang/String;
+	public final fun encodeSse (Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent;)Ljava/lang/String;
+	public final fun encodeWebSocket (Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent;)Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEventMapper {
+	public static final field INSTANCE Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEventMapper;
+	public final fun content (Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;Ljava/lang/String;)Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent;
+	public final fun failed (Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;Ljava/lang/String;)Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiEvent;
+	public final fun finished (Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;)Ljava/util/List;
+	public final fun started (Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;)Ljava/util/List;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiInputMapper {
+	public fun <init> ()V
+	public fun <init> (Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun decode (Ljava/lang/String;)Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;
+	public final fun map (Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;)Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiMappedRequest;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiMappedRequest {
+	public fun <init> (Ljava/lang/String;Lcom/TTT/P2P/P2PRequest;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/TTT/P2P/P2PRequest;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Lcom/TTT/P2P/P2PRequest;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiMappedRequest;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiMappedRequest;Ljava/lang/String;Lcom/TTT/P2P/P2PRequest;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiMappedRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRequest ()Lcom/TTT/P2P/P2PRequest;
+	public final fun getRunId ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getThreadId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiRuntimeHost : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;Lcom/TTT/AgentCore/runtime/AgentCoreSessionFactory;Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiInputMapper;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;Lcom/TTT/AgentCore/runtime/AgentCoreSessionFactory;Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiInputMapper;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun browserClient (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserClient;
+	public fun close ()V
+	public final fun codeInterpreterClient (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterClient;
+	public final fun sessionRegistry ()Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;
+	public final fun start (Z)Lio/ktor/server/engine/EmbeddedServer;
+	public static synthetic fun start$default (Lcom/TTT/AgentCore/Runtime/AgUi/AgentCoreAgUiRuntimeHost;ZILjava/lang/Object;)Lio/ktor/server/engine/EmbeddedServer;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgUi/RunAgentInput {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/util/List;)Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentInput;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessages ()Ljava/util/List;
+	public final fun getRunId ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getThreadId ()Ljava/lang/String;
+	public final fun getToolDefinitions ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgUi/RunAgentMessage {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentMessage;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentMessage;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/Runtime/AgUi/RunAgentMessage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContent ()Ljava/lang/String;
+	public final fun getRole ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/Runtime/AgentCoreRuntimeBootstrap {
+	public static final field INSTANCE Lcom/TTT/AgentCore/Runtime/AgentCoreRuntimeBootstrap;
+	public final fun fromEnvironment ()Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;
+	public final fun start (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;ZLkotlin/jvm/functions/Function2;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHost;
+	public static synthetic fun start$default (Lcom/TTT/AgentCore/Runtime/AgentCoreRuntimeBootstrap;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;ZLkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHost;
+}
+
+public final class com/TTT/AgentCore/agui/AgentCoreAgUiEvent {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Lcom/TTT/AgentCore/agui/AgentCoreAgUiEvent;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/agui/AgentCoreAgUiEvent;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lcom/TTT/AgentCore/agui/AgentCoreAgUiEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDelta ()Ljava/lang/String;
+	public final fun getDone ()Z
+	public final fun getMessageId ()Ljava/lang/String;
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/agui/AgentCoreAgUiEventEncoder {
+	public static final field INSTANCE Lcom/TTT/AgentCore/agui/AgentCoreAgUiEventEncoder;
+	public final fun encode (Lcom/TTT/AgentCore/agui/AgentCoreAgUiEvent;)Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/control/AgentCoreControlPlane {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun execute (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun rawClient ()Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;
+}
+
+public final class com/TTT/AgentCore/control/AgentCoreControlPlaneKt {
+	public static final fun controlPlane (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/control/AgentCoreControlPlane;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreDatasetCaseResult {
+	public fun <init> (ILaws/smithy/kotlin/runtime/content/Document;Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;Laws/sdk/kotlin/services/bedrockagentcore/model/EvaluateResponse;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (ILaws/smithy/kotlin/runtime/content/Document;Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;Laws/sdk/kotlin/services/bedrockagentcore/model/EvaluateResponse;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun component3 ()Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;
+	public final fun component4 ()Laws/sdk/kotlin/services/bedrockagentcore/model/EvaluateResponse;
+	public final fun component5 ()Ljava/lang/Throwable;
+	public final fun copy (ILaws/smithy/kotlin/runtime/content/Document;Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;Laws/sdk/kotlin/services/bedrockagentcore/model/EvaluateResponse;Ljava/lang/Throwable;)Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetCaseResult;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetCaseResult;ILaws/smithy/kotlin/runtime/content/Document;Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;Laws/sdk/kotlin/services/bedrockagentcore/model/EvaluateResponse;Ljava/lang/Throwable;ILjava/lang/Object;)Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetCaseResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEvaluation ()Laws/sdk/kotlin/services/bedrockagentcore/model/EvaluateResponse;
+	public final fun getExecution ()Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;
+	public final fun getFailure ()Ljava/lang/Throwable;
+	public final fun getIndex ()I
+	public final fun getScenario ()Laws/smithy/kotlin/runtime/content/Document;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreDatasetExecution {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Laws/smithy/kotlin/runtime/content/Document;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Laws/smithy/kotlin/runtime/content/Document;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Laws/smithy/kotlin/runtime/content/Document;)Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;Ljava/lang/String;Ljava/lang/String;Laws/smithy/kotlin/runtime/content/Document;ILjava/lang/Object;)Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecution;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOutput ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getTraceId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/AgentCore/evaluations/AgentCoreDatasetExecutor {
+	public abstract fun execute (Laws/smithy/kotlin/runtime/content/Document;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreDatasetRunResult {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetRunResult;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetRunResult;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetRunResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCases ()Ljava/util/List;
+	public final fun getSucceeded ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreDatasetRunner {
+	public fun <init> (Lkotlin/jvm/functions/Function1;Lcom/TTT/AgentCore/evaluations/AgentCoreDatasetExecutor;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function3;)V
+	public final fun run (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluationAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun addDatasetExamples (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/AddDatasetExamplesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createConfigurationBundle (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateConfigurationBundleRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createDataset (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateDatasetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createDatasetVersion (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateDatasetVersionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createEvaluator (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateEvaluatorRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createOnlineEvaluationConfig (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateOnlineEvaluationConfigRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteConfigurationBundle (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteConfigurationBundleRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteDataset (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteDatasetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteDatasetExamples (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteDatasetExamplesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteEvaluator (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteEvaluatorRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteOnlineEvaluationConfig (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteOnlineEvaluationConfigRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun execute (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getConfigurationBundle (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConfigurationBundleRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getConfigurationBundleVersion (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConfigurationBundleVersionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getDataset (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetDatasetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getEvaluator (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetEvaluatorRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getOnlineEvaluationConfig (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetOnlineEvaluationConfigRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listConfigurationBundleVersions (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListConfigurationBundleVersionsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listConfigurationBundles (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListConfigurationBundlesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listDatasetExamples (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListDatasetExamplesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listDatasetVersions (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListDatasetVersionsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listDatasets (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListDatasetsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listEvaluators (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListEvaluatorsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listOnlineEvaluationConfigs (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListOnlineEvaluationConfigsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateConfigurationBundle (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateConfigurationBundleRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateDataset (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateDatasetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateDatasetExamples (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateDatasetExamplesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateEvaluator (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateEvaluatorRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateOnlineEvaluationConfig (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateOnlineEvaluationConfigRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluationAdminKt {
+	public static final fun evaluationAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/evaluations/AgentCoreEvaluationAdmin;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluationClient {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;)V
+	public final fun createAbTest (Laws/sdk/kotlin/services/bedrockagentcore/model/CreateAbTestRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteAbTest (Laws/sdk/kotlin/services/bedrockagentcore/model/DeleteAbTestRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteBatch (Laws/sdk/kotlin/services/bedrockagentcore/model/DeleteBatchEvaluationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteRecommendation (Laws/sdk/kotlin/services/bedrockagentcore/model/DeleteRecommendationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun evaluate (Laws/sdk/kotlin/services/bedrockagentcore/model/EvaluateRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun execute (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getAbTest (Laws/sdk/kotlin/services/bedrockagentcore/model/GetAbTestRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getBatch (Laws/sdk/kotlin/services/bedrockagentcore/model/GetBatchEvaluationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getRecommendation (Laws/sdk/kotlin/services/bedrockagentcore/model/GetRecommendationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listAbTests (Laws/sdk/kotlin/services/bedrockagentcore/model/ListAbTestsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listBatches (Laws/sdk/kotlin/services/bedrockagentcore/model/ListBatchEvaluationsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listRecommendations (Laws/sdk/kotlin/services/bedrockagentcore/model/ListRecommendationsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun startBatch (Laws/sdk/kotlin/services/bedrockagentcore/model/StartBatchEvaluationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun startRecommendation (Laws/sdk/kotlin/services/bedrockagentcore/model/StartRecommendationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun stopBatch (Laws/sdk/kotlin/services/bedrockagentcore/model/StopBatchEvaluationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateAbTest (Laws/sdk/kotlin/services/bedrockagentcore/model/UpdateAbTestRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluationClientKt {
+	public static final fun evaluationClient (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/evaluations/AgentCoreEvaluationClient;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluationInsights {
+	public static final field INSTANCE Lcom/TTT/AgentCore/evaluations/AgentCoreEvaluationInsights;
+	public final fun executionSummary ()Laws/sdk/kotlin/services/bedrockagentcore/model/Insight;
+	public final fun failureAnalysis ()Laws/sdk/kotlin/services/bedrockagentcore/model/Insight;
+	public final fun userIntent ()Laws/sdk/kotlin/services/bedrockagentcore/model/Insight;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluationPoller {
+	public static final field INSTANCE Lcom/TTT/AgentCore/evaluations/AgentCoreEvaluationPoller;
+	public final fun await (JJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun await$default (Lcom/TTT/AgentCore/evaluations/AgentCoreEvaluationPoller;JJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluationTraceAdapter {
+	public static final field INSTANCE Lcom/TTT/AgentCore/evaluations/AgentCoreEvaluationTraceAdapter;
+	public final fun toRecords (Ljava/lang/Iterable;Z)Ljava/util/List;
+	public static synthetic fun toRecords$default (Lcom/TTT/AgentCore/evaluations/AgentCoreEvaluationTraceAdapter;Ljava/lang/Iterable;ZILjava/lang/Object;)Ljava/util/List;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluations {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun executeControl (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun executeData (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreEvaluationsKt {
+	public static final fun evaluations (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/evaluations/AgentCoreEvaluations;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreSimulationContext {
+	public fun <init> (Laws/smithy/kotlin/runtime/content/Document;ILjava/util/List;)V
+	public final fun component1 ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/util/List;
+	public final fun copy (Laws/smithy/kotlin/runtime/content/Document;ILjava/util/List;)Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationContext;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationContext;Laws/smithy/kotlin/runtime/content/Document;ILjava/util/List;ILjava/lang/Object;)Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationContext;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPriorTurns ()Ljava/util/List;
+	public final fun getScenario ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun getTurnIndex ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreSimulationResult {
+	public fun <init> (Laws/smithy/kotlin/runtime/content/Document;Ljava/util/List;Ljava/lang/String;)V
+	public final fun component1 ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Laws/smithy/kotlin/runtime/content/Document;Ljava/util/List;Ljava/lang/String;)Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationResult;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationResult;Laws/smithy/kotlin/runtime/content/Document;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getScenario ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun getStoppedBy ()Ljava/lang/String;
+	public final fun getTurns ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreSimulationTurn {
+	public fun <init> (Laws/smithy/kotlin/runtime/content/Document;ZLjava/util/Map;)V
+	public synthetic fun <init> (Laws/smithy/kotlin/runtime/content/Document;ZLjava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/util/Map;
+	public final fun copy (Laws/smithy/kotlin/runtime/content/Document;ZLjava/util/Map;)Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationTurn;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationTurn;Laws/smithy/kotlin/runtime/content/Document;ZLjava/util/Map;ILjava/lang/Object;)Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationTurn;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInput ()Laws/smithy/kotlin/runtime/content/Document;
+	public final fun getMetadata ()Ljava/util/Map;
+	public final fun getStop ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/evaluations/AgentCoreUserSimulationKt {
+	public static final fun simulate (Lcom/TTT/AgentCore/evaluations/AgentCoreUserSimulator;Laws/smithy/kotlin/runtime/content/Document;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun simulate$default (Lcom/TTT/AgentCore/evaluations/AgentCoreUserSimulator;Laws/smithy/kotlin/runtime/content/Document;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public abstract interface class com/TTT/AgentCore/evaluations/AgentCoreUserSimulator {
+	public abstract fun nextTurn (Lcom/TTT/AgentCore/evaluations/AgentCoreSimulationContext;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/evaluations/Builtin {
+	public static final field INSTANCE Lcom/TTT/AgentCore/evaluations/Builtin;
+}
+
+public final class com/TTT/AgentCore/evaluations/Builtin$Insight {
+	public static final field ExecutionSummary Ljava/lang/String;
+	public static final field FailureAnalysis Ljava/lang/String;
+	public static final field INSTANCE Lcom/TTT/AgentCore/evaluations/Builtin$Insight;
+	public static final field UserIntent Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/examples/GatewayExampleKt {
+	public static final fun bindGatewayExample (Lcom/TTT/Pipe/Pipe;Lcom/TTT/MCP/Client/McpRemoteClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/examples/HarnessInteropExampleKt {
+	public static final fun harnessInteropExample (Lkotlin/jvm/functions/Function2;)Lcom/TTT/AgentCore/harness/AgentCoreHarnessAgent;
+}
+
+public final class com/TTT/AgentCore/examples/MemoryExampleKt {
+	public static final fun exactMemoryExample (Lcom/TTT/AgentCore/AgentCoreClients;Lcom/TTT/AgentCore/memory/AgentCoreMemoryConfig;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryBackend;
+}
+
+public final class com/TTT/AgentCore/examples/ObservabilityExampleKt {
+	public static final fun installObservabilityExample (Lio/opentelemetry/api/OpenTelemetry;)Lcom/TTT/AgentCore/observability/AgentCoreOtelTraceSink;
+}
+
+public final class com/TTT/AgentCore/examples/RuntimeExampleKt {
+	public static final fun startRuntimeExample (Lkotlin/jvm/functions/Function2;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHost;
+	public static synthetic fun startRuntimeExample$default (Lkotlin/jvm/functions/Function2;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHost;
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGateway {
+	public static final field Companion Lcom/TTT/AgentCore/gateway/AgentCoreGateway$Companion;
+	public fun <init> (Lcom/TTT/MCP/Client/McpRemoteClient;)V
+	public final fun bindTools (Lcom/TTT/Pipe/Pipe;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun mcpClient ()Lcom/TTT/MCP/Client/McpRemoteClient;
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGateway$Companion {
+	public final fun withIamAuth-GggDXlA (Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/gateway/AgentCoreGatewayCredentialsProvider;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/gateway/AgentCoreGateway;
+	public static synthetic fun withIamAuth-GggDXlA$default (Lcom/TTT/AgentCore/gateway/AgentCoreGateway$Companion;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/gateway/AgentCoreGatewayCredentialsProvider;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/gateway/AgentCoreGateway;
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGatewayAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun batchPutRateLimits (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/BatchPutGatewayRateLimitsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun create (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateGatewayRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createRateLimit (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateGatewayRateLimitRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createRule (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateGatewayRuleRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createTarget (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateGatewayTargetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun delete (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteGatewayRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteRateLimit (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteGatewayRateLimitRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteRule (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteGatewayRuleRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteTarget (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteGatewayTargetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetGatewayRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getRateLimit (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetGatewayRateLimitRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getRule (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetGatewayRuleRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getTarget (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetGatewayTargetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listRateLimits (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListGatewayRateLimitsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listRules (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListGatewayRulesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun synchronize (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/SynchronizeGatewayTargetsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun update (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateGatewayRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateRateLimit (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateGatewayRateLimitRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateRule (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateGatewayRuleRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateTarget (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateGatewayTargetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun validateRateLimit (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateGatewayRateLimitRequest;)V
+	public final fun validateRateLimitDimensions (Ljava/util/Collection;)V
+	public final fun validateWeightedVariants (Ljava/util/Collection;)V
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGatewayAdminKt {
+	public static final fun gatewayAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/gateway/AgentCoreGatewayAdmin;
+}
+
+public abstract interface class com/TTT/AgentCore/gateway/AgentCoreGatewayAuth : com/TTT/MCP/Client/McpRemoteAuthProvider {
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGatewayConfig {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Client/McpRemoteClientConfig;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Client/McpRemoteClientConfig;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/TTT/MCP/Client/McpRemoteClientConfig;
+	public final fun component4-yON99og ()Ljava/lang/String;
+	public final fun copy-AssLR_Q (Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Client/McpRemoteClientConfig;Ljava/lang/String;)Lcom/TTT/AgentCore/gateway/AgentCoreGatewayConfig;
+	public static synthetic fun copy-AssLR_Q$default (Lcom/TTT/AgentCore/gateway/AgentCoreGatewayConfig;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/MCP/Client/McpRemoteClientConfig;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/gateway/AgentCoreGatewayConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEndpoint ()Ljava/lang/String;
+	public final fun getMcp ()Lcom/TTT/MCP/Client/McpRemoteClientConfig;
+	public final fun getNamespacePrefix ()Ljava/lang/String;
+	public final fun getTemporalPolicySession-yON99og ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGatewayConnector : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/AgentCore/gateway/AgentCoreGatewayConfig;)V
+	public fun <init> (Lcom/TTT/MCP/Client/McpRemoteClient;Ljava/lang/String;)V
+	public synthetic fun <init> (Lcom/TTT/MCP/Client/McpRemoteClient;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun attachTo (Lcom/TTT/Pipe/Pipe;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public final fun createPcpContext (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun mcpClient ()Lcom/TTT/MCP/Client/McpRemoteClient;
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGatewayConnectorKt {
+	public static final fun toMcpRemoteClientConfig (Lcom/TTT/AgentCore/gateway/AgentCoreGatewayConfig;)Lcom/TTT/MCP/Client/McpRemoteClientConfig;
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGatewayCredentials {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/gateway/AgentCoreGatewayCredentials;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/gateway/AgentCoreGatewayCredentials;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/gateway/AgentCoreGatewayCredentials;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccessKeyId ()Ljava/lang/String;
+	public final fun getSecretAccessKey ()Ljava/lang/String;
+	public final fun getSessionToken ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/AgentCore/gateway/AgentCoreGatewayCredentialsProvider {
+	public abstract fun credentials (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/gateway/AgentCoreGatewaySigV4Auth : com/TTT/MCP/Client/McpRemoteRequestSigner {
+	public fun <init> (Ljava/lang/String;Lcom/TTT/AgentCore/gateway/AgentCoreGatewayCredentialsProvider;Ljava/lang/String;Ljava/time/Clock;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/AgentCore/gateway/AgentCoreGatewayCredentialsProvider;Ljava/lang/String;Ljava/time/Clock;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun sign (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;[BLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/harness/AgentCoreHarnessAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun create (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateHarnessRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createEndpoint (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateHarnessEndpointRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun delete (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteHarnessRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteEndpoint (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteHarnessEndpointRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetHarnessRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/harness/AgentCoreHarnessAdminKt {
+	public static final fun harnessAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/harness/AgentCoreHarnessAdmin;
+}
+
+public final class com/TTT/AgentCore/harness/AgentCoreHarnessAgent : com/TTT/P2P/P2PInterface {
+	public fun <init> (Lcom/TTT/AgentCore/harness/AgentCoreHarnessClient;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/harness/AgentCoreHarnessClient;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lkotlin/jvm/functions/Function2;)V
+	public fun P2PInit (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun clearStreamingCallbacksRecursive ()V
+	public fun enablePipeTimeoutRecursive (ZJZI)V
+	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
+	public fun executeLocal (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun executeP2PRequest (Lcom/TTT/P2P/P2PRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getContainerObject ()Ljava/lang/Object;
+	public fun getContextWindowFromInterface ()Lcom/TTT/Context/ContextWindow;
+	public fun getKillSwitch ()Lcom/TTT/P2P/KillSwitch;
+	public fun getMiniBankFromInterface ()Lcom/TTT/Context/MiniBank;
+	public fun getNearestPumpStationParent ()Lcom/TTT/P2P/P2PInterface;
+	public fun getP2pDescription ()Lcom/TTT/P2P/P2PDescriptor;
+	public fun getP2pRequirements ()Lcom/TTT/P2P/P2PRequirements;
+	public fun getP2pTransport ()Lcom/TTT/P2P/P2PTransport;
+	public fun getParentP2PInterface ()Lcom/TTT/P2P/P2PInterface;
+	public fun getPaths ()Ljava/lang/String;
+	public fun getPipelinesFromInterface ()Ljava/util/List;
+	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
+	public fun getTopLevelParentInterface ()Lcom/TTT/P2P/P2PInterface;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun setContainerObject (Ljava/lang/Object;)V
+	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
+	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
+	public fun setP2pDescription (Lcom/TTT/P2P/P2PDescriptor;)V
+	public fun setP2pRequirements (Lcom/TTT/P2P/P2PRequirements;)V
+	public fun setP2pTransport (Lcom/TTT/P2P/P2PTransport;)V
+	public fun setParentInterface (Lcom/TTT/P2P/P2PInterface;)V
+	public fun setPipeSettingsRecursively (Lcom/TTT/Structs/PipeSettings;)V
+	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public fun supportsStreamingCallbackRemoval ()Z
+}
+
+public final class com/TTT/AgentCore/harness/AgentCoreHarnessClient {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;)V
+	public final fun execute (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invoke (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeHarnessRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun invoke$default (Lcom/TTT/AgentCore/harness/AgentCoreHarnessClient;Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeHarnessRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/harness/AgentCoreHarnessClientKt {
+	public static final fun harnessClient (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/harness/AgentCoreHarnessClient;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreConsentPortalPoller {
+	public static final field INSTANCE Lcom/TTT/AgentCore/identity/AgentCoreConsentPortalPoller;
+	public final fun awaitActive (Lcom/TTT/AgentCore/identity/AgentCoreIdentityAdmin;Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConsentPortalRequest;JJJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun awaitActive (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;JJJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun awaitActive$default (Lcom/TTT/AgentCore/identity/AgentCoreConsentPortalPoller;Lcom/TTT/AgentCore/identity/AgentCoreIdentityAdmin;Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConsentPortalRequest;JJJLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun awaitActive$default (Lcom/TTT/AgentCore/identity/AgentCoreConsentPortalPoller;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;JJJLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreIdentityAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun awaitConsentPortalActive (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConsentPortalRequest;JJJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun awaitConsentPortalActive$default (Lcom/TTT/AgentCore/identity/AgentCoreIdentityAdmin;Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConsentPortalRequest;JJJLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun createApiKeyCredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateApiKeyCredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createConsentPortal (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateConsentPortalRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createOAuth2CredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateOauth2CredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createOauth2CredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateOauth2CredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createWorkloadIdentity (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateWorkloadIdentityRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteApiKeyCredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteApiKeyCredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteConsentPortal (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteConsentPortalRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteOAuth2CredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteOauth2CredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteOauth2CredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteOauth2CredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteResourcePolicy (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteResourcePolicyRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteWorkloadIdentity (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteWorkloadIdentityRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun execute (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getApiKeyCredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetApiKeyCredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getConsentPortal (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConsentPortalRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getOAuth2CredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetOauth2CredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getOauth2CredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetOauth2CredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getResourcePolicy (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetResourcePolicyRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getTokenVault (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetTokenVaultRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getWorkloadIdentity (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetWorkloadIdentityRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listApiKeyCredentialProviders (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListApiKeyCredentialProvidersRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listConsentPortals (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListConsentPortalsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listOAuth2CredentialProviders (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListOauth2CredentialProvidersRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listOauth2CredentialProviders (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListOauth2CredentialProvidersRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listWorkloadIdentities (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListWorkloadIdentitiesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun putResourcePolicy (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/PutResourcePolicyRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setTokenVaultCmk (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/SetTokenVaultCmkRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateApiKeyCredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateApiKeyCredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateConsentPortal (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateConsentPortalRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateOAuth2CredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateOauth2CredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateOauth2CredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateOauth2CredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateWorkloadIdentity (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateWorkloadIdentityRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreIdentityAuthProvider : com/TTT/MCP/Client/McpRemoteAuthProvider {
+	public fun <init> (Lcom/TTT/AgentCore/identity/AgentCoreTokenLoader;JLkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/identity/AgentCoreTokenLoader;JLkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun headers (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreIdentityConfig {
+	public fun <init> ()V
+	public fun <init> (J)V
+	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun copy (J)Lcom/TTT/AgentCore/identity/AgentCoreIdentityConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/identity/AgentCoreIdentityConfig;JILjava/lang/Object;)Lcom/TTT/AgentCore/identity/AgentCoreIdentityConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpirySkewMillis ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreIdentityKt {
+	public static final fun asSecretToken (Laws/sdk/kotlin/services/bedrockagentcore/model/GetResourceApiKeyResponse;)Lcom/TTT/AgentCore/identity/AgentCoreSecretToken;
+	public static final fun asSecretToken (Laws/sdk/kotlin/services/bedrockagentcore/model/GetWorkloadAccessTokenForJwtResponse;)Lcom/TTT/AgentCore/identity/AgentCoreSecretToken;
+	public static final fun asSecretToken (Laws/sdk/kotlin/services/bedrockagentcore/model/GetWorkloadAccessTokenForUserIdResponse;)Lcom/TTT/AgentCore/identity/AgentCoreSecretToken;
+	public static final fun asSecretToken (Laws/sdk/kotlin/services/bedrockagentcore/model/GetWorkloadAccessTokenResponse;)Lcom/TTT/AgentCore/identity/AgentCoreSecretToken;
+	public static final fun asSecretTokenOrNull (Laws/sdk/kotlin/services/bedrockagentcore/model/GetResourceOauth2TokenResponse;)Lcom/TTT/AgentCore/identity/AgentCoreSecretToken;
+	public static final fun identityAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/identity/AgentCoreIdentityAdmin;
+	public static final fun identityProvider (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/identity/AgentCoreIdentityProvider;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreIdentityPoller {
+	public static final field INSTANCE Lcom/TTT/AgentCore/identity/AgentCoreIdentityPoller;
+	public final fun awaitConsentPortalActive (Lcom/TTT/AgentCore/identity/AgentCoreIdentityAdmin;Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConsentPortalRequest;JJJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun awaitConsentPortalActive (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;JJJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun awaitConsentPortalActive$default (Lcom/TTT/AgentCore/identity/AgentCoreIdentityPoller;Lcom/TTT/AgentCore/identity/AgentCoreIdentityAdmin;Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetConsentPortalRequest;JJJLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun awaitConsentPortalActive$default (Lcom/TTT/AgentCore/identity/AgentCoreIdentityPoller;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;JJJLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreIdentityPollerKt {
+	public static final fun identityPoller (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/identity/AgentCoreIdentityPoller;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreIdentityProvider {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;)V
+	public final fun completeResourceTokenAuth (Laws/sdk/kotlin/services/bedrockagentcore/model/CompleteResourceTokenAuthRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun completeResourceTokenAuth (Ljava/lang/String;Laws/sdk/kotlin/services/bedrockagentcore/model/UserIdentifier;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun completeResourceTokenAuth (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getOboResourceOauth2Token (Laws/sdk/kotlin/services/bedrockagentcore/model/GetResourceOauth2TokenRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getOboResourceOauth2Token (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun getOboResourceOauth2Token$default (Lcom/TTT/AgentCore/identity/AgentCoreIdentityProvider;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/List;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun getOboResourceToken (Laws/sdk/kotlin/services/bedrockagentcore/model/GetResourceOauth2TokenRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getResourceApiKey (Laws/sdk/kotlin/services/bedrockagentcore/model/GetResourceApiKeyRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getResourceOauth2Token (Laws/sdk/kotlin/services/bedrockagentcore/model/GetResourceOauth2TokenRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getWorkloadAccessToken (Laws/sdk/kotlin/services/bedrockagentcore/model/GetWorkloadAccessTokenRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getWorkloadAccessTokenForJwt (Laws/sdk/kotlin/services/bedrockagentcore/model/GetWorkloadAccessTokenForJwtRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getWorkloadAccessTokenForUserId (Laws/sdk/kotlin/services/bedrockagentcore/model/GetWorkloadAccessTokenForUserIdRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreSecretToken {
+	public static final field Companion Lcom/TTT/AgentCore/identity/AgentCoreSecretToken$Companion;
+	public final fun authorizationHeader ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public final fun redacted ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+	public final fun value ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreSecretToken$Companion {
+	public final fun of (Ljava/lang/String;)Lcom/TTT/AgentCore/identity/AgentCoreSecretToken;
+}
+
+public abstract interface class com/TTT/AgentCore/identity/AgentCoreTokenLoader {
+	public abstract fun load (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreTokenProvider : com/TTT/MCP/Client/McpRemoteAuthProvider {
+	public fun <init> (Lkotlin/jvm/functions/Function2;Lcom/TTT/AgentCore/identity/AgentCoreIdentityConfig;Lkotlin/jvm/functions/Function0;J)V
+	public synthetic fun <init> (Lkotlin/jvm/functions/Function2;Lcom/TTT/AgentCore/identity/AgentCoreIdentityConfig;Lkotlin/jvm/functions/Function0;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun evict (Lcom/TTT/AgentCore/identity/AgentCoreTokenScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun evict (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun headers (Lcom/TTT/AgentCore/identity/AgentCoreTokenScope;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun headers (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun headers (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/identity/AgentCoreTokenScope {
+	public fun <init> (Lcom/TTT/AgentCore/identity/PrincipalKind;Ljava/lang/String;Ljava/lang/String;Ljava/util/Set;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/identity/PrincipalKind;Ljava/lang/String;Ljava/lang/String;Ljava/util/Set;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/TTT/AgentCore/identity/PrincipalKind;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/util/Set;
+	public final fun copy (Lcom/TTT/AgentCore/identity/PrincipalKind;Ljava/lang/String;Ljava/lang/String;Ljava/util/Set;)Lcom/TTT/AgentCore/identity/AgentCoreTokenScope;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/identity/AgentCoreTokenScope;Lcom/TTT/AgentCore/identity/PrincipalKind;Ljava/lang/String;Ljava/lang/String;Ljava/util/Set;ILjava/lang/Object;)Lcom/TTT/AgentCore/identity/AgentCoreTokenScope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPrincipalId ()Ljava/lang/String;
+	public final fun getPrincipalKind ()Lcom/TTT/AgentCore/identity/PrincipalKind;
+	public final fun getResourceId ()Ljava/lang/String;
+	public final fun getScopes ()Ljava/util/Set;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/identity/PrincipalKind : java/lang/Enum {
+	public static final field USER Lcom/TTT/AgentCore/identity/PrincipalKind;
+	public static final field WORKLOAD Lcom/TTT/AgentCore/identity/PrincipalKind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/AgentCore/identity/PrincipalKind;
+	public static fun values ()[Lcom/TTT/AgentCore/identity/PrincipalKind;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreMemoryBackend : com/TTT/Context/Persistence/ContextPersistenceBackend {
+	public fun <init> (Lcom/TTT/AgentCore/AgentCoreClients;Lcom/TTT/AgentCore/memory/AgentCoreMemoryConfig;)V
+	public fun deleteContextWindow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun deleteTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getContextWindow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getId ()Ljava/lang/String;
+	public fun getTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun listContextWindowKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun listTodoListKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun putContextWindow (Ljava/lang/String;Lcom/TTT/Context/ContextWindow;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun putTodoList (Ljava/lang/String;Lcom/TTT/Context/TodoList;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreMemoryBackendException : java/lang/RuntimeException {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getFailures ()Ljava/util/List;
+	public final fun getOperation ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreMemoryCodec {
+	public static final field INSTANCE Lcom/TTT/AgentCore/memory/AgentCoreMemoryCodec;
+	public static final field MAX_PAYLOAD_CHARS I
+	public final fun checksum (Ljava/lang/String;)Ljava/lang/String;
+	public final fun chunks (Ljava/lang/String;)Ljava/util/List;
+	public final fun decode (Ljava/lang/String;)Ljava/lang/String;
+	public final fun encode (Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreMemoryConfig {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/memory/AgentCoreMemoryConfig;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContextIndexNamespace ()Ljava/lang/String;
+	public final fun getContextNamespace ()Ljava/lang/String;
+	public final fun getInstanceId ()Ljava/lang/String;
+	public final fun getMemoryId ()Ljava/lang/String;
+	public final fun getTodoIndexNamespace ()Ljava/lang/String;
+	public final fun getTodoNamespace ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreMemoryManifest {
+	public fun <init> (ILjava/lang/String;Ljava/lang/String;JJILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (ILjava/lang/String;Ljava/lang/String;JJILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()J
+	public final fun component5 ()J
+	public final fun component6 ()I
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (ILjava/lang/String;Ljava/lang/String;JJILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryManifest;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/memory/AgentCoreMemoryManifest;ILjava/lang/String;Ljava/lang/String;JJILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryManifest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChecksum ()Ljava/lang/String;
+	public final fun getChunkCount ()I
+	public final fun getCodec ()Ljava/lang/String;
+	public final fun getCreatedAt ()Ljava/lang/String;
+	public final fun getGeneration ()J
+	public final fun getKey ()Ljava/lang/String;
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getRevision ()J
+	public final fun getSchemaVersion ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreMemoryNamespaceConfiguration {
+	public fun <init> (Ljava/util/Map;)V
+	public final fun component1 ()Ljava/util/Map;
+	public final fun copy (Ljava/util/Map;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryNamespaceConfiguration;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/memory/AgentCoreMemoryNamespaceConfiguration;Ljava/util/Map;ILjava/lang/Object;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryNamespaceConfiguration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun expand (Ljava/lang/String;Ljava/util/Map;)Ljava/lang/String;
+	public static synthetic fun expand$default (Lcom/TTT/AgentCore/memory/AgentCoreMemoryNamespaceConfiguration;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun getStrategies ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreMemoryNamespaceTemplate {
+	public fun <init> (Ljava/lang/String;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/util/Map;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryNamespaceTemplate;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/memory/AgentCoreMemoryNamespaceTemplate;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryNamespaceTemplate;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun expand (Ljava/util/Map;)Ljava/lang/String;
+	public static synthetic fun expand$default (Lcom/TTT/AgentCore/memory/AgentCoreMemoryNamespaceTemplate;Ljava/util/Map;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun getTemplate ()Ljava/lang/String;
+	public final fun getVariables ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreMemoryRecordFailure {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryRecordFailure;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/memory/AgentCoreMemoryRecordFailure;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/memory/AgentCoreMemoryRecordFailure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getRecordId ()Ljava/lang/String;
+	public final fun getStatus ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreSemanticMemory {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;)V
+	public final fun createEvent (Laws/sdk/kotlin/services/bedrockagentcore/model/CreateEventRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getMemoryRecord (Laws/sdk/kotlin/services/bedrockagentcore/model/GetMemoryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun ingestData (Laws/sdk/kotlin/services/bedrockagentcore/model/IngestDataRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listMemoryRecords (Laws/sdk/kotlin/services/bedrockagentcore/model/ListMemoryRecordsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun retrieveMemoryRecords (Laws/sdk/kotlin/services/bedrockagentcore/model/RetrieveMemoryRecordsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/memory/AgentCoreSemanticMemoryKt {
+	public static final fun semanticMemory (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/memory/AgentCoreSemanticMemory;
+}
+
+public final class com/TTT/AgentCore/observability/AgentCoreOtelConfig {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;IZZZILcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ljava/lang/String;IZZZILcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()I
+	public final fun component7 ()Lcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;
+	public final fun component8 ()Lkotlin/jvm/functions/Function1;
+	public final fun component9 ()Lkotlin/jvm/functions/Function1;
+	public final fun copy (Ljava/lang/String;IZZZILcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Lcom/TTT/AgentCore/observability/AgentCoreOtelConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/observability/AgentCoreOtelConfig;Ljava/lang/String;IZZZILcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/AgentCore/observability/AgentCoreOtelConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDropPolicy ()Lcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;
+	public final fun getIncludeContent ()Z
+	public final fun getIncludeContextSnapshots ()Z
+	public final fun getIncludeModelReasoning ()Z
+	public final fun getMaximumSerializedSize ()I
+	public final fun getOnDroppedEvents ()Lkotlin/jvm/functions/Function1;
+	public final fun getQueueCapacity ()I
+	public final fun getRedactionPredicate ()Lkotlin/jvm/functions/Function1;
+	public final fun getSinkName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/observability/AgentCoreOtelDropPolicy : java/lang/Enum {
+	public static final field DROP_NEWEST Lcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;
+	public static final field DROP_OLDEST Lcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;
+	public static fun values ()[Lcom/TTT/AgentCore/observability/AgentCoreOtelDropPolicy;
+}
+
+public final class com/TTT/AgentCore/observability/AgentCoreOtelTraceSink : java/lang/AutoCloseable {
+	public fun <init> (Lio/opentelemetry/api/OpenTelemetry;Lcom/TTT/AgentCore/observability/AgentCoreOtelConfig;)V
+	public synthetic fun <init> (Lio/opentelemetry/api/OpenTelemetry;Lcom/TTT/AgentCore/observability/AgentCoreOtelConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun capacity ()I
+	public fun close ()V
+	public final fun droppedEvents ()J
+	public final fun flush ()V
+	public final fun flushSuspend (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/observability/AgentCoreTraceAttributes {
+	public static final field INSTANCE Lcom/TTT/AgentCore/observability/AgentCoreTraceAttributes;
+	public static final field PROVIDER Ljava/lang/String;
+	public static final field abTestId Ljava/lang/String;
+	public static final field batchEvaluationId Ljava/lang/String;
+	public static final field capacityProvider Ljava/lang/String;
+	public static final field commandRequestId Ljava/lang/String;
+	public static final field computeType Ljava/lang/String;
+	public static final field configurationBundleId Ljava/lang/String;
+	public static final field configurationBundleVersion Ljava/lang/String;
+	public static final field datasetId Ljava/lang/String;
+	public static final field datasetVersion Ljava/lang/String;
+	public static final field evaluatorId Ljava/lang/String;
+	public static final field gatewayId Ljava/lang/String;
+	public static final field gatewayRateLimitId Ljava/lang/String;
+	public static final field gatewayRuleId Ljava/lang/String;
+	public static final field gatewayTargetId Ljava/lang/String;
+	public static final field insightType Ljava/lang/String;
+	public static final field onlineEvaluationConfig Ljava/lang/String;
+	public static final field paymentConnectorId Ljava/lang/String;
+	public static final field paymentInstrumentId Ljava/lang/String;
+	public static final field paymentManagerId Ljava/lang/String;
+	public static final field paymentSessionId Ljava/lang/String;
+	public static final field policyEngineId Ljava/lang/String;
+	public static final field policyId Ljava/lang/String;
+	public static final field policySessionId Ljava/lang/String;
+	public static final field recommendationId Ljava/lang/String;
+	public static final field registryId Ljava/lang/String;
+	public static final field registryRecordId Ljava/lang/String;
+	public static final field registryRecordStatus Ljava/lang/String;
+	public static final field registryRecordType Ljava/lang/String;
+	public static final field runtimeArn Ljava/lang/String;
+	public static final field runtimeId Ljava/lang/String;
+	public static final field runtimeQualifier Ljava/lang/String;
+	public static final field runtimeSessionId Ljava/lang/String;
+	public static final field shellRequestId Ljava/lang/String;
+	public static final field temporalEvaluation Ljava/lang/String;
+	public final fun filterMetadata (Ljava/util/Map;)Ljava/util/Map;
+	public final fun isSensitive (Ljava/lang/String;)Z
+	public final fun isSensitiveKey (Ljava/lang/String;)Z
+}
+
+public final class com/TTT/AgentCore/payments/AgentCorePaymentAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun createConnector (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreatePaymentConnectorRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createCredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreatePaymentCredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createManager (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreatePaymentManagerRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteConnector (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeletePaymentConnectorRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteCredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeletePaymentCredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteManager (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeletePaymentManagerRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getConnector (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetPaymentConnectorRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getCredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetPaymentCredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getManager (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetPaymentManagerRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listConnectors (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListPaymentConnectorsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listCredentialProviders (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListPaymentCredentialProvidersRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listManagers (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListPaymentManagersRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateConnector (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdatePaymentConnectorRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateCredentialProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdatePaymentCredentialProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateManager (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdatePaymentManagerRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/payments/AgentCorePaymentAdminKt {
+	public static final fun paymentAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/payments/AgentCorePaymentAdmin;
+}
+
+public final class com/TTT/AgentCore/payments/AgentCorePaymentChallenge {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/payments/AgentCorePaymentChallenge;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/payments/AgentCorePaymentChallenge;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/payments/AgentCorePaymentChallenge;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAmount ()Ljava/lang/String;
+	public final fun getCurrency ()Ljava/lang/String;
+	public final fun getNetwork ()Ljava/lang/String;
+	public final fun getScheme ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/payments/AgentCorePaymentsClient {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;)V
+	public final fun createInstrument (Laws/sdk/kotlin/services/bedrockagentcore/model/CreatePaymentInstrumentRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createSession (Laws/sdk/kotlin/services/bedrockagentcore/model/CreatePaymentSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteInstrument (Laws/sdk/kotlin/services/bedrockagentcore/model/DeletePaymentInstrumentRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteSession (Laws/sdk/kotlin/services/bedrockagentcore/model/DeletePaymentSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getInstrument (Laws/sdk/kotlin/services/bedrockagentcore/model/GetPaymentInstrumentRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getInstrumentBalance (Laws/sdk/kotlin/services/bedrockagentcore/model/GetPaymentInstrumentBalanceRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getResourcePaymentToken (Laws/sdk/kotlin/services/bedrockagentcore/model/GetResourcePaymentTokenRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getSession (Laws/sdk/kotlin/services/bedrockagentcore/model/GetPaymentSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listInstruments (Laws/sdk/kotlin/services/bedrockagentcore/model/ListPaymentInstrumentsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listSessions (Laws/sdk/kotlin/services/bedrockagentcore/model/ListPaymentSessionsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun processPayment (Laws/sdk/kotlin/services/bedrockagentcore/model/ProcessPaymentRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/payments/AgentCorePaymentsClientKt {
+	public static final fun parseAgentCorePaymentChallenge (Ljava/lang/String;)Lcom/TTT/AgentCore/payments/AgentCorePaymentChallenge;
+	public static final fun paymentsClient (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/payments/AgentCorePaymentsClient;
+}
+
+public final class com/TTT/AgentCore/policy/AgentCoreGatewayPolicyBinding {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;)Lcom/TTT/AgentCore/policy/AgentCoreGatewayPolicyBinding;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/policy/AgentCoreGatewayPolicyBinding;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;ILjava/lang/Object;)Lcom/TTT/AgentCore/policy/AgentCoreGatewayPolicyBinding;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGatewayIdentifier ()Ljava/lang/String;
+	public final fun getMode ()Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;
+	public final fun getPolicyEngineIdentifier ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/policy/AgentCorePolicyAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun bindGateway (Lcom/TTT/AgentCore/policy/AgentCoreGatewayPolicyBinding;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createEngine (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreatePolicyEngineRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createPolicy (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreatePolicyRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteEngine (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeletePolicyEngineRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deletePolicy (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeletePolicyRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getEngine (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetPolicyEngineRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getGeneration (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetPolicyGenerationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getPolicy (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetPolicyRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun startGeneration (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/StartPolicyGenerationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateEngine (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdatePolicyEngineRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updatePolicy (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdatePolicyRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/policy/AgentCorePolicyConfig {
+	public fun <init> ()V
+	public fun <init> (Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;JJ)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun copy (Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;JJ)Lcom/TTT/AgentCore/policy/AgentCorePolicyConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/policy/AgentCorePolicyConfig;Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;JJILjava/lang/Object;)Lcom/TTT/AgentCore/policy/AgentCorePolicyConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMode ()Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;
+	public final fun getPollIntervalMillis ()J
+	public final fun getTimeoutMillis ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/policy/AgentCorePolicyDecision {
+	public fun <init> (Ljava/lang/String;ZLjava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;ZLjava/lang/String;)Lcom/TTT/AgentCore/policy/AgentCorePolicyDecision;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/policy/AgentCorePolicyDecision;Ljava/lang/String;ZLjava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/policy/AgentCorePolicyDecision;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAction ()Ljava/lang/String;
+	public final fun getAllowed ()Z
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/policy/AgentCorePolicyEvaluator {
+	public fun <init> ()V
+	public fun <init> (Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun evaluate (Ljava/lang/String;Ljava/util/Map;)Z
+	public static synthetic fun evaluate$default (Lcom/TTT/AgentCore/policy/AgentCorePolicyEvaluator;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Z
+}
+
+public final class com/TTT/AgentCore/policy/AgentCorePolicyKt {
+	public static final fun policyAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/policy/AgentCorePolicyAdmin;
+}
+
+public final class com/TTT/AgentCore/policy/AgentCorePolicyMode : java/lang/Enum {
+	public static final field ENFORCE Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;
+	public static final field LOG_ONLY Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;
+	public static fun values ()[Lcom/TTT/AgentCore/policy/AgentCorePolicyMode;
+}
+
+public final class com/TTT/AgentCore/policy/AgentCoreTemporalPolicySession {
+	public static final field Companion Lcom/TTT/AgentCore/policy/AgentCoreTemporalPolicySession$Companion;
+	public static final field HEADER_NAME Ljava/lang/String;
+	public static final fun asHeader-impl (Ljava/lang/String;)Ljava/util/Map;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/TTT/AgentCore/policy/AgentCoreTemporalPolicySession;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public static final fun getHeaderName-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/policy/AgentCoreTemporalPolicySession$Companion {
+}
+
+public final class com/TTT/AgentCore/registry/AgentCoreRegistryAdminKt {
+	public static final fun agentCoreRegistryAdmin (Lcom/TTT/AgentCore/registry/AgentRegistryClients;)Lcom/TTT/AgentCore/registry/AgentRegistryAdmin;
+}
+
+public final class com/TTT/AgentCore/registry/AgentCoreRegistryClientKt {
+	public static final fun agentCoreRegistryClient (Lcom/TTT/AgentCore/registry/AgentRegistryClients;)Lcom/TTT/AgentCore/registry/AgentRegistryDiscovery;
+}
+
+public final class com/TTT/AgentCore/registry/AgentRegistryAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/agentregistrycontrol/AgentRegistryControlClient;)V
+	public final fun createRegistry (Laws/sdk/kotlin/services/agentregistrycontrol/model/CreateRegistryRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createRegistryRecord (Laws/sdk/kotlin/services/agentregistrycontrol/model/CreateRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteRegistry (Laws/sdk/kotlin/services/agentregistrycontrol/model/DeleteRegistryRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteRegistryRecord (Laws/sdk/kotlin/services/agentregistrycontrol/model/DeleteRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getRecords ()Lcom/TTT/AgentCore/registry/RegistryRecord;
+	public final fun getRegistry ()Lcom/TTT/AgentCore/registry/Registry;
+	public final fun getRegistry (Laws/sdk/kotlin/services/agentregistrycontrol/model/GetRegistryRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getRegistryRecord ()Lcom/TTT/AgentCore/registry/RegistryRecord;
+	public final fun getRegistryRecord (Laws/sdk/kotlin/services/agentregistrycontrol/model/GetRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listRegistries (Laws/sdk/kotlin/services/agentregistrycontrol/model/ListRegistriesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun listRegistries$default (Lcom/TTT/AgentCore/registry/AgentRegistryAdmin;Laws/sdk/kotlin/services/agentregistrycontrol/model/ListRegistriesRequest;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun listRegistryRecords (Laws/sdk/kotlin/services/agentregistrycontrol/model/ListRegistryRecordsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun submitRegistryRecordForApproval (Laws/sdk/kotlin/services/agentregistrycontrol/model/SubmitRegistryRecordForApprovalRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun submitRegistryRecordForApproval (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateRegistry (Laws/sdk/kotlin/services/agentregistrycontrol/model/UpdateRegistryRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateRegistryRecord (Laws/sdk/kotlin/services/agentregistrycontrol/model/UpdateRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateRegistryRecordStatus (Laws/sdk/kotlin/services/agentregistrycontrol/model/UpdateRegistryRecordStatusRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateRegistryRecordStatus (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/RegistryRecordStatus;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun updateRegistryRecordStatus$default (Lcom/TTT/AgentCore/registry/AgentRegistryAdmin;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/RegistryRecordStatus;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/registry/AgentRegistryBatchGetResult {
+	public fun <init> (Ljava/util/List;Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/util/List;)Lcom/TTT/AgentCore/registry/AgentRegistryBatchGetResult;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/registry/AgentRegistryBatchGetResult;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/AgentCore/registry/AgentRegistryBatchGetResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getErrors ()Ljava/util/List;
+	public final fun getHasFailures ()Z
+	public final fun getRecords ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun isCompleteFailure ()Z
+	public final fun isPartialFailure ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/registry/AgentRegistryClients : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/AgentCore/AgentCoreConfig;Laws/sdk/kotlin/services/agentregistry/AgentRegistryClient;Laws/sdk/kotlin/services/agentregistrycontrol/AgentRegistryControlClient;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/AgentCoreConfig;Laws/sdk/kotlin/services/agentregistry/AgentRegistryClient;Laws/sdk/kotlin/services/agentregistrycontrol/AgentRegistryControlClient;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun getAgentRegistry ()Laws/sdk/kotlin/services/agentregistry/AgentRegistryClient;
+	public final fun getAgentRegistryControl ()Laws/sdk/kotlin/services/agentregistrycontrol/AgentRegistryControlClient;
+	public final fun getAgentregistry ()Laws/sdk/kotlin/services/agentregistry/AgentRegistryClient;
+	public final fun getAgentregistrycontrol ()Laws/sdk/kotlin/services/agentregistrycontrol/AgentRegistryControlClient;
+	public final fun getControl ()Laws/sdk/kotlin/services/agentregistrycontrol/AgentRegistryControlClient;
+	public final fun getRegistry ()Laws/sdk/kotlin/services/agentregistry/AgentRegistryClient;
+}
+
+public final class com/TTT/AgentCore/registry/AgentRegistryDiscovery {
+	public fun <init> (Laws/sdk/kotlin/services/agentregistry/AgentRegistryClient;)V
+	public final fun batchGet (Laws/sdk/kotlin/services/agentregistry/model/BatchGetDiscoverableRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun batchGet (Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun batchGetResult (Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun list (Laws/sdk/kotlin/services/agentregistry/model/ListDiscoverableRegistryRecordsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun list (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun list$default (Lcom/TTT/AgentCore/registry/AgentRegistryDiscovery;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun search (Laws/sdk/kotlin/services/agentregistry/model/SearchDiscoverableRegistryRecordsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun search (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Laws/smithy/kotlin/runtime/content/Document;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun search$default (Lcom/TTT/AgentCore/registry/AgentRegistryDiscovery;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Laws/smithy/kotlin/runtime/content/Document;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/registry/AgentRegistryDiscoveryKt {
+	public static final fun asBatchGetResult (Laws/sdk/kotlin/services/agentregistry/model/BatchGetDiscoverableRegistryRecordResponse;)Lcom/TTT/AgentCore/registry/AgentRegistryBatchGetResult;
+	public static final fun isPartialFailure (Laws/sdk/kotlin/services/agentregistry/model/BatchGetDiscoverableRegistryRecordResponse;)Z
+	public static final fun registryDiscovery (Lcom/TTT/AgentCore/registry/AgentRegistryClients;)Lcom/TTT/AgentCore/registry/AgentRegistryDiscovery;
+}
+
+public final class com/TTT/AgentCore/registry/Registry {
+	public fun <init> (Laws/sdk/kotlin/services/agentregistrycontrol/AgentRegistryControlClient;)V
+	public final fun create (Laws/sdk/kotlin/services/agentregistrycontrol/model/CreateRegistryRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun delete (Laws/sdk/kotlin/services/agentregistrycontrol/model/DeleteRegistryRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Laws/sdk/kotlin/services/agentregistrycontrol/model/GetRegistryRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun list (Laws/sdk/kotlin/services/agentregistrycontrol/model/ListRegistriesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun list$default (Lcom/TTT/AgentCore/registry/Registry;Laws/sdk/kotlin/services/agentregistrycontrol/model/ListRegistriesRequest;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun update (Laws/sdk/kotlin/services/agentregistrycontrol/model/UpdateRegistryRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/registry/RegistryAdminKt {
+	public static final fun registryAdmin (Lcom/TTT/AgentCore/registry/AgentRegistryClients;)Lcom/TTT/AgentCore/registry/AgentRegistryAdmin;
+}
+
+public final class com/TTT/AgentCore/registry/RegistryDescriptorHelpersKt {
+	public static final fun agentSkillsDefinitionDescriptor (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;)Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsDefinitionDescriptor;
+	public static synthetic fun agentSkillsDefinitionDescriptor$default (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;ILjava/lang/Object;)Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsDefinitionDescriptor;
+	public static final fun custom (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;)V
+	public static final fun customDescriptor (Ljava/lang/String;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+	public static final fun customDescriptorModel (Ljava/lang/String;)Laws/sdk/kotlin/services/agentregistrycontrol/model/CustomDescriptor;
+	public static final fun mcp (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;)V
+	public static synthetic fun mcp$default (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;ILjava/lang/Object;)V
+	public static final fun mcpDescriptor (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+	public static synthetic fun mcpDescriptor$default (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;ILjava/lang/Object;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+	public static final fun mcpServerDescriptor (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;)Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerDescriptor;
+	public static synthetic fun mcpServerDescriptor$default (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/DescriptorSource;Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerAdditionalData;ILjava/lang/Object;)Laws/sdk/kotlin/services/agentregistrycontrol/model/McpServerDescriptor;
+	public static final fun skill (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;)V
+	public static synthetic fun skill$default (Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors$Builder;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;ILjava/lang/Object;)V
+	public static final fun skillDescriptor (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+	public static synthetic fun skillDescriptor$default (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/AgentSkillsAdditionalData;ILjava/lang/Object;)Laws/sdk/kotlin/services/agentregistrycontrol/model/Descriptors;
+}
+
+public final class com/TTT/AgentCore/registry/RegistryRecord {
+	public fun <init> (Laws/sdk/kotlin/services/agentregistrycontrol/AgentRegistryControlClient;)V
+	public final fun create (Laws/sdk/kotlin/services/agentregistrycontrol/model/CreateRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun delete (Laws/sdk/kotlin/services/agentregistrycontrol/model/DeleteRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Laws/sdk/kotlin/services/agentregistrycontrol/model/GetRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun list (Laws/sdk/kotlin/services/agentregistrycontrol/model/ListRegistryRecordsRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun submitForApproval (Laws/sdk/kotlin/services/agentregistrycontrol/model/SubmitRegistryRecordForApprovalRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun submitForApproval (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun update (Laws/sdk/kotlin/services/agentregistrycontrol/model/UpdateRegistryRecordRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateStatus (Laws/sdk/kotlin/services/agentregistrycontrol/model/UpdateRegistryRecordStatusRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateStatus (Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/RegistryRecordStatus;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun updateStatus$default (Lcom/TTT/AgentCore/registry/RegistryRecord;Ljava/lang/String;Ljava/lang/String;Laws/sdk/kotlin/services/agentregistrycontrol/model/RegistryRecordStatus;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/registry/RegistryRecordStatusExtensionsKt {
+	public static final fun isDiscoverable (Laws/sdk/kotlin/services/agentregistry/model/RegistryRecordStatus;)Z
+	public static final fun isDiscoverable (Laws/sdk/kotlin/services/agentregistrycontrol/model/RegistryRecordStatus;)Z
+	public static final fun isTerminal (Laws/sdk/kotlin/services/agentregistry/model/RegistryRecordStatus;)Z
+	public static final fun isTerminal (Laws/sdk/kotlin/services/agentregistrycontrol/model/RegistryRecordStatus;)Z
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreInvocationError {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Lcom/TTT/AgentCore/runtime/AgentCoreInvocationError;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreInvocationError;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreInvocationError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getError ()Ljava/lang/String;
+	public final fun getErrorType ()Ljava/lang/String;
+	public final fun getRetryable ()Z
+	public final fun getSessionId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreInvocationRequest {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Lcom/TTT/Pipe/MultimodalContent;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreInvocationRequest;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreInvocationRequest;Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreInvocationRequest;
+	public final fun effectiveContent ()Lcom/TTT/Pipe/MultimodalContent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContent ()Lcom/TTT/Pipe/MultimodalContent;
+	public final fun getInput ()Ljava/lang/String;
+	public final fun getPrompt ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getStream ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreInvocationResponse {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipe/MultimodalContent;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipe/MultimodalContent;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Lcom/TTT/Pipe/MultimodalContent;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipe/MultimodalContent;)Lcom/TTT/AgentCore/runtime/AgentCoreInvocationResponse;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreInvocationResponse;Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipe/MultimodalContent;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreInvocationResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOutput ()Ljava/lang/String;
+	public final fun getOutputContent ()Lcom/TTT/Pipe/MultimodalContent;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getStreamed ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHost {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHost;
+	public final fun run (Lcom/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHostConfig;)V
+	public static synthetic fun run$default (Lcom/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHost;Lcom/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHostConfig;ILjava/lang/Object;)V
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHostConfig {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHostConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHostConfig;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreMcpRuntimeHostConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuthKey ()Ljava/lang/String;
+	public final fun getBindAddress ()Ljava/lang/String;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getPort ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCorePingResponse {
+	public fun <init> (Ljava/lang/String;J)V
+	public synthetic fun <init> (Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun copy (Ljava/lang/String;J)Lcom/TTT/AgentCore/runtime/AgentCorePingResponse;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCorePingResponse;Ljava/lang/String;JILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCorePingResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getStatus ()Ljava/lang/String;
+	public final fun getTimeOfLastUpdate ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun create (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateAgentRuntimeRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createCapacityProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateCapacityProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createEndpoint (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateAgentRuntimeEndpointRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun delete (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteAgentRuntimeRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteCapacityProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteCapacityProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteEndpoint (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteAgentRuntimeEndpointRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetAgentRuntimeRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getCapacityProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetCapacityProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getEndpoint (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetAgentRuntimeEndpointRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listAgentRuntimeVersionsByCapacityProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListAgentRuntimeVersionsByCapacityProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listCapacityProviders (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListCapacityProvidersRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun update (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateAgentRuntimeRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateCapacityProvider (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateCapacityProviderRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateEndpoint (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/UpdateAgentRuntimeEndpointRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeAdminKt {
+	public static final fun runtimeAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeAdmin;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeAgent : com/TTT/P2P/P2PInterface {
+	public fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClient;Ljava/lang/String;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClient;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun P2PInit (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun clearStreamingCallbacksRecursive ()V
+	public fun enablePipeTimeoutRecursive (ZJZI)V
+	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
+	public fun executeLocal (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun executeP2PRequest (Lcom/TTT/P2P/P2PRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getContainerObject ()Ljava/lang/Object;
+	public fun getContextWindowFromInterface ()Lcom/TTT/Context/ContextWindow;
+	public fun getKillSwitch ()Lcom/TTT/P2P/KillSwitch;
+	public fun getMiniBankFromInterface ()Lcom/TTT/Context/MiniBank;
+	public fun getNearestPumpStationParent ()Lcom/TTT/P2P/P2PInterface;
+	public fun getP2pDescription ()Lcom/TTT/P2P/P2PDescriptor;
+	public fun getP2pRequirements ()Lcom/TTT/P2P/P2PRequirements;
+	public fun getP2pTransport ()Lcom/TTT/P2P/P2PTransport;
+	public fun getParentP2PInterface ()Lcom/TTT/P2P/P2PInterface;
+	public fun getPaths ()Ljava/lang/String;
+	public fun getPipelinesFromInterface ()Ljava/util/List;
+	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
+	public fun getTopLevelParentInterface ()Lcom/TTT/P2P/P2PInterface;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun setContainerObject (Ljava/lang/Object;)V
+	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
+	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
+	public fun setP2pDescription (Lcom/TTT/P2P/P2PDescriptor;)V
+	public fun setP2pRequirements (Lcom/TTT/P2P/P2PRequirements;)V
+	public fun setP2pTransport (Lcom/TTT/P2P/P2PTransport;)V
+	public fun setParentInterface (Lcom/TTT/P2P/P2PInterface;)V
+	public fun setPipeSettingsRecursively (Lcom/TTT/Structs/PipeSettings;)V
+	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public fun supportsStreamingCallbackRemoval ()Z
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeClient : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;Lcom/TTT/AgentCore/AgentCoreClients;Lio/ktor/client/HttpClient;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;Lcom/TTT/AgentCore/AgentCoreClients;Lio/ktor/client/HttpClient;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;Lio/ktor/client/HttpClient;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeDataClient;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;Lio/ktor/client/HttpClient;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeDataClient;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun deleteCapacityProviderSession (Laws/sdk/kotlin/services/bedrockagentcore/model/DeleteCapacityProviderSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun executeCommand (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeAgentRuntimeCommandRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun executeCommand$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClient;Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeAgentRuntimeCommandRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun invoke (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeAgentRuntimeRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invoke (Lcom/TTT/AgentCore/runtime/AgentCoreInvocationRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invoke (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun invoke$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClient;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun invokeRawJson (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun invokeRawJson$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClient;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun invokeSdkStreaming (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeAgentRuntimeRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invokeStreaming (Lcom/TTT/AgentCore/runtime/AgentCoreInvocationRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invokeStreaming (Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun invokeStreaming$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClient;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun invokeWebSocket (Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun invokeWebSocket$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClient;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun ping (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun stopSession (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRequestSigner;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRequestSigner;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/Map;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRequestSigner;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRequestSigner;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRequestSigner;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEndpoint ()Ljava/lang/String;
+	public final fun getInvocationPath ()Ljava/lang/String;
+	public final fun getPingPath ()Ljava/lang/String;
+	public final fun getQualifier ()Ljava/lang/String;
+	public final fun getRequestHeaders ()Ljava/util/Map;
+	public final fun getRequestSigner ()Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRequestSigner;
+	public final fun getRuntimeArn ()Ljava/lang/String;
+	public final fun getSessionHeader ()Ljava/lang/String;
+	public final fun getWebsocketPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent {
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Stderr : com/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Stderr;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Stderr;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Stderr;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Stdout : com/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Stdout;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Stdout;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Stdout;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Terminal : com/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent {
+	public fun <init> (ILaws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;)V
+	public final fun component1 ()I
+	public final fun component2 ()Laws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;
+	public final fun copy (ILaws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Terminal;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Terminal;ILaws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandEvent$Terminal;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExitCode ()I
+	public final fun getStatus ()Laws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeCommandResult {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Laws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Laws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Laws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandResult;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandResult;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Laws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeCommandResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExitCode ()Ljava/lang/Integer;
+	public final fun getRuntimeSessionId ()Ljava/lang/String;
+	public final fun getStatus ()Laws/sdk/kotlin/services/bedrockagentcore/model/CommandExecutionStatus;
+	public final fun getStderr ()Ljava/lang/String;
+	public final fun getStdout ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/AgentCore/runtime/AgentCoreRuntimeDataClient {
+	public fun deleteCapacityProviderSession (Laws/sdk/kotlin/services/bedrockagentcore/model/DeleteCapacityProviderSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun invoke (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeAgentRuntimeRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun invokeCommand (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeAgentRuntimeCommandRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun stop (Laws/sdk/kotlin/services/bedrockagentcore/model/StopRuntimeSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeDataClient$DefaultImpls {
+	public static fun deleteCapacityProviderSession (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeDataClient;Laws/sdk/kotlin/services/bedrockagentcore/model/DeleteCapacityProviderSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun invokeCommand (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeDataClient;Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeAgentRuntimeCommandRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeHost : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;Lcom/TTT/AgentCore/runtime/AgentCoreSessionFactory;Lkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;Lcom/TTT/AgentCore/runtime/AgentCoreSessionFactory;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun browserClient (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserClient;
+	public fun close ()V
+	public final fun codeInterpreterClient (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterClient;
+	public final fun evictIdleSessions (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun sessionCount (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun sessionRegistry ()Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;
+	public final fun start (Z)Lio/ktor/server/engine/EmbeddedServer;
+	public static synthetic fun start$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHost;ZILjava/lang/Object;)Lio/ktor/server/engine/EmbeddedServer;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;Z)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;
+	public final fun component8 ()Z
+	public final fun copy (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;Z)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;ZILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeHostConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAbortOnClientDisconnect ()Z
+	public final fun getBindAddress ()Ljava/lang/String;
+	public final fun getInvocationPath ()Ljava/lang/String;
+	public final fun getPingPath ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun getSessionHeader ()Ljava/lang/String;
+	public final fun getSessionMode ()Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;
+	public final fun getWebsocketPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeJson {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeJson;
+	public final fun decodePing (Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCorePingResponse;
+	public final fun decodeRequest (Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreInvocationRequest;
+	public final fun decodeResponse (Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreInvocationResponse;
+	public final fun decodeStreamEvent (Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreStreamEvent;
+	public final fun encodeError (Lcom/TTT/AgentCore/runtime/AgentCoreInvocationError;)Ljava/lang/String;
+	public final fun encodePing (Lcom/TTT/AgentCore/runtime/AgentCorePingResponse;)Ljava/lang/String;
+	public final fun encodeRequest (Lcom/TTT/AgentCore/runtime/AgentCoreInvocationRequest;)Ljava/lang/String;
+	public final fun encodeResponse (Lcom/TTT/AgentCore/runtime/AgentCoreInvocationResponse;Z)Ljava/lang/String;
+	public static synthetic fun encodeResponse$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeJson;Lcom/TTT/AgentCore/runtime/AgentCoreInvocationResponse;ZILjava/lang/Object;)Ljava/lang/String;
+	public final fun encodeStreamEvent (Lcom/TTT/AgentCore/runtime/AgentCoreStreamEvent;)Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol : java/lang/Enum {
+	public static final field AGUI Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;
+	public static final field AG_UI Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;
+	public static final field HTTP Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;
+	public static final field MCP Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;
+	public static fun values ()[Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeRawResponse {
+	public fun <init> (ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRawResponse;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRawResponse;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeRawResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()Ljava/lang/String;
+	public final fun getRequestId ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getStatusCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/AgentCore/runtime/AgentCoreRuntimeRequestSigner {
+	public abstract fun sign (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;[BLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeShellClient : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;Lio/ktor/client/HttpClient;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeClientConfig;Lio/ktor/client/HttpClient;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun open (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreShellReconnectConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun open$default (Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeShellClient;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreShellReconnectConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeShellSession : java/lang/AutoCloseable {
+	public fun close ()V
+	public final fun closeGracefully (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun detach (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun frames ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getRuntimeSessionId ()Ljava/lang/String;
+	public final fun getShellId ()Ljava/lang/String;
+	public final fun receive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun reconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun resize (IILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun sendBytes ([BLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun sendText (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreSessionContext {
+	public fun <init> (Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;JLjava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;JLjava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;
+	public final fun component3 ()J
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;
+	public final fun copy (Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;JLjava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;)Lcom/TTT/AgentCore/runtime/AgentCoreSessionContext;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreSessionContext;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;JLjava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreSessionContext;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getApprovedRequestHeaders ()Ljava/util/Map;
+	public final fun getCreatedAt ()J
+	public final fun getProtocol ()Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;
+	public final fun getRequestCorrelationId ()Ljava/lang/String;
+	public final fun getRunId ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getSessionRegistry ()Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;
+	public final fun getThreadId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/AgentCore/runtime/AgentCoreSessionFactory {
+	public abstract fun create (Lcom/TTT/AgentCore/runtime/AgentCoreSessionContext;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreSessionMode : java/lang/Enum {
+	public static final field ISOLATED Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;
+	public static final field SHARED Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;
+	public static fun values ()[Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreSessionRegistry : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;Lcom/TTT/AgentCore/runtime/AgentCoreSessionFactory;Lkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreSessionMode;Lcom/TTT/AgentCore/runtime/AgentCoreSessionFactory;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun closeSuspend (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun closeSuspend$default (Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun evictIdle (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun isBusy (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun registerSessionCleanup (Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun size (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun withSession (Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun withSession (Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;Ljava/lang/String;Ljava/util/Map;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun withSession (Ljava/lang/String;Lcom/TTT/AgentCore/runtime/AgentCoreRuntimeProtocol;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public static final field Companion Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Companion;
+	public abstract fun getCode ()I
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Close : com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Close;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Companion {
+	public final fun fromCode (I)Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Heartbeat : com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Heartbeat;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Resize : com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Resize;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Status : com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Status;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Stderr : com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Stderr;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Stdin : com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Stdin;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Stdout : com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public static final field INSTANCE Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Stdout;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellChannel$Unknown : com/TTT/AgentCore/runtime/AgentCoreShellChannel {
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Unknown;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Unknown;IILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel$Unknown;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellFrame {
+	public static final field Companion Lcom/TTT/AgentCore/runtime/AgentCoreShellFrame$Companion;
+	public static final field MAX_PAYLOAD_BYTES I
+	public fun <init> (Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel;[B)V
+	public final fun component1 ()Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel;
+	public final fun component2 ()[B
+	public final fun copy (Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel;[B)Lcom/TTT/AgentCore/runtime/AgentCoreShellFrame;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreShellFrame;Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel;[BILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreShellFrame;
+	public final fun encode ()[B
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChannel ()Lcom/TTT/AgentCore/runtime/AgentCoreShellChannel;
+	public final fun getPayload ()[B
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellFrame$Companion {
+	public final fun decode ([B)Lcom/TTT/AgentCore/runtime/AgentCoreShellFrame;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellReconnectConfig {
+	public fun <init> ()V
+	public fun <init> (IJJ)V
+	public synthetic fun <init> (IJJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun copy (IJJ)Lcom/TTT/AgentCore/runtime/AgentCoreShellReconnectConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreShellReconnectConfig;IJJILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreShellReconnectConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInitialDelayMillis ()J
+	public final fun getMaxAttempts ()I
+	public final fun getMaxDelayMillis ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellStatus {
+	public static final field Companion Lcom/TTT/AgentCore/runtime/AgentCoreShellStatus$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Integer;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreShellStatus;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreShellStatus;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreShellStatus;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExitCode ()Ljava/lang/Integer;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getStatus ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreShellStatus$Companion {
+	public final fun decode ([B)Lcom/TTT/AgentCore/runtime/AgentCoreShellStatus;
+}
+
+public final class com/TTT/AgentCore/runtime/AgentCoreStreamEvent {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/runtime/AgentCoreStreamEvent;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/runtime/AgentCoreStreamEvent;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/runtime/AgentCoreStreamEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDone ()Z
+	public final fun getError ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreBrowserAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun create (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateBrowserRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun createProfile (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateBrowserProfileRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun delete (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteBrowserRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteProfile (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteBrowserProfileRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetBrowserRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getProfile (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetBrowserProfileRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun list (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListBrowsersRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listProfiles (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListBrowserProfilesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreBrowserAdminKt {
+	public static final fun browserAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserAdmin;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreBrowserClient {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;)V
+	public synthetic fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun execute (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getSession (Laws/sdk/kotlin/services/bedrockagentcore/model/GetBrowserSessionRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getSession (Laws/sdk/kotlin/services/bedrockagentcore/model/GetBrowserSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invoke (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeBrowserRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invoke (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeBrowserRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun saveProfile (Laws/sdk/kotlin/services/bedrockagentcore/model/SaveBrowserSessionProfileRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun saveProfile (Laws/sdk/kotlin/services/bedrockagentcore/model/SaveBrowserSessionProfileRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun startSession (Laws/sdk/kotlin/services/bedrockagentcore/model/StartBrowserSessionRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun stopOwnedSessions (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun stopSession (Laws/sdk/kotlin/services/bedrockagentcore/model/StopBrowserSessionRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun stopSession (Laws/sdk/kotlin/services/bedrockagentcore/model/StopBrowserSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateStream (Laws/sdk/kotlin/services/bedrockagentcore/model/UpdateBrowserStreamRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateStream (Laws/sdk/kotlin/services/bedrockagentcore/model/UpdateBrowserStreamRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreBrowserProfileAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun create (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateBrowserProfileRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun delete (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteBrowserProfileRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetBrowserProfileRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun list (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListBrowserProfilesRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun list$default (Lcom/TTT/AgentCore/tools/AgentCoreBrowserProfileAdmin;Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListBrowserProfilesRequest;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreBrowserProfileAdminKt {
+	public static final fun browserProfileAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserProfileAdmin;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreBrowserSession {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserSession;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/tools/AgentCoreBrowserSession;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserSession;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBrowserIdentifier ()Ljava/lang/String;
+	public final fun getOwnerSessionId ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreBrowserTools {
+	public static final field INSTANCE Lcom/TTT/AgentCore/tools/AgentCoreBrowserTools;
+	public final fun register (Lcom/TTT/PipeContextProtocol/PcpContext;Lcom/TTT/AgentCore/tools/AgentCoreBrowserToolsConfig;)Lcom/TTT/PipeContextProtocol/PcpContext;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreBrowserToolsConfig {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/functions/Function3;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/Set;
+	public final fun component3 ()Lkotlin/jvm/functions/Function3;
+	public final fun copy (Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/functions/Function3;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserToolsConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/tools/AgentCoreBrowserToolsConfig;Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/functions/Function3;ILjava/lang/Object;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserToolsConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnabledActions ()Ljava/util/Set;
+	public final fun getInvoke ()Lkotlin/jvm/functions/Function3;
+	public final fun getNamespace ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreCodeInterpreterAdmin {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcorecontrol/BedrockAgentCoreControlClient;)V
+	public final fun create (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/CreateCodeInterpreterRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun delete (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/DeleteCodeInterpreterRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/GetCodeInterpreterRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun list (Laws/sdk/kotlin/services/bedrockagentcorecontrol/model/ListCodeInterpretersRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreCodeInterpreterAdminKt {
+	public static final fun codeInterpreterAdmin (Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterAdmin;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreCodeInterpreterClient {
+	public fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;)V
+	public synthetic fun <init> (Laws/sdk/kotlin/services/bedrockagentcore/BedrockAgentCoreClient;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun execute (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getSession (Laws/sdk/kotlin/services/bedrockagentcore/model/GetCodeInterpreterSessionRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getSession (Laws/sdk/kotlin/services/bedrockagentcore/model/GetCodeInterpreterSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invoke (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeCodeInterpreterRequest;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun invoke (Laws/sdk/kotlin/services/bedrockagentcore/model/InvokeCodeInterpreterRequest;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun startSession (Laws/sdk/kotlin/services/bedrockagentcore/model/StartCodeInterpreterSessionRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun stopOwnedSessions (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun stopSession (Laws/sdk/kotlin/services/bedrockagentcore/model/StopCodeInterpreterSessionRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun stopSession (Laws/sdk/kotlin/services/bedrockagentcore/model/StopCodeInterpreterSessionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreCodeInterpreterSession {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterSession;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterSession;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterSession;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCodeInterpreterIdentifier ()Ljava/lang/String;
+	public final fun getOwnerSessionId ()Ljava/lang/String;
+	public final fun getSessionId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreCodeInterpreterTools {
+	public static final field INSTANCE Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterTools;
+	public final fun register (Lcom/TTT/PipeContextProtocol/PcpContext;Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterToolsConfig;)Lcom/TTT/PipeContextProtocol/PcpContext;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreCodeInterpreterToolsConfig {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/functions/Function3;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/Set;
+	public final fun component3 ()Lkotlin/jvm/functions/Function3;
+	public final fun copy (Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/functions/Function3;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterToolsConfig;
+	public static synthetic fun copy$default (Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterToolsConfig;Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/functions/Function3;ILjava/lang/Object;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterToolsConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnabledActions ()Ljava/util/Set;
+	public final fun getInvoke ()Lkotlin/jvm/functions/Function3;
+	public final fun getNamespace ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/AgentCore/tools/AgentCoreToolClientsKt {
+	public static final fun browser (Lcom/TTT/AgentCore/AgentCoreClients;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserClient;
+	public static synthetic fun browser$default (Lcom/TTT/AgentCore/AgentCoreClients;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;ILjava/lang/Object;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserClient;
+	public static final fun browserClient (Lcom/TTT/AgentCore/runtime/AgentCoreSessionContext;Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreBrowserClient;
+	public static final fun codeInterpreter (Lcom/TTT/AgentCore/AgentCoreClients;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterClient;
+	public static synthetic fun codeInterpreter$default (Lcom/TTT/AgentCore/AgentCoreClients;Lcom/TTT/AgentCore/runtime/AgentCoreSessionRegistry;ILjava/lang/Object;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterClient;
+	public static final fun codeInterpreterClient (Lcom/TTT/AgentCore/runtime/AgentCoreSessionContext;Lcom/TTT/AgentCore/AgentCoreClients;)Lcom/TTT/AgentCore/tools/AgentCoreCodeInterpreterClient;
+}
+

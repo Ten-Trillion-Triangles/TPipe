@@ -127,14 +127,18 @@ public final class env/CompletionTokensDetails$Companion {
 public final class env/DeltaMessage {
 	public static final field Companion Lenv/DeltaMessage$Companion;
 	public fun <init> ()V
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lenv/DeltaMessage;
-	public static synthetic fun copy$default (Lenv/DeltaMessage;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lenv/DeltaMessage;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)Lenv/DeltaMessage;
+	public static synthetic fun copy$default (Lenv/DeltaMessage;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lenv/DeltaMessage;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getContent ()Ljava/lang/String;
+	public final fun getReasoning ()Ljava/lang/String;
+	public final fun getReasoningDetails ()Ljava/util/List;
 	public final fun getRole ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -559,6 +563,47 @@ public final class env/ReasoningConfig$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
+public final class env/ReasoningDetail {
+	public static final field Companion Lenv/ReasoningDetail$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/Integer;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)Lenv/ReasoningDetail;
+	public static synthetic fun copy$default (Lenv/ReasoningDetail;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILjava/lang/Object;)Lenv/ReasoningDetail;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFormat ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getIndex ()Ljava/lang/Integer;
+	public final fun getSignature ()Ljava/lang/String;
+	public final fun getSummary ()Ljava/lang/String;
+	public final fun getText ()Ljava/lang/String;
+	public final fun getType ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/ReasoningDetail$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/ReasoningDetail$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/ReasoningDetail;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/ReasoningDetail;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/ReasoningDetail$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
 public final class env/ResponseFormat {
 	public static final field Companion Lenv/ResponseFormat$Companion;
 	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)V
@@ -849,8 +894,11 @@ public final class openrouterPipe/OpenRouterPipe : com/TTT/Pipe/Pipe {
 	public fun <init> ()V
 	public fun abort (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun cleanPromptText (Lcom/TTT/Pipe/MultimodalContent;)Lcom/TTT/Pipe/MultimodalContent;
+	public final fun enableStreaming (Lkotlin/jvm/functions/Function2;ZZ)LopenrouterPipe/OpenRouterPipe;
+	public static synthetic fun enableStreaming$default (LopenrouterPipe/OpenRouterPipe;Lkotlin/jvm/functions/Function2;ZZILjava/lang/Object;)LopenrouterPipe/OpenRouterPipe;
 	public fun generateText (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun getStreamingEnabled ()Z
+	public final fun handleStreamDataChunk (Lenv/StreamingChunk;Ljava/lang/StringBuilder;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun init (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setApiKey (Ljava/lang/String;)LopenrouterPipe/OpenRouterPipe;
 	public final fun setBaseUrl (Ljava/lang/String;)LopenrouterPipe/OpenRouterPipe;
@@ -1027,3 +1075,4 @@ public final class openrouterPipe/examples/StreamingExampleKt {
 	public static final fun main ()V
 	public static synthetic fun main ([Ljava/lang/String;)V
 }
+

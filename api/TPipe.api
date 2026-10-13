@@ -16896,7 +16896,8 @@ public final class com/TTT/Util/UtilKt {
 	public static synthetic fun createContainerPtr$default (Lcom/TTT/P2P/P2PInterface;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipe/DummyPipe;
 	public static final fun createContainerPtrAsPipeline (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipe/DummyPipe;Ljava/lang/String;)Lcom/TTT/Pipeline/Pipeline;
 	public static synthetic fun createContainerPtrAsPipeline$default (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipe/DummyPipe;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/Pipeline;
-	public static final fun deepCopyInternal (Ljava/lang/Object;Lkotlin/reflect/KClass;)Ljava/lang/Object;
+	public static final fun deepCopyInternal (Ljava/lang/Object;Lkotlin/reflect/KClass;Ljava/util/Map;I)Ljava/lang/Object;
+	public static synthetic fun deepCopyInternal$default (Ljava/lang/Object;Lkotlin/reflect/KClass;Ljava/util/Map;IILjava/lang/Object;)Ljava/lang/Object;
 	public static final fun deleteDir (Ljava/lang/String;)V
 	public static final fun deleteFile (Ljava/lang/String;)Z
 	public static final fun executeBashCommand (Ljava/lang/String;)I

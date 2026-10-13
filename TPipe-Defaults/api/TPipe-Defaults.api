@@ -774,3 +774,4 @@ public final class examples/pumpstation/PumpStationOpenRouterExampleKt {
 	public static final fun main ()V
 	public static synthetic fun main ([Ljava/lang/String;)V
 }
+

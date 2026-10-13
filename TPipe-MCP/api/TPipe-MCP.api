@@ -88,6 +88,109 @@ public final class com/TTT/MCP/Bridge/PcpToMcpConverter {
 	public final fun convert (Lcom/TTT/PipeContextProtocol/PcpContext;)Lcom/TTT/MCP/Models/McpRequest;
 }
 
+public abstract interface class com/TTT/MCP/Client/McpRemoteAuthProvider {
+	public abstract fun headers (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/MCP/Client/McpRemoteClient : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/MCP/Client/McpRemoteClientConfig;Lio/ktor/client/HttpClient;)V
+	public synthetic fun <init> (Lcom/TTT/MCP/Client/McpRemoteClientConfig;Lio/ktor/client/HttpClient;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun bindToolsToPcp (Lcom/TTT/PipeContextProtocol/PcpContext;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun bindToolsToPcp (Lcom/TTT/PipeContextProtocol/PcpContext;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun callTool (Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public final fun closeSuspend (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listPrompts (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listResources (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listTools (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun sdkClient ()Lio/modelcontextprotocol/kotlin/sdk/client/Client;
+	public final fun sessionId ()Ljava/lang/String;
+	public final fun toPcpContext (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun toPcpContext$default (Lcom/TTT/MCP/Client/McpRemoteClient;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/TTT/MCP/Client/McpRemoteClientConfig {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Lcom/TTT/MCP/Client/McpRemoteAuthProvider;Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;Lcom/TTT/MCP/Client/McpRemoteRequestSigner;Lkotlin/jvm/functions/Function3;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Lcom/TTT/MCP/Client/McpRemoteAuthProvider;Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;Lcom/TTT/MCP/Client/McpRemoteRequestSigner;Lkotlin/jvm/functions/Function3;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/Long;
+	public final fun component11 ()Ljava/lang/Long;
+	public final fun component12 ()Ljava/lang/Long;
+	public final fun component13 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/util/Map;
+	public final fun component5 ()Lcom/TTT/MCP/Client/McpRemoteAuthProvider;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;
+	public final fun component8 ()Lcom/TTT/MCP/Client/McpRemoteRequestSigner;
+	public final fun component9 ()Lkotlin/jvm/functions/Function3;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Lcom/TTT/MCP/Client/McpRemoteAuthProvider;Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;Lcom/TTT/MCP/Client/McpRemoteRequestSigner;Lkotlin/jvm/functions/Function3;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/String;)Lcom/TTT/MCP/Client/McpRemoteClientConfig;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Client/McpRemoteClientConfig;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Lcom/TTT/MCP/Client/McpRemoteAuthProvider;Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;Lcom/TTT/MCP/Client/McpRemoteRequestSigner;Lkotlin/jvm/functions/Function3;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/MCP/Client/McpRemoteClientConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuthProvider ()Lcom/TTT/MCP/Client/McpRemoteAuthProvider;
+	public final fun getClientName ()Ljava/lang/String;
+	public final fun getClientOptions ()Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;
+	public final fun getClientVersion ()Ljava/lang/String;
+	public final fun getConnectTimeoutMillis ()Ljava/lang/Long;
+	public final fun getEndpoint ()Ljava/lang/String;
+	public final fun getNamespacePrefix ()Ljava/lang/String;
+	public final fun getProtocolVersion ()Ljava/lang/String;
+	public final fun getRequestHeaders ()Ljava/util/Map;
+	public final fun getRequestObserver ()Lkotlin/jvm/functions/Function3;
+	public final fun getRequestSigner ()Lcom/TTT/MCP/Client/McpRemoteRequestSigner;
+	public final fun getRequestTimeoutMillis ()Ljava/lang/Long;
+	public final fun getSocketTimeoutMillis ()Ljava/lang/Long;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/MCP/Client/McpRemoteRequestSigner {
+	public abstract fun sign (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;[BLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/MCP/Client/McpStdioClient : java/lang/AutoCloseable {
+	public fun <init> (Lcom/TTT/MCP/Client/McpStdioClientConfig;Lcom/TTT/MCP/Client/McpStdioProcessLauncher;)V
+	public synthetic fun <init> (Lcom/TTT/MCP/Client/McpStdioClientConfig;Lcom/TTT/MCP/Client/McpStdioProcessLauncher;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun callTool (Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun callTool$default (Lcom/TTT/MCP/Client/McpStdioClient;Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public fun close ()V
+	public final fun closeSuspend (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listTools (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/MCP/Client/McpStdioClientConfig {
+	public fun <init> (Ljava/util/List;Ljava/io/File;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;JJ)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/io/File;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/io/File;
+	public final fun component3 ()Ljava/util/Map;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;
+	public final fun component7 ()J
+	public final fun component8 ()J
+	public final fun copy (Ljava/util/List;Ljava/io/File;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;JJ)Lcom/TTT/MCP/Client/McpStdioClientConfig;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Client/McpStdioClientConfig;Ljava/util/List;Ljava/io/File;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;JJILjava/lang/Object;)Lcom/TTT/MCP/Client/McpStdioClientConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClientName ()Ljava/lang/String;
+	public final fun getClientOptions ()Lio/modelcontextprotocol/kotlin/sdk/client/ClientOptions;
+	public final fun getClientVersion ()Ljava/lang/String;
+	public final fun getCommand ()Ljava/util/List;
+	public final fun getEnvironment ()Ljava/util/Map;
+	public final fun getShutdownTimeoutMillis ()J
+	public final fun getStartupTimeoutMillis ()J
+	public final fun getWorkingDirectory ()Ljava/io/File;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/MCP/Client/McpStdioProcessLauncher {
+	public abstract fun start (Ljava/lang/ProcessBuilder;)Ljava/lang/Process;
+}
+
 public final class com/TTT/MCP/Extensions/PcpAccessorKt {
 	public static final fun getPcpContext (Lcom/TTT/Pipe/Pipe;)Lcom/TTT/PipeContextProtocol/PcpContext;
 }
@@ -697,6 +800,7 @@ public final class com/TTT/MCP/Models/McpTool$Companion {
 public final class com/TTT/MCP/Server/McpBridgeHttpHost {
 	public static final field INSTANCE Lcom/TTT/MCP/Server/McpBridgeHttpHost;
 	public final fun run (ILjava/lang/String;Ljava/lang/String;)V
+	public final fun run (Lcom/TTT/MCP/Server/McpHttpHostConfig;)V
 	public static synthetic fun run$default (Lcom/TTT/MCP/Server/McpBridgeHttpHost;ILjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
 }
 
@@ -715,6 +819,25 @@ public final class com/TTT/MCP/Server/McpBridgeStdioHost {
 	public static final field INSTANCE Lcom/TTT/MCP/Server/McpBridgeStdioHost;
 	public final fun runLoop ()V
 	public final fun runOnce ()V
+}
+
+public final class com/TTT/MCP/Server/McpHttpHostConfig {
+	public fun <init> ()V
+	public fun <init> (ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/MCP/Server/McpHttpHostConfig;
+	public static synthetic fun copy$default (Lcom/TTT/MCP/Server/McpHttpHostConfig;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/MCP/Server/McpHttpHostConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuthKey ()Ljava/lang/String;
+	public final fun getBindAddress ()Ljava/lang/String;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getPort ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/TTT/MCP/Server/McpResourceProvider {
@@ -788,3 +911,4 @@ public final class com/TTT/MCP/Server/McpSamplingHandler {
 
 public final class com/TTT/MCP/Server/McpSamplingHandler$Companion {
 }
+

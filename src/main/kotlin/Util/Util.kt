@@ -523,6 +523,12 @@ fun extractJsonData(malformedJson: String): Map<String, String>
  * Creates a deep copy of a data class using reflection.
  * Recursively copies nested data classes and collections.
  *
+ * Bounded against cyclic and shared-subtree graphs:
+ * - acyclic input -> fully independent deep copy
+ * - shared-subtree input (DAG) -> each distinct node copied once, shared by identity in the copy
+ * - cyclic input -> the back-edge resolves to the in-flight copy, so the copy terminates
+ * - past [DEEP_COPY_RECURSION_CAP] -> the tail is shared by reference instead of failing
+ *
  * @param T The type of the data class to copy
  * @return A deep copy of the original object
  */
@@ -532,54 +538,164 @@ inline fun <reified T : Any> T.deepCopy(): T
 }
 
 /**
+ * Maximum recursion depth for [deepCopyInternal] before bailing out to a shared-by-reference
+ * fallback. Higher than [CLONE_RECURSION_CAP] because deepCopy runs on whole-content graphs
+ * (MultimodalContent -> context/miniBank/tools -> nested maps -> snapshot levels) where 16 is too
+ * tight; 64 still bounds any blowup while leaving generous headroom.
+ */
+private const val DEEP_COPY_RECURSION_CAP: Int = 64
+
+/**
  * Internal recursive deep copy implementation.
  * Handles data classes, collections, and primitive types.
+ *
+ * [visited] is a template -> copy identity map threaded through the whole copy (seeded with a fresh
+ * [IdentityHashMap] by [deepCopy]). Registering each copy in [visited] BEFORE walking its contents is
+ * what terminates cycles and collapses shared subtrees to a single copy.
+ * [depth] bounds the recursion; past [DEEP_COPY_RECURSION_CAP] the value is shared by reference.
  */
-fun deepCopyInternal(obj: Any?, kClass: KClass<*>): Any?
+fun deepCopyInternal(
+    obj: Any?,
+    kClass: KClass<*>,
+    visited: MutableMap<Any, Any> = IdentityHashMap(),
+    depth: Int = 0
+): Any?
 {
-    return when 
+    // Past the cap, share by reference rather than risk overflow or exponential blowup.
+    if(depth > DEEP_COPY_RECURSION_CAP) return obj
+
+    return when
     {
         obj == null -> null
-        
-        // Primitive types and strings are immutable
-        obj is String || obj is Number || obj is Boolean || obj is Char -> obj
-        
-        // Handle collections
-        obj is List<*> -> obj.map { deepCopyInternal(it, it?.let { it::class } ?: Any::class) }.toMutableList()
-        obj is Set<*> -> obj.map { deepCopyInternal(it, it?.let { it::class } ?: Any::class) }.toMutableSet()
-        obj is Map<*, *> -> obj.mapValues { deepCopyInternal(it.value, it.value?.let { it::class } ?: Any::class) }.toMutableMap()
-        
+
+        // Short-circuit on identity: a node already being (or already fully) copied in this call tree
+        // resolves to the in-flight / completed copy. This is the cycle guard and the DAG collider.
+        visited[obj] != null -> visited[obj]
+
+        // Primitive types, strings, and enum singletons are immutable
+        obj is String || obj is Number || obj is Boolean || obj is Char || obj is Enum<*> -> obj
+
+        // Handle collections (register the fresh container BEFORE populating it so a
+        // self-referencing collection terminates).
+        obj is List<*> ->
+        {
+            val newList = mutableListOf<Any?>()
+            visited[obj] = newList
+            for(item in obj)
+            {
+                newList.add(deepCopyInternal(item, item?.let { it::class } ?: Any::class, visited, depth + 1))
+            }
+            newList
+        }
+        obj is Set<*> ->
+        {
+            val newSet = mutableSetOf<Any?>()
+            visited[obj] = newSet
+            for(item in obj)
+            {
+                newSet.add(deepCopyInternal(item, item?.let { it::class } ?: Any::class, visited, depth + 1))
+            }
+            newSet
+        }
+        obj is Map<*, *> ->
+        {
+            val newMap = mutableMapOf<Any?, Any?>()
+            visited[obj] = newMap
+            obj.forEach { (key, value) ->
+                newMap[key] = deepCopyInternal(value, value?.let { it::class } ?: Any::class, visited, depth + 1)
+            }
+            newMap
+        }
+
         // Handle data classes
-        kClass.isData -> 
+        kClass.isData ->
         {
             val constructor = kClass.primaryConstructor!!
-            
-            val args = constructor.parameters.associateWith { param ->
-                val property = kClass.memberProperties.find { it.name == param.name } as? KProperty1<Any, *>
-                    ?: throw IllegalArgumentException("Property ${param.name} not found")
-                
-                property.isAccessible = true
-                val value = property.get(obj)
-                deepCopyInternal(value, param.type.classifier as? KClass<*> ?: Any::class)
-            }
-            
-            val newInstance = constructor.callBy(args)
-            
-            // Copy body properties (mutable properties not in constructor)
+
             val constructorParamNames = constructor.parameters.map { it.name }.toSet()
-            kClass.memberProperties
+            val mutableBodyProperties = kClass.memberProperties
                 .filterIsInstance<KMutableProperty1<Any, Any?>>()
                 .filter { it.name !in constructorParamNames }
-                .forEach { property ->
+
+            // Fast path (the common case): the class exposes a no-arg constructor. Creating the instance
+            // FIRST and registering it in [visited] BEFORE any field copy is what terminates back-edges
+            // that run through a constructor parameter (e.g. a data class whose body map holds the
+            // data class itself). Registering after the copy — as the fallback below does — would let
+            // such a cycle recurse to the depth cap before it is ever recorded.
+            val noArgConstructor: java.lang.reflect.Constructor<*>? = try
+            {
+                val c = kClass.java.getDeclaredConstructor()
+                c.isAccessible = true
+                c
+            }
+            catch(_: Exception)
+            {
+                null
+            }
+
+            if(noArgConstructor != null)
+            {
+                val newInstance = noArgConstructor.newInstance()
+                visited[obj] = newInstance
+
+                // Copy exactly the property set the original algorithm copied — primary-constructor
+                // parameters plus mutable body properties not in the constructor — through the
+                // declared instance fields (final `val` fields are writable via reflection after
+                // setAccessible). Fields are collected up the class hierarchy so inherited
+                // properties are covered too; synthetic fields are skipped.
+                val targetFieldNames = constructorParamNames +
+                    mutableBodyProperties.map { it.name }.toSet()
+                val targetFields = mutableSetOf<java.lang.reflect.Field>()
+                var c: Class<*>? = kClass.java
+                while(c != null && c != Any::class.java)
+                {
+                    for(field in c.declaredFields)
+                    {
+                        if(field.isSynthetic) continue
+                        if(java.lang.reflect.Modifier.isStatic(field.modifiers)) continue
+                        if(field.name in targetFieldNames) targetFields.add(field)
+                    }
+                    c = c.superclass
+                }
+                targetFields.forEach { field ->
+                    field.isAccessible = true
+                    @Suppress("UNCHECKED_CAST")
+                    val originalValue = field.get(obj) as Any?
+                    val copiedValue = deepCopyInternal(originalValue, originalValue?.let { it::class } ?: Any::class, visited, depth + 1)
+                    field.set(newInstance, copiedValue)
+                }
+
+                newInstance
+            }
+
+            // Fallback: no no-arg constructor available — copy via the primary constructor as the
+            // original implementation did. Pre-registration is not possible here, so residual cycles
+            // are bounded by [DEEP_COPY_RECURSION_CAP].
+            else
+            {
+                val args = constructor.parameters.associateWith { param ->
+                    val property = kClass.memberProperties.find { it.name == param.name } as? KProperty1<Any, *>
+                        ?: throw IllegalArgumentException("Property ${param.name} not found")
+
                     property.isAccessible = true
                     val value = property.get(obj)
-                    val copiedValue = deepCopyInternal(value, property.returnType.classifier as? KClass<*> ?: Any::class)
+                    deepCopyInternal(value, param.type.classifier as? KClass<*> ?: Any::class, visited, depth + 1)
+                }
+
+                val newInstance = constructor.callBy(args)
+                visited[obj] = newInstance
+
+                mutableBodyProperties.forEach { property ->
+                    property.isAccessible = true
+                    val value = property.get(obj)
+                    val copiedValue = deepCopyInternal(value, property.returnType.classifier as? KClass<*> ?: Any::class, visited, depth + 1)
                     property.set(newInstance, copiedValue)
                 }
-            
-            newInstance
+
+                newInstance
+            }
         }
-        
+
         // Return as-is for other types
         else -> obj
     }

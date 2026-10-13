@@ -86,6 +86,7 @@ public class bedrockPipe/BedrockPipe : com/TTT/Pipe/Pipe {
 	public final fun clearPerformanceConfig ()LbedrockPipe/BedrockPipe;
 	public final fun clearPromptVariables ()LbedrockPipe/BedrockPipe;
 	public final fun clearRequestMetadata ()LbedrockPipe/BedrockPipe;
+	protected fun clearStreamingCallbackState ()V
 	public final fun disableStreaming ()LbedrockPipe/BedrockPipe;
 	protected fun emitStreamingChunk (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun enableCaching (Ljava/lang/String;)LbedrockPipe/BedrockPipe;
@@ -117,6 +118,7 @@ public class bedrockPipe/BedrockPipe : com/TTT/Pipe/Pipe {
 	protected final fun isKimiModel (Ljava/lang/String;)Z
 	protected final fun isQwen3Model (Ljava/lang/String;)Z
 	protected final fun mapServiceTier ()Laws/sdk/kotlin/services/bedrockruntime/model/ServiceTierType;
+	protected fun removeStreamingCallbackRecursivelyInternal (Lkotlin/jvm/functions/Function2;Ljava/util/Set;ZZ)V
 	public final fun setGuardrail (Ljava/lang/String;Ljava/lang/String;Z)LbedrockPipe/BedrockPipe;
 	public static synthetic fun setGuardrail$default (LbedrockPipe/BedrockPipe;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)LbedrockPipe/BedrockPipe;
 	public final fun setPerformanceConfig (Laws/sdk/kotlin/services/bedrockruntime/model/PerformanceConfigLatency;)LbedrockPipe/BedrockPipe;
@@ -236,3 +238,4 @@ public final class env/bedrockEnv {
 	public final fun setInferenceConfigFile (Ljava/io/File;)V
 	public final fun setKeys (Ljava/lang/String;Ljava/lang/String;)V
 }
+

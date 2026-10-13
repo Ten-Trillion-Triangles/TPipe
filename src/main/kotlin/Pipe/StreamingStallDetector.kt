@@ -101,6 +101,19 @@ internal data class StatsSnapshot(
  *
  * @param pipeName Display name for this detector's pipe (used in stall events and logging).
  * @param config Detection thresholds and window parameters.
+ * @param executionStartMs Optional epoch-milliseconds at which this detector's
+ *                owning execution began. When provided, it arms a cross-generation
+ *                self-guard: the measured stall interval is clamped to the
+ *                detector's own runtime (`currentTimestamp - executionStartMs`),
+ *                so a stale/orphaned detector whose [lastTokenTimestamp] anchor
+ *                predates its execution start cannot attribute a fabricated
+ *                inter-generation gap to the current execution. A healthy
+ *                detector (all tokens arrived after the start) is unaffected
+ *                because its measured silence is always <= its runtime.
+ *                Null (the default) disables the guard entirely, preserving the
+ *                pre-existing behavior for every call site that does not opt in —
+ *                including synthetic-timestamp unit tests. Production callers
+ *                (Pipe.kt) pass the execution's own start time to arm it.
  * @param onStall Callback fired when a stall is detected. The retry is handled
  *                separately via [PipeTimeoutManager.handleStallSignal] (see Pipe.kt); this
  *                callback is for notification/monitoring only.
@@ -108,6 +121,7 @@ internal data class StatsSnapshot(
 class StreamingStallDetector(
     val pipeName: String,
     val config: StreamingStallConfig = StreamingStallConfig(),
+    val executionStartMs: Long? = null,
     private val onStall: StallCallback
 )
 {
@@ -190,7 +204,18 @@ class StreamingStallDetector(
 
     private fun checkForStall(currentTimestamp: Long, previousTokenTimestamp: Long)
     {
-        val silenceMs = currentTimestamp - previousTokenTimestamp
+        val rawSilenceMs = currentTimestamp - previousTokenTimestamp
+        // Opt-in cross-generation self-guard: when the owning execution's start
+        // is known (executionStartMs != null), a stall can never be attributed
+        // to silence older than that execution. A stale/orphaned detector whose
+        // lastTokenTimestamp was anchored before the execution began would
+        // otherwise measure the inter-generation gap as silence and fire a
+        // fabricated kill; clamping to the detector's own runtime bounds any
+        // reported silence. For a properly-registered detector the anchor is
+        // always >= executionStartMs, so this is a no-op for legitimate stalls.
+        val silenceMs = executionStartMs?.let { start ->
+            minOf(rawSilenceMs, currentTimestamp - start)
+        } ?: rawSilenceMs
         val n = bufferCount.coerceAtLeast(1)
         val mean = sumIntervals.toDouble() / n
         val variance = (sumSquares.toDouble() / n) - (mean * mean)

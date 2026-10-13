@@ -153,21 +153,22 @@ public final class env/GeneratedRequest$Companion {
 
 public final class env/GeneratedResponse {
 	public static final field Companion Lenv/GeneratedResponse$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
-	public final fun component10 ()Ljava/lang/Integer;
-	public final fun component11 ()Ljava/lang/Long;
+	public final fun component10 ()Ljava/lang/Long;
+	public final fun component11 ()Ljava/lang/Integer;
+	public final fun component12 ()Ljava/lang/Long;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Z
-	public final fun component5 ()Ljava/util/List;
-	public final fun component6 ()Ljava/lang/Long;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/util/List;
 	public final fun component7 ()Ljava/lang/Long;
-	public final fun component8 ()Ljava/lang/Integer;
-	public final fun component9 ()Ljava/lang/Long;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;)Lenv/GeneratedResponse;
-	public static synthetic fun copy$default (Lenv/GeneratedResponse;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;ILjava/lang/Object;)Lenv/GeneratedResponse;
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun component9 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;)Lenv/GeneratedResponse;
+	public static synthetic fun copy$default (Lenv/GeneratedResponse;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/util/List;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Long;ILjava/lang/Object;)Lenv/GeneratedResponse;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getContext ()Ljava/util/List;
 	public final fun getCreatedAt ()Ljava/lang/String;
@@ -179,6 +180,7 @@ public final class env/GeneratedResponse {
 	public final fun getPromptEvalCount ()Ljava/lang/Integer;
 	public final fun getPromptEvalDuration ()Ljava/lang/Long;
 	public final fun getResponse ()Ljava/lang/String;
+	public final fun getThinking ()Ljava/lang/String;
 	public final fun getTotalDuration ()Ljava/lang/Long;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -369,18 +371,20 @@ public final class env/OllamaFunctionDefinition$Companion {
 
 public final class env/OllamaMessage {
 	public static final field Companion Lenv/OllamaMessage$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/util/List;
 	public final fun component4 ()Ljava/util/List;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)Lenv/OllamaMessage;
-	public static synthetic fun copy$default (Lenv/OllamaMessage;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lenv/OllamaMessage;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)Lenv/OllamaMessage;
+	public static synthetic fun copy$default (Lenv/OllamaMessage;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lenv/OllamaMessage;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getContent ()Ljava/lang/String;
 	public final fun getImages ()Ljava/util/List;
 	public final fun getRole ()Ljava/lang/String;
+	public final fun getThinking ()Ljava/lang/String;
 	public final fun getToolCalls ()Ljava/util/List;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -603,6 +607,8 @@ public final class ollamaPipe/OllamaPipe : com/TTT/Pipe/Pipe {
 	public final fun enableThink ()LollamaPipe/OllamaPipe;
 	public fun generateContent (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun generateText (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getChatStreamLinesForTest ()Ljava/util/List;
+	public final fun getGenerateStreamLinesForTest ()Ljava/util/List;
 	public final fun getRunningModels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun getStreamingEnabled ()Z
 	public final fun getVersion (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -610,7 +616,9 @@ public final class ollamaPipe/OllamaPipe : com/TTT/Pipe/Pipe {
 	public final fun listModels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun serve ()V
 	public final fun setBatchSize (I)LollamaPipe/OllamaPipe;
+	public final fun setChatStreamLinesForTest (Ljava/util/List;)V
 	public final fun setFrequencyPenalty (F)LollamaPipe/OllamaPipe;
+	public final fun setGenerateStreamLinesForTest (Ljava/util/List;)V
 	public final fun setGpuSettings (ILjava/lang/Integer;)LollamaPipe/OllamaPipe;
 	public static synthetic fun setGpuSettings$default (LollamaPipe/OllamaPipe;ILjava/lang/Integer;ILjava/lang/Object;)LollamaPipe/OllamaPipe;
 	public final fun setIP (Ljava/lang/String;)LollamaPipe/OllamaPipe;
@@ -653,3 +661,4 @@ public final synthetic class ollamaPipe/OllamaPipe$$serializer : kotlinx/seriali
 public final class ollamaPipe/OllamaPipe$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
+

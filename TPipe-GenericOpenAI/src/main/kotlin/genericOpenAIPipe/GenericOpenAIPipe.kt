@@ -1889,6 +1889,16 @@ class GenericOpenAIPipe : Pipe()
                                     val reasoningContent = (reasoningContentEl as? JsonPrimitive)?.content
                                     if(!reasoningContent.isNullOrEmpty())
                                     {
+                                        /**
+                                         * Capture into the reasoning builder is
+                                         * unconditional (parity with the Responses
+                                         * and Anthropic arms) so the chat-completions
+                                         * reasoning round-trips on
+                                         * [com.TTT.Pipe.MultimodalContent.modelReasoning];
+                                         * only the channel emit is gated on
+                                         * `streamModelReasoning` by the base hook.
+                                         */
+                                        reasoningBuilder.append(reasoningContent)
                                         emitReasoningStreamingChunk(reasoningContent)
                                     }
 
@@ -2119,8 +2129,11 @@ class GenericOpenAIPipe : Pipe()
 
         val streamingReasoningText = when(apiMode)
         {
-            is ApiMode.OpenAIResponses, is ApiMode.Anthropic -> streamingReasoning
-            else -> ""
+            // All three protocols now populate the reasoning builder
+            // (Responses + Anthropic unconditionally; OpenAI
+            // chat-completions via the `reasoning_content` delta arm),
+            // so forward the captured text uniformly.
+            else -> streamingReasoning
         }
         val streamingInputTok = when(apiMode)
         {
