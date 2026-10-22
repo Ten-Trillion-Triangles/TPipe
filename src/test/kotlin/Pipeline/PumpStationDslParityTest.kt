@@ -122,6 +122,12 @@ class PumpStationDslParityTest
                 // ===== Event observer =====
                 eventObserver = { ev -> events.add(ev) }
 
+                // ===== Wait / join policy =====
+                waitPolicy {
+                    joinAllPathsOnMultiDispatch = true
+                    defaultTimeoutMs = 12_000L
+                }
+
                 // ===== Reserve paths & external context =====
                 externalContextProvider = { _ -> externalCtx }
 
@@ -223,6 +229,10 @@ class PumpStationDslParityTest
             assertEquals(false, station.failurePolicy.repairInvalidDispatchJson)
             assertEquals(5, station.failurePolicy.maxDispatchRepairAttempts)
             assertEquals(true, station.failurePolicy.stopHarnessOnInvalidPathRequest)
+
+            // Wait / join policy round-tripped through the fluent setters
+            assertTrue(station.getWaitAllPathsOnMultiDispatch(), "waitPolicy.joinAllPathsOnMultiDispatch should be applied")
+            assertEquals(12_000L, station.getWaitDefaultTimeoutMs(), "waitPolicy.defaultTimeoutMs should be applied")
 
             // Magic-contract toggles
             assertEquals(false, station.getJudgeJsonContractEnabled(), "judgeJsonContractEnabled should be false")

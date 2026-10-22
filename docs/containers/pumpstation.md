@@ -31,6 +31,7 @@
 - [Loop Guards](#loop-guards)
 - [Reserve Paths](#reserve-paths)
 - [Async Substrate](#async-substrate)
+- [Wait / Join: Suspending the Main Loop](#wait--join-suspending-the-main-loop)
 - [Stash, Snapshots, and Pause/Resume](#stash-snapshots-and-pauseresume)
 - [Tracing Support](#tracing-support)
 - [Kill Switch Integration](#kill-switch-integration)
@@ -1563,6 +1564,80 @@ pumpStation("research") {
 ```
 
 The full public API surface (setters, getters, drain internals) is documented in **[PumpStation API Reference](../api/pumpstation.md#async-substrate)**.
+
+
+## Wait / Join: Suspending the Main Loop
+
+Sometimes the "main agent" — a path's `executionFunction`, a DITL hook, or external code — needs the harness main loop to **go to sleep until a condition is met**, then resume forward. The wait / join mode gives that a first-class surface without changing the existing fire-and-collect behavior (the feature is off by default).
+
+The canonical use case is **join-all-paths**: you fan out a batch of sub-agent paths in parallel and want the loop to block until *every* one of them has returned a value, rather than discovering the batch settled on the next judge turn.
+
+### The Wait / Join API
+
+```kotlin
+val station = buildTestStation()
+
+// 1. Join all in-flight async paths (the "join-all-paths" mode)
+station.waitUntil(AllPathsSettled(batchName = "research"), "join", timeoutMs = 30_000)
+
+// 2. Wake on a specific event flowing through the harness funnel
+station.waitUntil(OnEvent(filter = { it is PathCompleted && it.pathName == "done" }), "evt")
+
+// 3. Wait on a polled external condition
+station.waitUntil(OnCondition({ externalState.ready }, pollIntervalMs = 50), "cond")
+
+// 4. Manual control (the "main agent" releases / cancels from elsewhere)
+val handle = station.requestWait(AllPathsSettled(), "h")
+// ...later, from a DITL hook or observer:
+station.releaseWait("h")   // or station.cancelWait("h")
+```
+
+`waitUntil` suspends the calling coroutine; the harness resumes when the condition holds. Three spec shapes are supported (all in `PumpStationWaitSpec`):
+
+| Spec | Resolves when | Typical use |
+|------|---------------|-------------|
+| `AllPathsSettled` | The in-flight async path counter returns to zero | Join a fanned-out batch of sub-agents |
+| `OnEvent(filter)` | A `PumpStationEvent` matching `filter` is emitted | Wake the loop on a specific harness event |
+| `OnCondition(predicate, interval)` | A polled predicate returns true | Wait on external state the harness doesn't emit events for |
+
+### First-Class Join Mode (MultiPath)
+
+By default a MultiPath dispatch fans out a batch of async paths and **fires-and-collects on the next judge turn** — the KDoc calls this the "Phase 1" behavior. To make the join first-class, opt in:
+
+```kotlin
+pumpStation("research-fanout") {
+    pathExecutionShape = PathExecutionShape.MultiPath
+    waitPolicy {
+        joinAllPathsOnMultiDispatch = true   // block the dispatch turn until all legs settle
+        defaultTimeoutMs = 30_000L           // warn + continue on a slow leg
+    }
+    path("agentA") { ... }
+    path("agentB") { ... }
+}
+```
+
+When enabled, `runDispatchPhaseMulti` joins on an `AllPathsSettled` wait (the join-all-paths mode) before the turn returns, so the judge's next call sees the whole batch in one context. When disabled (the default), the existing behavior is preserved exactly — the flag only turns the join on.
+
+### Timeout: Warn + Continue
+
+A timed-out wait does **not** halt the harness. It emits `WaitCompleted(satisfied = false, reason = Timeout)` and the loop advances — the judge sees whatever has settled so far and decides. This matches the harness's soft-correction philosophy (hints, nudges, warnings). Set `defaultTimeoutMs` / the `timeoutMs` argument to bound a join; leave it `null` for an unbounded wait.
+
+### Events
+
+| Event | Carries |
+|-------|---------|
+| `WaitStarted(waitName, specLabel, timeoutMs)` | A wait was requested and the loop is now suspended |
+| `WaitCompleted(waitName, specLabel, satisfied, reason, elapsedMs)` | A wait settled (`Resolved` / `Timeout` / `Cancelled` / `ForceHalted`) |
+
+Both map to trace types `PUMP_STATION_WAIT_STARTED` / `PUMP_STATION_WAIT_COMPLETED` (icons `💤` / `☑️`).
+
+### Cancellation Boundaries
+
+The wait service is torn down cleanly on the three "stale condition" boundaries — `forceHalt`, `cancelAsyncJobs`, and `restoreSnapshot` all call `waitService.cancelAll()` so a suspended loop is never left blocking on a condition that can no longer be satisfied. A wait is a transient rendezvous, not snapshot state: it is intentionally not part of `PumpStationSnapshot`.
+
+### Scope: Paths Only
+
+The join metric (`inFlightPathCount`) counts **`launchAsyncPath` legs only** — the paths you dispatched. The interval-gated async harness-agent slots (`runBackgroundAgentsPhase`) do not participate, so a join does not block on scheduled utility agents. This is the locked "paths only" join scope.
 
 
 ## Stash, Snapshots, and Pause/Resume

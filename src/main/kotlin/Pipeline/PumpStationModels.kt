@@ -1008,6 +1008,42 @@ data class HarnessResumed(
 ) : PumpStationEvent
 
 /**
+ * The harness requested a wait / join and is now suspended on it. Carries the
+ * wait [name] and the [specLabel] of the [PumpStationWaitSpec] being awaited
+ * (the spec itself holds lambdas and is not serializable, so only its label
+ * is recorded).
+ */
+@kotlinx.serialization.Serializable
+data class WaitStarted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Exit,
+    val waitName: String,
+    val specLabel: String,
+    val timeoutMs: Long?
+) : PumpStationEvent
+
+/**
+ * A requested wait / join settled. [satisfied] is true when the condition
+ * actually held (all paths settled, the awaited event fired, the predicate
+ * became true, or a manual release); false when it timed out or was cancelled.
+ * [reason] distinguishes the four outcomes.
+ */
+@kotlinx.serialization.Serializable
+data class WaitCompleted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Exit,
+    val waitName: String,
+    val specLabel: String,
+    val satisfied: Boolean,
+    val reason: PumpStationWaitReason,
+    val elapsedMs: Long
+) : PumpStationEvent
+
+/**
  * Emitted by [PumpStation.injectInterruptForPhase] when one or more queued
  * interrupt entries were dropped because the steering service is not configured
  * for the phase. The first queued entry was thrown as the active interrupt;

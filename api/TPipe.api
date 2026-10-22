@@ -76,11 +76,107 @@ public final class com/TTT/Context/CacheStatistics {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/TTT/Context/ContextAccess {
+	public static final field INSTANCE Lcom/TTT/Context/ContextAccess;
+	public final fun attenuate (Lcom/TTT/Context/ContextAccessScope;Lcom/TTT/Context/ContextAccessRights;)Lcom/TTT/Context/ContextAccessScope;
+	public final fun attenuateForResources (Lcom/TTT/Context/ContextAccessScope;Lcom/TTT/Context/ContextAccessRights;Lcom/TTT/Context/ContextResourceContainmentResolver;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun currentScope ()Lcom/TTT/Context/ContextAccessScope;
+	public final fun currentUnscopedPolicy ()Lcom/TTT/Context/ContextAccessUnscopedPolicy;
+	public final fun issueRootScope (Lcom/TTT/Context/ExecutionPrincipal;Lcom/TTT/Context/ContextAccessRights;)Lcom/TTT/Context/ContextAccessScope;
+	public final fun issueRootScope (Lcom/TTT/Context/ExecutionPrincipal;Lcom/TTT/Context/ContextAccessRights;Lcom/TTT/Context/ContextAccessEnforcementMode;)Lcom/TTT/Context/ContextAccessScope;
+	public final fun setUnscopedPolicy (Lcom/TTT/Context/ContextAccessUnscopedPolicy;)V
+	public final fun withChildCoroutineScope (Lcom/TTT/Context/ExecutionPrincipal;Lcom/TTT/Context/ContextAccessRights;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun withChildCoroutineScopeForResources (Lcom/TTT/Context/ExecutionPrincipal;Lcom/TTT/Context/ContextAccessRights;Lcom/TTT/Context/ContextResourceContainmentResolver;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun withChildScope (Lcom/TTT/Context/ExecutionPrincipal;Lcom/TTT/Context/ContextAccessRights;Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
+	public final fun withCoroutineScope (Lcom/TTT/Context/ContextAccessScope;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun withCurrentScope (Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun withScope (Lcom/TTT/Context/ContextAccessScope;Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/ContextAccessDenialReason : java/lang/Enum {
+	public static final field INVALID_METADATA Lcom/TTT/Context/ContextAccessDenialReason;
+	public static final field METADATA_UNAVAILABLE Lcom/TTT/Context/ContextAccessDenialReason;
+	public static final field MISSING_PERMISSION Lcom/TTT/Context/ContextAccessDenialReason;
+	public static final field UNSAFE_REFERENCE Lcom/TTT/Context/ContextAccessDenialReason;
+	public static final field UNSCOPED_EXECUTION Lcom/TTT/Context/ContextAccessDenialReason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Context/ContextAccessDenialReason;
+	public static fun values ()[Lcom/TTT/Context/ContextAccessDenialReason;
+}
+
+public final class com/TTT/Context/ContextAccessDeniedException : java/lang/SecurityException {
+	public fun <init> (Lcom/TTT/Context/ContextAccessOperation;Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lcom/TTT/Context/ContextAccessDenialReason;)V
+	public synthetic fun <init> (Lcom/TTT/Context/ContextAccessOperation;Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lcom/TTT/Context/ContextAccessDenialReason;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getOperation ()Lcom/TTT/Context/ContextAccessOperation;
+	public final fun getReason ()Lcom/TTT/Context/ContextAccessDenialReason;
+	public final fun getResourceKey ()Ljava/lang/String;
+	public final fun getResourceKind ()Lcom/TTT/Context/ContextResourceKind;
+}
+
+public final class com/TTT/Context/ContextAccessEnforcementMode : java/lang/Enum {
+	public static final field LEGACY_COMPATIBLE Lcom/TTT/Context/ContextAccessEnforcementMode;
+	public static final field REQUIRE_ENROLLMENT Lcom/TTT/Context/ContextAccessEnforcementMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Context/ContextAccessEnforcementMode;
+	public static fun values ()[Lcom/TTT/Context/ContextAccessEnforcementMode;
+}
+
+public final class com/TTT/Context/ContextAccessOperation : java/lang/Enum {
+	public static final field CREATE Lcom/TTT/Context/ContextAccessOperation;
+	public static final field DELEGATE Lcom/TTT/Context/ContextAccessOperation;
+	public static final field DELETE Lcom/TTT/Context/ContextAccessOperation;
+	public static final field ENUMERATE Lcom/TTT/Context/ContextAccessOperation;
+	public static final field READ Lcom/TTT/Context/ContextAccessOperation;
+	public static final field WRITE Lcom/TTT/Context/ContextAccessOperation;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Context/ContextAccessOperation;
+	public static fun values ()[Lcom/TTT/Context/ContextAccessOperation;
+}
+
+public final class com/TTT/Context/ContextAccessRights {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Z)V
+	public synthetic fun <init> (Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/Set;
+	public final fun component2 ()Ljava/util/Set;
+	public final fun component3 ()Ljava/util/Set;
+	public final fun component4 ()Ljava/util/Set;
+	public final fun component5 ()Ljava/util/Set;
+	public final fun component6 ()Z
+	public final fun copy (Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Z)Lcom/TTT/Context/ContextAccessRights;
+	public static synthetic fun copy$default (Lcom/TTT/Context/ContextAccessRights;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;Ljava/util/Set;ZILjava/lang/Object;)Lcom/TTT/Context/ContextAccessRights;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCreatableResources ()Ljava/util/Set;
+	public final fun getDelegable ()Z
+	public final fun getDeletableResources ()Ljava/util/Set;
+	public final fun getEnumerableResources ()Ljava/util/Set;
+	public final fun getReadableResources ()Ljava/util/Set;
+	public final fun getWritableResources ()Ljava/util/Set;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/ContextAccessScope {
+	public final fun attenuate (Lcom/TTT/Context/ContextAccessRights;)Lcom/TTT/Context/ContextAccessScope;
+	public final fun attenuateForResources (Lcom/TTT/Context/ContextAccessRights;Lcom/TTT/Context/ContextResourceContainmentResolver;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getEnforcementMode ()Lcom/TTT/Context/ContextAccessEnforcementMode;
+	public final fun getPrincipal ()Lcom/TTT/Context/ExecutionPrincipal;
+}
+
+public final class com/TTT/Context/ContextAccessUnscopedPolicy : java/lang/Enum {
+	public static final field DENY Lcom/TTT/Context/ContextAccessUnscopedPolicy;
+	public static final field LEGACY_ALLOWED Lcom/TTT/Context/ContextAccessUnscopedPolicy;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Context/ContextAccessUnscopedPolicy;
+	public static fun values ()[Lcom/TTT/Context/ContextAccessUnscopedPolicy;
+}
+
 public final class com/TTT/Context/ContextBank {
 	public static final field INSTANCE Lcom/TTT/Context/ContextBank;
 	public final fun clearBankedContext ()V
 	public final fun clearCache ()V
 	public final fun clearCacheSuspend (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun clearRemotePersistenceBackend ()V
 	public final fun clearRetrievalFunctions ()V
 	public final fun clearWriteBackFunctions ()V
 	public final fun configureCachePolicy (Lcom/TTT/Context/CacheConfig;)V
@@ -89,6 +185,14 @@ public final class com/TTT/Context/ContextBank {
 	public static synthetic fun connectToRemoteMemory$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)V
 	public final fun contextWindowExistsSuspend (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun copyBankedContextWindow ()Lcom/TTT/Context/ContextWindow;
+	public final fun createContextWindow (Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/ContextWindow;Lcom/TTT/Context/StorageMode;Z)V
+	public static synthetic fun createContextWindow$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/ContextWindow;Lcom/TTT/Context/StorageMode;ZILjava/lang/Object;)V
+	public final fun createContextWindowSuspend (Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/ContextWindow;Lcom/TTT/Context/StorageMode;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun createContextWindowSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/ContextWindow;Lcom/TTT/Context/StorageMode;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun createTodoList (Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/TodoList;Lcom/TTT/Context/StorageMode;Z)V
+	public static synthetic fun createTodoList$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/TodoList;Lcom/TTT/Context/StorageMode;ZILjava/lang/Object;)V
+	public final fun createTodoListSuspend (Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/TodoList;Lcom/TTT/Context/StorageMode;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun createTodoListSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/TodoList;Lcom/TTT/Context/StorageMode;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun deleteContextWindowSuspend (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun deleteContextWindowSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun deletePersistingBankKey (Ljava/lang/String;Z)Z
@@ -97,6 +201,8 @@ public final class com/TTT/Context/ContextBank {
 	public static synthetic fun deletePersistingBankKeySuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun deletePersistingBankKeyWithMutex (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun deletePersistingBankKeyWithMutex$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun deleteResourceMetadata (Ljava/lang/String;Lcom/TTT/Context/ContextResourceKind;)Z
+	public final fun deleteResourceMetadataSuspend (Ljava/lang/String;Lcom/TTT/Context/ContextResourceKind;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun deleteTodoListSuspend (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun deleteTodoListSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun emplace (Ljava/lang/String;Lcom/TTT/Context/ContextWindow;Lcom/TTT/Context/StorageMode;Z)V
@@ -150,6 +256,8 @@ public final class com/TTT/Context/ContextBank {
 	public static synthetic fun getPagedTodoListSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;ZZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun getPagedTodoListWithMutex (Ljava/lang/String;ZZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun getPagedTodoListWithMutex$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;ZZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun getRemotePersistenceBackend ()Lcom/TTT/Context/Persistence/ContextPersistenceBackend;
+	public final fun getResourceMetadataSuspend (Ljava/lang/String;Lcom/TTT/Context/ContextResourceKind;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getStorageMode (Ljava/lang/String;)Lcom/TTT/Context/StorageMode;
 	public final fun getSwapMutex ()Lkotlinx/coroutines/sync/Mutex;
 	public final fun getTodoListKeys (Z)Ljava/util/List;
@@ -157,12 +265,18 @@ public final class com/TTT/Context/ContextBank {
 	public final fun getTodoListKeysSuspend (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun getTodoListKeysSuspend$default (Lcom/TTT/Context/ContextBank;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun getTodoMutex ()Lkotlinx/coroutines/sync/Mutex;
+	public final fun hasRemoteStorageMode ()Z
 	public final fun mutateContextWindowSuspend (Ljava/lang/String;Lcom/TTT/Context/StorageMode;ZLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun mutateContextWindowSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Lcom/TTT/Context/StorageMode;ZLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun registerResourceMetadata (Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;)V
+	public final fun registerResourceMetadataSuspend (Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun registerRetrievalFunction (Ljava/lang/String;Lkotlin/jvm/functions/Function2;)V
 	public final fun registerWriteBackFunction (Ljava/lang/String;Lkotlin/jvm/functions/Function3;)V
 	public final fun removeRetrievalFunction (Ljava/lang/String;)V
 	public final fun removeWriteBackFunction (Ljava/lang/String;)V
+	public final fun requireAccessSuspend (Ljava/lang/String;Lcom/TTT/Context/ContextResourceKind;Lcom/TTT/Context/ContextAccessOperation;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun requireAccessSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Lcom/TTT/Context/ContextResourceKind;Lcom/TTT/Context/ContextAccessOperation;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun setRemotePersistenceBackend (Lcom/TTT/Context/Persistence/ContextPersistenceBackend;)V
 	public final fun setStorageMode (Ljava/lang/String;Lcom/TTT/Context/StorageMode;)V
 	public final fun setStorageModeWithMutex (Ljava/lang/String;Lcom/TTT/Context/StorageMode;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun swapBank (Ljava/lang/String;Z)V
@@ -228,8 +342,8 @@ public final class com/TTT/Context/ContextLock {
 	public static synthetic fun getLockedKeysForContext$default (Lcom/TTT/Context/ContextLock;Lcom/TTT/Context/ContextWindow;Ljava/lang/String;ZILjava/lang/Object;)Ljava/util/Set;
 	public final fun isKeyLocked (Ljava/lang/String;Z)Z
 	public static synthetic fun isKeyLocked$default (Lcom/TTT/Context/ContextLock;Ljava/lang/String;ZILjava/lang/Object;)Z
-	public final fun isKeyLockedSuspend (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun isKeyLockedSuspend$default (Lcom/TTT/Context/ContextLock;Ljava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun isKeyLockedSuspend (Ljava/lang/String;ZLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun isKeyLockedSuspend$default (Lcom/TTT/Context/ContextLock;Ljava/lang/String;ZLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun isPageLocked (Ljava/lang/String;Z)Z
 	public static synthetic fun isPageLocked$default (Lcom/TTT/Context/ContextLock;Ljava/lang/String;ZILjava/lang/Object;)Z
 	public final fun isPageLockedSuspend (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -252,6 +366,84 @@ public final class com/TTT/Context/ContextLock {
 	public static synthetic fun unlockKeyBundleSuspend$default (Lcom/TTT/Context/ContextLock;Ljava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun unlockKeyBundleWithMutex (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun unlockKeyBundleWithMutex$default (Lcom/TTT/Context/ContextLock;Ljava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public abstract interface class com/TTT/Context/ContextResourceContainmentResolver {
+	public abstract fun isResourceInBoundary (Lcom/TTT/Context/ContextResourceSelector$Resource;Lcom/TTT/Context/ContextResourceSelector$Boundary;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/ContextResourceKind : java/lang/Enum {
+	public static final field BANKED_CONTEXT Lcom/TTT/Context/ContextResourceKind;
+	public static final field CONTEXT_WINDOW Lcom/TTT/Context/ContextResourceKind;
+	public static final field Companion Lcom/TTT/Context/ContextResourceKind$Companion;
+	public static final field TODO_LIST Lcom/TTT/Context/ContextResourceKind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Context/ContextResourceKind;
+	public static fun values ()[Lcom/TTT/Context/ContextResourceKind;
+}
+
+public final class com/TTT/Context/ContextResourceKind$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Context/ContextResourceMetadata {
+	public static final field CURRENT_SCHEMA_VERSION I
+	public static final field Companion Lcom/TTT/Context/ContextResourceMetadata$Companion;
+	public fun <init> (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Ljava/lang/String;I)V
+	public synthetic fun <init> (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/TTT/Context/ContextResourceKind;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()I
+	public final fun copy (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Ljava/lang/String;I)Lcom/TTT/Context/ContextResourceMetadata;
+	public static synthetic fun copy$default (Lcom/TTT/Context/ContextResourceMetadata;Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Ljava/lang/String;IILjava/lang/Object;)Lcom/TTT/Context/ContextResourceMetadata;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBoundaryId ()Ljava/lang/String;
+	public final fun getResourceId ()Ljava/lang/String;
+	public final fun getResourceKind ()Lcom/TTT/Context/ContextResourceKind;
+	public final fun getSchemaVersion ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Context/ContextResourceMetadata$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Context/ContextResourceMetadata$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Context/ContextResourceMetadata;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Context/ContextResourceMetadata;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Context/ContextResourceMetadata$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class com/TTT/Context/ContextResourceSelector {
+}
+
+public final class com/TTT/Context/ContextResourceSelector$Boundary : com/TTT/Context/ContextResourceSelector {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Context/ContextResourceSelector$Boundary;
+	public static synthetic fun copy$default (Lcom/TTT/Context/ContextResourceSelector$Boundary;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/ContextResourceSelector$Boundary;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/ContextResourceSelector$Resource : com/TTT/Context/ContextResourceSelector {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Context/ContextResourceSelector$Resource;
+	public static synthetic fun copy$default (Lcom/TTT/Context/ContextResourceSelector$Resource;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/ContextResourceSelector$Resource;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/TTT/Context/ContextWindow {
@@ -500,6 +692,17 @@ public final class com/TTT/Context/EvictionPolicy : java/lang/Enum {
 	public static fun values ()[Lcom/TTT/Context/EvictionPolicy;
 }
 
+public final class com/TTT/Context/ExecutionPrincipal {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Context/ExecutionPrincipal;
+	public static synthetic fun copy$default (Lcom/TTT/Context/ExecutionPrincipal;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/ExecutionPrincipal;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/TTT/Context/KeyBundle {
 	public fun <init> ()V
 	public fun <init> (Ljava/util/List;Ljava/util/List;ZZZLkotlin/jvm/functions/Function0;)V
@@ -641,19 +844,23 @@ public final class com/TTT/Context/MemoryClient {
 	public final fun addLock (Lcom/TTT/Context/LockRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun clearCaches ()V
 	public final fun deleteContextWindow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deleteResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun deleteTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun emplaceContextWindow (Ljava/lang/String;Lcom/TTT/Context/ContextWindow;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun emplaceTodoList (Ljava/lang/String;Lcom/TTT/Context/TodoList;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getContextWindow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getLockKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getPageKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getTodoListKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun isKeyLocked (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun isPageLocked (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun putResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun queryLorebook (Ljava/lang/String;Ljava/lang/String;ILjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun queryLorebook$default (Lcom/TTT/Context/MemoryClient;Ljava/lang/String;Ljava/lang/String;ILjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun removeLock (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun resourceExists (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun simulateLorebookTrigger (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun updateLockState (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
@@ -716,6 +923,7 @@ public final class com/TTT/Context/MemoryIntrospection {
 	public final fun canWrite (Ljava/lang/String;)Z
 	public final fun canWriteSuspend (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getCurrentConfig ()Lcom/TTT/Context/MemoryIntrospectionConfig;
+	public final fun getCurrentConfigOrNull ()Lcom/TTT/Context/MemoryIntrospectionConfig;
 	public final fun isPageAllowed (Ljava/lang/String;)Z
 	public final fun withCoroutineScope (Lcom/TTT/Context/MemoryIntrospectionConfig;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun withScope (Lcom/TTT/Context/MemoryIntrospectionConfig;Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
@@ -892,6 +1100,291 @@ public final synthetic class com/TTT/Context/MiniBank$$serializer : kotlinx/seri
 
 public final class com/TTT/Context/MiniBank$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class com/TTT/Context/Persistence/ContextLockBackend {
+	public abstract fun addLock (Lcom/TTT/Context/LockRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getLockKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun isKeyLocked (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun isPageLocked (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun removeLock (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun updateLockState (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/TTT/Context/Persistence/ContextPersistenceBackend {
+	public abstract fun deleteContextWindow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun deleteTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getContextWindow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getId ()Ljava/lang/String;
+	public abstract fun getTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun listContextWindowKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun listTodoListKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun putContextWindow (Ljava/lang/String;Lcom/TTT/Context/ContextWindow;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun putTodoList (Ljava/lang/String;Lcom/TTT/Context/TodoList;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/Persistence/ContextPersistenceRegistry {
+	public static final field INSTANCE Lcom/TTT/Context/Persistence/ContextPersistenceRegistry;
+	public final fun clear ()V
+	public final fun get ()Lcom/TTT/Context/Persistence/ContextPersistenceBackend;
+	public final fun set (Lcom/TTT/Context/Persistence/ContextPersistenceBackend;)V
+}
+
+public abstract interface class com/TTT/Context/Persistence/ContextQueryBackend {
+	public abstract fun queryLorebook (Ljava/lang/String;Ljava/lang/String;ILjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun queryLorebook$default (Lcom/TTT/Context/Persistence/ContextQueryBackend;Ljava/lang/String;Ljava/lang/String;ILjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun simulateLorebookTrigger (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/Persistence/ContextQueryBackend$DefaultImpls {
+	public static synthetic fun queryLorebook$default (Lcom/TTT/Context/Persistence/ContextQueryBackend;Ljava/lang/String;Ljava/lang/String;ILjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public abstract interface class com/TTT/Context/Persistence/ContextResourceMetadataBackend {
+	public abstract fun deleteResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun putResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun resourceExists (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/Persistence/ContextResourceMetadataBackend$DefaultImpls {
+	public static fun resourceExists (Lcom/TTT/Context/Persistence/ContextResourceMetadataBackend;Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/Persistence/LocalContextPersistence {
+	public fun <init> ()V
+	public fun <init> (Ljava/nio/file/Path;)V
+	public synthetic fun <init> (Ljava/nio/file/Path;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun deleteSavedPage (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getNamespaceRoot ()Ljava/nio/file/Path;
+	public final fun listSavedPages (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listSavedPagesPage (Ljava/lang/String;IILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun listSavedPagesPage$default (Lcom/TTT/Context/Persistence/LocalContextPersistence;Ljava/lang/String;IILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun metadataForSavedPage (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun readSavedPage (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun replaceSavedPage (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun revisionForSavedPage (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageDocument {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/Context/Persistence/SavedPageDocument;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageDocument;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageDocument;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRawJson ()Ljava/lang/String;
+	public final fun getRelativePath ()Ljava/lang/String;
+	public final fun getRevision ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageInventory {
+	public fun <init> (Ljava/util/List;ILjava/lang/Integer;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/util/List;ILjava/lang/Integer;)Lcom/TTT/Context/Persistence/SavedPageInventory;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageInventory;Ljava/util/List;ILjava/lang/Integer;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageInventory;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNextPage ()Ljava/lang/Integer;
+	public final fun getPages ()Ljava/util/List;
+	public final fun getTotal ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageInventoryException : java/io/IOException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class com/TTT/Context/Persistence/SavedPageMetadata {
+	public fun <init> (Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/Context/Persistence/SavedPageMetadata;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageMetadata;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageMetadata;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDiagnostic ()Ljava/lang/String;
+	public final fun getModifiedAtMillis ()J
+	public final fun getRelativePath ()Ljava/lang/String;
+	public final fun getRevision ()Ljava/lang/String;
+	public final fun getSizeBytes ()J
+	public final fun getStatus ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/Context/Persistence/SavedPageMutationResult {
+}
+
+public final class com/TTT/Context/Persistence/SavedPageMutationResult$Failure : com/TTT/Context/Persistence/SavedPageMutationResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Context/Persistence/SavedPageMutationResult$Failure;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageMutationResult$Failure;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageMutationResult$Failure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageMutationResult$Invalid : com/TTT/Context/Persistence/SavedPageMutationResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Context/Persistence/SavedPageMutationResult$Invalid;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageMutationResult$Invalid;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageMutationResult$Invalid;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageMutationResult$Missing : com/TTT/Context/Persistence/SavedPageMutationResult {
+	public static final field INSTANCE Lcom/TTT/Context/Persistence/SavedPageMutationResult$Missing;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageMutationResult$RevisionConflict : com/TTT/Context/Persistence/SavedPageMutationResult {
+	public static final field INSTANCE Lcom/TTT/Context/Persistence/SavedPageMutationResult$RevisionConflict;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageMutationResult$Success : com/TTT/Context/Persistence/SavedPageMutationResult {
+	public fun <init> ()V
+	public fun <init> (Lcom/TTT/Context/Persistence/SavedPageDocument;)V
+	public synthetic fun <init> (Lcom/TTT/Context/Persistence/SavedPageDocument;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/TTT/Context/Persistence/SavedPageDocument;
+	public final fun copy (Lcom/TTT/Context/Persistence/SavedPageDocument;)Lcom/TTT/Context/Persistence/SavedPageMutationResult$Success;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageMutationResult$Success;Lcom/TTT/Context/Persistence/SavedPageDocument;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageMutationResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDocument ()Lcom/TTT/Context/Persistence/SavedPageDocument;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageMutationResult$Unreadable : com/TTT/Context/Persistence/SavedPageMutationResult {
+	public static final field INSTANCE Lcom/TTT/Context/Persistence/SavedPageMutationResult$Unreadable;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/Context/Persistence/SavedPageReadResult {
+}
+
+public final class com/TTT/Context/Persistence/SavedPageReadResult$Failure : com/TTT/Context/Persistence/SavedPageReadResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Context/Persistence/SavedPageReadResult$Failure;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageReadResult$Failure;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageReadResult$Failure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageReadResult$Invalid : com/TTT/Context/Persistence/SavedPageReadResult {
+	public fun <init> (Ljava/lang/String;Lcom/TTT/Context/Persistence/SavedPageDocument;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/Context/Persistence/SavedPageDocument;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/TTT/Context/Persistence/SavedPageDocument;
+	public final fun copy (Ljava/lang/String;Lcom/TTT/Context/Persistence/SavedPageDocument;)Lcom/TTT/Context/Persistence/SavedPageReadResult$Invalid;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageReadResult$Invalid;Ljava/lang/String;Lcom/TTT/Context/Persistence/SavedPageDocument;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageReadResult$Invalid;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDocument ()Lcom/TTT/Context/Persistence/SavedPageDocument;
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageReadResult$Missing : com/TTT/Context/Persistence/SavedPageReadResult {
+	public static final field INSTANCE Lcom/TTT/Context/Persistence/SavedPageReadResult$Missing;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageReadResult$Success : com/TTT/Context/Persistence/SavedPageReadResult {
+	public fun <init> (Lcom/TTT/Context/Persistence/SavedPageDocument;)V
+	public final fun component1 ()Lcom/TTT/Context/Persistence/SavedPageDocument;
+	public final fun copy (Lcom/TTT/Context/Persistence/SavedPageDocument;)Lcom/TTT/Context/Persistence/SavedPageReadResult$Success;
+	public static synthetic fun copy$default (Lcom/TTT/Context/Persistence/SavedPageReadResult$Success;Lcom/TTT/Context/Persistence/SavedPageDocument;ILjava/lang/Object;)Lcom/TTT/Context/Persistence/SavedPageReadResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDocument ()Lcom/TTT/Context/Persistence/SavedPageDocument;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/SavedPageReadResult$Unreadable : com/TTT/Context/Persistence/SavedPageReadResult {
+	public static final field INSTANCE Lcom/TTT/Context/Persistence/SavedPageReadResult$Unreadable;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Context/Persistence/TPipeRemotePersistenceBackend : com/TTT/Context/Persistence/ContextLockBackend, com/TTT/Context/Persistence/ContextPersistenceBackend, com/TTT/Context/Persistence/ContextQueryBackend, com/TTT/Context/Persistence/ContextResourceMetadataBackend {
+	public fun <init> ()V
+	public fun addLock (Lcom/TTT/Context/LockRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun deleteContextWindow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun deleteResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun deleteTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getContextWindow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getId ()Ljava/lang/String;
+	public fun getLockKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun isKeyLocked (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun isPageLocked (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun listContextWindowKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun listTodoListKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun putContextWindow (Ljava/lang/String;Lcom/TTT/Context/ContextWindow;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun putResourceMetadata (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lcom/TTT/Context/ContextResourceMetadata;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun putTodoList (Ljava/lang/String;Lcom/TTT/Context/TodoList;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun queryLorebook (Ljava/lang/String;Ljava/lang/String;ILjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun removeLock (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun resourceExists (Lcom/TTT/Context/ContextResourceKind;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun simulateLorebookTrigger (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun updateLockState (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/SecureMemoryIntrospectionTools {
+	public static final field INSTANCE Lcom/TTT/Context/SecureMemoryIntrospectionTools;
+	public final fun deleteLorebookEntry (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getLorebook (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getLorebookEntry (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getTodoList (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun listPageKeys (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun queryLorebook (Ljava/lang/String;Ljava/lang/String;ILjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun queryLorebook$default (Lcom/TTT/Context/SecureMemoryIntrospectionTools;Ljava/lang/String;Ljava/lang/String;ILjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun registerAndEnable (Lcom/TTT/PipeContextProtocol/PcpContext;)V
+	public final fun searchMemory (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun searchMemory$default (Lcom/TTT/Context/SecureMemoryIntrospectionTools;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun simulateLorebookTrigger (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateLorebookEntry (Ljava/lang/String;Lcom/TTT/Context/LoreBook;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateTodoList (Ljava/lang/String;Lcom/TTT/Context/TodoList;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Context/SerializedFrameEstimator {
+	public static final field INSTANCE Lcom/TTT/Context/SerializedFrameEstimator;
+	public final fun contentTokens (Lcom/TTT/Context/ContextWindow;Lcom/TTT/Pipe/TruncationSettings;)I
+	public final fun estimateMiniBankTokens (Lcom/TTT/Context/MiniBank;Lcom/TTT/Pipe/TruncationSettings;)I
+	public final fun estimateTokens (Lcom/TTT/Context/ContextWindow;Lcom/TTT/Pipe/TruncationSettings;)I
+	public final fun frameCost (Lcom/TTT/Context/ContextWindow;Lcom/TTT/Pipe/TruncationSettings;)I
+	public final fun miniBankContentTokens (Lcom/TTT/Context/MiniBank;Lcom/TTT/Pipe/TruncationSettings;)I
+	public final fun miniBankFrameCost (Lcom/TTT/Context/MiniBank;Lcom/TTT/Pipe/TruncationSettings;)I
 }
 
 public final class com/TTT/Context/StorageMetadata {
@@ -1118,6 +1611,7 @@ public final class com/TTT/Debug/PipeExtensionsKt {
 public final class com/TTT/Debug/PipeTracer {
 	public static final field INSTANCE Lcom/TTT/Debug/PipeTracer;
 	public final fun addEvent (Ljava/lang/String;Lcom/TTT/Debug/TraceEvent;)V
+	public final fun clearSinks ()V
 	public final fun clearTrace (Ljava/lang/String;)V
 	public final fun disable ()V
 	public final fun enable ()V
@@ -1126,6 +1620,8 @@ public final class com/TTT/Debug/PipeTracer {
 	public final fun getFailureAnalysis (Ljava/lang/String;)Lcom/TTT/Debug/FailureAnalysis;
 	public final fun getTrace (Ljava/lang/String;)Ljava/util/List;
 	public final fun mergeTrace (Ljava/lang/String;Ljava/util/List;)V
+	public final fun registerSink (Ljava/lang/String;Lcom/TTT/Debug/TraceSink;)V
+	public final fun removeSink (Ljava/lang/String;)V
 	public final fun replaceTrace (Ljava/lang/String;Ljava/util/List;)V
 	public final fun setMaxHistory (I)V
 	public final fun startTrace (Ljava/lang/String;)V
@@ -1339,6 +1835,7 @@ public final class com/TTT/Debug/TraceEventType : java/lang/Enum {
 	public static final field P2P_TRANSPORT_SEND Lcom/TTT/Debug/TraceEventType;
 	public static final field PAUSE_POINT_CHECK Lcom/TTT/Debug/TraceEventType;
 	public static final field PCP_CONTEXT_TRANSFER Lcom/TTT/Debug/TraceEventType;
+	public static final field PIPELINE_FAILURE Lcom/TTT/Debug/TraceEventType;
 	public static final field PIPELINE_PAUSE Lcom/TTT/Debug/TraceEventType;
 	public static final field PIPELINE_RESUME Lcom/TTT/Debug/TraceEventType;
 	public static final field PIPELINE_TERMINATION Lcom/TTT/Debug/TraceEventType;
@@ -1399,6 +1896,8 @@ public final class com/TTT/Debug/TraceEventType : java/lang/Enum {
 	public static final field PUMP_STATION_STASH_CREATED Lcom/TTT/Debug/TraceEventType;
 	public static final field PUMP_STATION_STEERING_INJECTED Lcom/TTT/Debug/TraceEventType;
 	public static final field PUMP_STATION_SUSPENDED Lcom/TTT/Debug/TraceEventType;
+	public static final field PUMP_STATION_WAIT_COMPLETED Lcom/TTT/Debug/TraceEventType;
+	public static final field PUMP_STATION_WAIT_STARTED Lcom/TTT/Debug/TraceEventType;
 	public static final field SPLITTER_COMPLETION_CALLBACK Lcom/TTT/Debug/TraceEventType;
 	public static final field SPLITTER_CONTENT_DISTRIBUTION Lcom/TTT/Debug/TraceEventType;
 	public static final field SPLITTER_END Lcom/TTT/Debug/TraceEventType;
@@ -1519,6 +2018,10 @@ public final class com/TTT/Debug/TracePhase : java/lang/Enum {
 	public static fun values ()[Lcom/TTT/Debug/TracePhase;
 }
 
+public abstract interface class com/TTT/Debug/TraceSink {
+	public abstract fun onEvent (Ljava/lang/String;Lcom/TTT/Debug/TraceEvent;)V
+}
+
 public final class com/TTT/Debug/TraceStreamMerger {
 	public static final field INSTANCE Lcom/TTT/Debug/TraceStreamMerger;
 	public final fun bubbleMerge ([Ljava/lang/Object;)V
@@ -1612,6 +2115,14 @@ public final class com/TTT/Enums/ProviderName : java/lang/Enum {
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Enums/ProviderName;
 	public static fun values ()[Lcom/TTT/Enums/ProviderName;
+}
+
+public final class com/TTT/Enums/PumpStationGoalHistorySource : java/lang/Enum {
+	public static final field Curated Lcom/TTT/Enums/PumpStationGoalHistorySource;
+	public static final field Full Lcom/TTT/Enums/PumpStationGoalHistorySource;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Enums/PumpStationGoalHistorySource;
+	public static fun values ()[Lcom/TTT/Enums/PumpStationGoalHistorySource;
 }
 
 public final class com/TTT/Enums/PumpStationHistoryTransport : java/lang/Enum {
@@ -2247,6 +2758,7 @@ public final class com/TTT/P2P/P2PHostedRegistry : com/TTT/P2P/P2PInterface {
 	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/P2P/P2PTransport;Lcom/TTT/P2P/P2PHostedRegistryStore;Lcom/TTT/P2P/P2PHostedRegistryPolicy;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun P2PInit (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun clearStreamingCallbacksRecursive ()V
 	public fun enablePipeTimeoutRecursive (ZJZI)V
 	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
 	public fun executeLocal (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -2264,6 +2776,7 @@ public final class com/TTT/P2P/P2PHostedRegistry : com/TTT/P2P/P2PInterface {
 	public fun getPipelinesFromInterface ()Ljava/util/List;
 	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
 	public fun getTopLevelParentInterface ()Lcom/TTT/P2P/P2PInterface;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
@@ -2274,6 +2787,7 @@ public final class com/TTT/P2P/P2PHostedRegistry : com/TTT/P2P/P2PInterface {
 	public fun setPipeSettingsRecursively (Lcom/TTT/Structs/PipeSettings;)V
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public fun supportsStreamingCallbackRemoval ()Z
 }
 
 public final class com/TTT/P2P/P2PHostedRegistryAccessContext {
@@ -3367,6 +3881,7 @@ public final class com/TTT/P2P/P2PHostedRegistryUpdateRequest$Companion {
 public abstract interface class com/TTT/P2P/P2PInterface {
 	public fun P2PInit (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun clearStreamingCallbacksRecursive ()V
 	public fun enablePipeTimeoutRecursive (ZJZI)V
 	public static synthetic fun enablePipeTimeoutRecursive$default (Lcom/TTT/P2P/P2PInterface;ZJZIILjava/lang/Object;)V
 	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
@@ -3386,6 +3901,7 @@ public abstract interface class com/TTT/P2P/P2PInterface {
 	public fun getPipelinesFromInterface ()Ljava/util/List;
 	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
 	public fun getTopLevelParentInterface ()Lcom/TTT/P2P/P2PInterface;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public abstract fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
@@ -3396,11 +3912,13 @@ public abstract interface class com/TTT/P2P/P2PInterface {
 	public fun setPipeSettingsRecursively (Lcom/TTT/Structs/PipeSettings;)V
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public fun supportsStreamingCallbackRemoval ()Z
 }
 
 public final class com/TTT/P2P/P2PInterface$DefaultImpls {
 	public static fun P2PInit (Lcom/TTT/P2P/P2PInterface;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static fun abortRecursive (Lcom/TTT/P2P/P2PInterface;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun clearStreamingCallbacksRecursive (Lcom/TTT/P2P/P2PInterface;)V
 	public static fun enablePipeTimeoutRecursive (Lcom/TTT/P2P/P2PInterface;ZJZI)V
 	public static synthetic fun enablePipeTimeoutRecursive$default (Lcom/TTT/P2P/P2PInterface;ZJZIILjava/lang/Object;)V
 	public static fun enableStallDetectorRecursive (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
@@ -3419,6 +3937,7 @@ public final class com/TTT/P2P/P2PInterface$DefaultImpls {
 	public static fun getPipelinesFromInterface (Lcom/TTT/P2P/P2PInterface;)Ljava/util/List;
 	public static fun getTokenBudgetSettings (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipe/TokenBudgetSettings;
 	public static fun getTopLevelParentInterface (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/P2P/P2PInterface;
+	public static fun removeStreamingCallbackRecursive (Lcom/TTT/P2P/P2PInterface;Lkotlin/jvm/functions/Function2;)V
 	public static fun setContainerObject (Lcom/TTT/P2P/P2PInterface;Ljava/lang/Object;)V
 	public static fun setConverseRoleRecursive (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Context/ConverseRole;)V
 	public static fun setP2pDescription (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;)V
@@ -3428,6 +3947,7 @@ public final class com/TTT/P2P/P2PInterface$DefaultImpls {
 	public static fun setPipeSettingsRecursively (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Structs/PipeSettings;)V
 	public static fun setStreamingCallbackRecursive (Lcom/TTT/P2P/P2PInterface;Lkotlin/jvm/functions/Function2;)V
 	public static fun setTokenBudgetRecursive (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public static fun supportsStreamingCallbackRemoval (Lcom/TTT/P2P/P2PInterface;)Z
 }
 
 public final class com/TTT/P2P/P2PRegistry {
@@ -4226,6 +4746,10 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	public fun cleanResponseText (Ljava/lang/String;)Ljava/lang/String;
 	public final fun clearError ()V
 	public final fun clearLogitBias ()Lcom/TTT/Pipe/Pipe;
+	protected fun clearStreamingCallbackState ()V
+	public fun clearStreamingCallbacksRecursive ()V
+	public final fun clearStreamingCallbacksRecursively (Ljava/util/Set;)V
+	public static synthetic fun clearStreamingCallbacksRecursively$default (Lcom/TTT/Pipe/Pipe;Ljava/util/Set;ILjava/lang/Object;)V
 	public final fun clearTraceIds ()V
 	public final fun compressPrompt (Ljava/lang/String;Lcom/TTT/Util/SemanticCompressionSettings;)Lcom/TTT/Util/SemanticCompressionResult;
 	public static synthetic fun compressPrompt$default (Lcom/TTT/Pipe/Pipe;Ljava/lang/String;Lcom/TTT/Util/SemanticCompressionSettings;ILjava/lang/Object;)Lcom/TTT/Util/SemanticCompressionResult;
@@ -4235,9 +4759,12 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	public final fun countTokens (ZLcom/TTT/Pipe/MultimodalContent;)I
 	public final fun disableComprehensiveTokenTracking ()Lcom/TTT/Pipe/Pipe;
 	public final fun disableDeterministicGeneration ()Lcom/TTT/Pipe/Pipe;
-	public final fun disableReasoning ()Lcom/TTT/Pipe/Pipe;
+	public fun disableReasoning ()Lcom/TTT/Pipe/Pipe;
 	public final fun disableTextMatchingPreservation ()Lcom/TTT/Pipe/Pipe;
 	public final fun disableTracing ()Lcom/TTT/Pipe/Pipe;
+	protected fun emitReasoningStreamingChunk (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	protected fun emitReasoningStreamingEnd (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	protected fun emitReasoningStreamingStart (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	protected fun emitStreamEnd (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	protected fun emitStreamingChunk (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun emplaceConverseHistory ()Lcom/TTT/Pipe/Pipe;
@@ -4394,6 +4921,7 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	public final fun getReasoningCaptureFunction ()Lkotlin/jvm/functions/Function3;
 	public final fun getReasoningContent ()Ljava/lang/String;
 	public final fun getReasoningPipe ()Lcom/TTT/Pipe/Pipe;
+	protected final fun getReasoningSegmentOpen ()Z
 	protected final fun getRepetitionPenalty ()D
 	public final fun getSaveSnapshot ()Z
 	protected fun getSeed ()Ljava/lang/Integer;
@@ -4446,6 +4974,7 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	public final fun isComprehensiveTokenTrackingEnabled ()Z
 	public fun isDecisionPipe ()Z
 	public final fun isReasoningPipe ()Z
+	public final fun isStallAbortInFlight ()Z
 	public final fun obtainStreamingCallbackManager ()Lcom/TTT/Pipe/StreamingCallbackManager;
 	protected fun onApplySystemPromptComplete ()V
 	public final fun processPcpResponse (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -4463,6 +4992,10 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	public final fun pullParentPipeContext ()Lcom/TTT/Pipe/Pipe;
 	public final fun pullPipelineContext ()Lcom/TTT/Pipe/Pipe;
 	public final fun pullPumpStationContext ()Lcom/TTT/Pipe/Pipe;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public final fun removeStreamingCallbackRecursively (Lkotlin/jvm/functions/Function2;Ljava/util/Set;ZZ)V
+	public static synthetic fun removeStreamingCallbackRecursively$default (Lcom/TTT/Pipe/Pipe;Lkotlin/jvm/functions/Function2;Ljava/util/Set;ZZILjava/lang/Object;)V
+	protected fun removeStreamingCallbackRecursivelyInternal (Lkotlin/jvm/functions/Function2;Ljava/util/Set;ZZ)V
 	public final fun removeTraceId (Ljava/lang/String;)V
 	public final fun requireJsonPromptInjection (Z)Lcom/TTT/Pipe/Pipe;
 	public static synthetic fun requireJsonPromptInjection$default (Lcom/TTT/Pipe/Pipe;ZILjava/lang/Object;)Lcom/TTT/Pipe/Pipe;
@@ -4610,13 +5143,14 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	protected final fun setReadFromParentPipeContext (Z)V
 	protected final fun setReadFromPipelineContext (Z)V
 	protected final fun setReadFromPumpStationContext (Z)V
-	public final fun setReasoning ()Lcom/TTT/Pipe/Pipe;
-	public final fun setReasoning (I)Lcom/TTT/Pipe/Pipe;
-	public final fun setReasoning (Ljava/lang/String;)Lcom/TTT/Pipe/Pipe;
+	public fun setReasoning ()Lcom/TTT/Pipe/Pipe;
+	public fun setReasoning (I)Lcom/TTT/Pipe/Pipe;
+	public fun setReasoning (Ljava/lang/String;)Lcom/TTT/Pipe/Pipe;
 	public final fun setReasoningCaptureFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipe/Pipe;
 	public final fun setReasoningCaptureFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setReasoningPipe (Lcom/TTT/Pipe/Pipe;)Lcom/TTT/Pipe/Pipe;
 	public final fun setReasoningPipe (Lcom/TTT/Pipe/Pipe;)V
+	protected final fun setReasoningSegmentOpen (Z)V
 	public final fun setRepetitionControl (D)Lcom/TTT/Pipe/Pipe;
 	public final fun setRepetitionPenalty (D)Lcom/TTT/Pipe/Pipe;
 	protected final fun setRepetitionPenalty (D)V
@@ -4632,6 +5166,7 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	public final fun setStallDetectorConfig (Lcom/TTT/Pipe/StreamingStallConfig;)V
 	public final fun setStopSequences (Ljava/util/List;)Lcom/TTT/Pipe/Pipe;
 	protected final fun setStopSequences (Ljava/util/List;)V
+	public final fun setStreamModelReasoning (Z)Lcom/TTT/Pipe/Pipe;
 	protected final fun setStreamModelReasoning (Z)V
 	protected final fun setStreamingCallbackManager (Lcom/TTT/Pipe/StreamingCallbackManager;)V
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
@@ -4684,6 +5219,7 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	protected final fun setWrapContentWithConverseHistory (Z)V
 	public final fun simulateTokenBudgetTruncation (Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/TokenBudgetSettings;)Lcom/TTT/Pipe/TruncationPreview;
 	public static synthetic fun simulateTokenBudgetTruncation$default (Lcom/TTT/Pipe/Pipe;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/TokenBudgetSettings;ILjava/lang/Object;)Lcom/TTT/Pipe/TruncationPreview;
+	public fun supportsStreamingCallbackRemoval ()Z
 	public final fun toPipeSettings ()Lcom/TTT/Structs/PipeSettings;
 	protected final fun trace (Lcom/TTT/Debug/TraceEventType;Lcom/TTT/Debug/TracePhase;Lcom/TTT/Pipe/MultimodalContent;Ljava/util/Map;Ljava/lang/Throwable;)V
 	public static synthetic fun trace$default (Lcom/TTT/Pipe/Pipe;Lcom/TTT/Debug/TraceEventType;Lcom/TTT/Debug/TracePhase;Lcom/TTT/Pipe/MultimodalContent;Ljava/util/Map;Ljava/lang/Throwable;ILjava/lang/Object;)V
@@ -4761,10 +5297,12 @@ public final class com/TTT/Pipe/PipeTimeoutManager {
 	public final fun clearTimeout (Lcom/TTT/Pipe/Pipe;)V
 	public final fun getRetryCount (Lcom/TTT/Pipe/Pipe;)I
 	public final fun getStallRetryCount (Lcom/TTT/Pipe/Pipe;)I
+	public final fun handleExceptionSignal (Lcom/TTT/Pipe/Pipe;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/Throwable;)Lcom/TTT/Pipe/MultimodalContent;
 	public final fun handleStallSignal (Lcom/TTT/Pipe/Pipe;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/StallEvent;)Lcom/TTT/Pipe/MultimodalContent;
 	public final fun handleTimeoutSignal (Lcom/TTT/Pipe/Pipe;Lcom/TTT/Pipe/MultimodalContent;)Lcom/TTT/Pipe/MultimodalContent;
 	public final fun incrementRetryCount (Lcom/TTT/Pipe/Pipe;)V
 	public final fun incrementStallRetryCount (Lcom/TTT/Pipe/Pipe;)V
+	public final fun isStallAbortInFlight (Lcom/TTT/Pipe/Pipe;)Z
 	public final fun isTimeout (Lcom/TTT/Pipe/Pipe;)Z
 	public final fun startTracking (Lcom/TTT/Pipe/Pipe;J)V
 	public final fun stopTracking (Lcom/TTT/Pipe/Pipe;)V
@@ -4899,9 +5437,10 @@ public final class com/TTT/Pipe/StreamingStallConfig$Companion {
 }
 
 public final class com/TTT/Pipe/StreamingStallDetector {
-	public fun <init> (Ljava/lang/String;Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
-	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lcom/TTT/Pipe/StreamingStallConfig;Ljava/lang/Long;Lkotlin/jvm/functions/Function2;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/Pipe/StreamingStallConfig;Ljava/lang/Long;Lkotlin/jvm/functions/Function2;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getConfig ()Lcom/TTT/Pipe/StreamingStallConfig;
+	public final fun getExecutionStartMs ()Ljava/lang/Long;
 	public final fun getPipeName ()Ljava/lang/String;
 	public final fun onTokenReceived (Ljava/lang/String;J)V
 }
@@ -5360,6 +5899,13 @@ public final class com/TTT/PipeContextProtocol/ContextOptionParameter$Companion 
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
+public final class com/TTT/PipeContextProtocol/DynamicFunction : com/TTT/PipeContextProtocol/NativeFunction {
+	public fun <init> (Lcom/TTT/PipeContextProtocol/FunctionSignature;Lkotlin/jvm/functions/Function2;)V
+	public fun getSignature ()Lcom/TTT/PipeContextProtocol/FunctionSignature;
+	public fun invoke (Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun validate ()Z
+}
+
 public final class com/TTT/PipeContextProtocol/FunctionInvoker {
 	public fun <init> ()V
 	public final fun invoke (Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -5374,8 +5920,13 @@ public final class com/TTT/PipeContextProtocol/FunctionRegistry {
 	public final fun getSignature (Ljava/lang/String;)Lcom/TTT/PipeContextProtocol/FunctionSignature;
 	public final fun getTypeConverters ()Ljava/util/List;
 	public final fun listFunctions ()Ljava/util/List;
+	public final fun registerAlias (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/PipeContextProtocol/FunctionSignature;
+	public final fun registerAliasAndRemoveSource (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/PipeContextProtocol/FunctionSignature;
+	public final fun registerDynamicFunction (Ljava/lang/String;Lcom/TTT/PipeContextProtocol/FunctionSignature;Lkotlin/jvm/functions/Function2;)Lcom/TTT/PipeContextProtocol/FunctionSignature;
 	public final fun registerFunction (Ljava/lang/String;Lkotlin/reflect/KFunction;)Lcom/TTT/PipeContextProtocol/FunctionSignature;
 	public final fun registerLambda (Ljava/lang/String;Ljava/lang/Object;Lcom/TTT/PipeContextProtocol/FunctionSignature;)Lcom/TTT/PipeContextProtocol/FunctionSignature;
+	public final fun unregisterFunction (Ljava/lang/String;Lcom/TTT/PipeContextProtocol/FunctionSignature;)Z
+	public static synthetic fun unregisterFunction$default (Lcom/TTT/PipeContextProtocol/FunctionRegistry;Ljava/lang/String;Lcom/TTT/PipeContextProtocol/FunctionSignature;ILjava/lang/Object;)Z
 	public final fun validateAll ()Ljava/util/List;
 }
 
@@ -6162,6 +6713,7 @@ public abstract interface class com/TTT/PipeContextProtocol/PcpExecutor {
 }
 
 public final class com/TTT/PipeContextProtocol/PcpFunctionExtensionsKt {
+	public static final fun bindDynamicFunction (Lcom/TTT/PipeContextProtocol/PcpContext;Ljava/lang/String;Lcom/TTT/PipeContextProtocol/FunctionSignature;Lkotlin/jvm/functions/Function2;)Lcom/TTT/PipeContextProtocol/PcpContext;
 	public static final fun bindFunction (Lcom/TTT/PipeContextProtocol/PcpContext;Ljava/lang/String;Lkotlin/reflect/KFunction;)Lcom/TTT/PipeContextProtocol/PcpContext;
 	public static final fun bindLambda (Lcom/TTT/Pipe/Pipe;Ljava/lang/String;Ljava/lang/Object;Lcom/TTT/PipeContextProtocol/FunctionSignature;)Lcom/TTT/Pipe/Pipe;
 	public static final fun bindNativeFunction (Lcom/TTT/Pipe/Pipe;Ljava/lang/String;Lkotlin/reflect/KFunction;)Lcom/TTT/Pipe/Pipe;
@@ -7072,6 +7624,20 @@ public final class com/TTT/Pipeline/AfterRule : com/TTT/Pipeline/DispatcherRule 
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/TTT/Pipeline/AllPathsSettled : com/TTT/Pipeline/PumpStationWaitSpec {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Pipeline/AllPathsSettled;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/AllPathsSettled;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/AllPathsSettled;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBatchName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun label ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/TTT/Pipeline/AsyncTurnAppended : com/TTT/Pipeline/PumpStationEvent {
 	public static final field Companion Lcom/TTT/Pipeline/AsyncTurnAppended$Companion;
 	public fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLcom/TTT/Pipe/MultimodalContent;)V
@@ -7624,6 +8190,7 @@ public final class com/TTT/Pipeline/Connector : com/TTT/P2P/P2PInterface {
 	public fun P2PInit (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun add (Ljava/lang/Object;Lcom/TTT/Pipeline/Pipeline;)Lcom/TTT/Pipeline/Connector;
+	public fun clearStreamingCallbacksRecursive ()V
 	public fun enablePipeTimeoutRecursive (ZJZI)V
 	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
 	public final fun enableTracing (Lcom/TTT/Debug/TraceConfig;)Lcom/TTT/Pipeline/Connector;
@@ -7650,6 +8217,7 @@ public final class com/TTT/Pipeline/Connector : com/TTT/P2P/P2PInterface {
 	public final fun getTraceId ()Ljava/lang/String;
 	public final fun getTraceReport (Lcom/TTT/Debug/TraceFormat;)Ljava/lang/String;
 	public static synthetic fun getTraceReport$default (Lcom/TTT/Pipeline/Connector;Lcom/TTT/Debug/TraceFormat;ILjava/lang/Object;)Ljava/lang/String;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public final fun setDefaultPath (Ljava/lang/Object;)Lcom/TTT/Pipeline/Connector;
@@ -7661,6 +8229,7 @@ public final class com/TTT/Pipeline/Connector : com/TTT/P2P/P2PInterface {
 	public fun setPipeSettingsRecursively (Lcom/TTT/Structs/PipeSettings;)V
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public fun supportsStreamingCallbackRemoval ()Z
 }
 
 public final class com/TTT/Pipeline/Connector$Companion {
@@ -7975,6 +8544,7 @@ public final class com/TTT/Pipeline/DistributionGrid : com/TTT/P2P/P2PInterface 
 	public final fun canPause ()Z
 	public final fun clearDiscoveredRegistryState ()V
 	public final fun clearRuntimeState ()V
+	public fun clearStreamingCallbacksRecursive ()V
 	public final fun clearTrace ()V
 	public final fun disableTracing ()Lcom/TTT/Pipeline/DistributionGrid;
 	public fun enablePipeTimeoutRecursive (ZJZI)V
@@ -8046,6 +8616,7 @@ public final class com/TTT/Pipeline/DistributionGrid : com/TTT/P2P/P2PInterface 
 	public static synthetic fun removePublicNodeListing$default (Lcom/TTT/Pipeline/DistributionGrid;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun removePublicRegistryListing (Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun removePublicRegistryListing$default (Lcom/TTT/Pipeline/DistributionGrid;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun renewPublicNodeListing (Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun renewPublicNodeListing$default (Lcom/TTT/Pipeline/DistributionGrid;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun renewPublicRegistryListing (Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -8093,6 +8664,7 @@ public final class com/TTT/Pipeline/DistributionGrid : com/TTT/P2P/P2PInterface 
 	public final fun startPublicRegistryListingAutoRenew (Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;IJLjava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public static synthetic fun startPublicRegistryListingAutoRenew$default (Lcom/TTT/Pipeline/DistributionGrid;Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;IJLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
 	public final fun stopPublicListingAutoRenew (Ljava/lang/String;)V
+	public fun supportsStreamingCallbackRemoval ()Z
 	public final fun tickRegistryMemberships (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun tickRegistryMemberships$default (Lcom/TTT/Pipeline/DistributionGrid;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun updatePublicNodeListing (Lcom/TTT/P2P/P2PTransport;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/Pipeline/DistributionGridPublicListingOptions;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -10935,6 +11507,7 @@ public final class com/TTT/Pipeline/Junction : com/TTT/P2P/P2PInterface {
 	public final fun addParticipants ([Lkotlin/Pair;)Lcom/TTT/Pipeline/Junction;
 	public final fun canPause ()Z
 	public final fun clearRuntimeState ()V
+	public fun clearStreamingCallbacksRecursive ()V
 	public final fun clearTrace ()V
 	public final fun conductDiscussion (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun conductWorkflow (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -10972,6 +11545,7 @@ public final class com/TTT/Pipeline/Junction : com/TTT/P2P/P2PInterface {
 	public final fun pause ()V
 	public final fun planVoteActVerifyRepeat ()Lcom/TTT/Pipeline/Junction;
 	public final fun planVoteAdjustOutputExit ()Lcom/TTT/Pipeline/Junction;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun resume ()V
 	public final fun roundRobin ()Lcom/TTT/Pipeline/Junction;
 	public final fun setActor (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;)Lcom/TTT/Pipeline/Junction;
@@ -11024,6 +11598,7 @@ public final class com/TTT/Pipeline/Junction : com/TTT/P2P/P2PInterface {
 	public final fun setVotingThreshold (D)Lcom/TTT/Pipeline/Junction;
 	public final fun setWorkflowRecipe (Lcom/TTT/Pipeline/JunctionWorkflowRecipe;)Lcom/TTT/Pipeline/Junction;
 	public final fun simultaneous ()Lcom/TTT/Pipeline/Junction;
+	public fun supportsStreamingCallbackRemoval ()Z
 	public final fun voteActVerifyRepeat ()Lcom/TTT/Pipeline/Junction;
 	public final fun votePlanActVerifyRepeat ()Lcom/TTT/Pipeline/Junction;
 	public final fun votePlanOutputExit ()Lcom/TTT/Pipeline/Junction;
@@ -11858,6 +12433,7 @@ public final class com/TTT/Pipeline/Manifold : com/TTT/P2P/P2PInterface {
 	public final fun autoTruncateContext ()Lcom/TTT/Pipeline/Manifold;
 	public final fun buildDefaultManagerPipeline (Lcom/TTT/Enums/ProviderName;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V
 	public static synthetic fun buildDefaultManagerPipeline$default (Lcom/TTT/Pipeline/Manifold;Lcom/TTT/Enums/ProviderName;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IILjava/lang/Object;)V
+	public fun clearStreamingCallbacksRecursive ()V
 	public final fun disableTracing ()Lcom/TTT/Pipeline/Manifold;
 	public fun enablePipeTimeoutRecursive (ZJZI)V
 	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
@@ -11897,6 +12473,7 @@ public final class com/TTT/Pipeline/Manifold : com/TTT/P2P/P2PInterface {
 	public final fun init (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun isManagerBudgetControlEnabled ()Z
 	public final fun pause (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun resume (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public final fun setContextTruncationFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/Manifold;
@@ -11926,6 +12503,7 @@ public final class com/TTT/Pipeline/Manifold : com/TTT/P2P/P2PInterface {
 	public final fun setTransformationFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/Manifold;
 	public final fun setTruncationMethod (Lcom/TTT/Enums/ContextWindowSettings;)Lcom/TTT/Pipeline/Manifold;
 	public final fun setValidatorFunction (Lkotlin/jvm/functions/Function4;)Lcom/TTT/Pipeline/Manifold;
+	public fun supportsStreamingCallbackRemoval ()Z
 	public final fun workersHaveOverflowProtection ()Z
 }
 
@@ -12222,6 +12800,7 @@ public final class com/TTT/Pipeline/MultiConnector : com/TTT/P2P/P2PInterface {
 	public fun P2PInit (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun add (Lcom/TTT/Pipeline/Connector;)Lcom/TTT/Pipeline/MultiConnector;
+	public fun clearStreamingCallbacksRecursive ()V
 	public fun enablePipeTimeoutRecursive (ZJZI)V
 	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
 	public final fun enableTracing (Lcom/TTT/Debug/TraceConfig;)Lcom/TTT/Pipeline/MultiConnector;
@@ -12247,6 +12826,7 @@ public final class com/TTT/Pipeline/MultiConnector : com/TTT/P2P/P2PInterface {
 	public final fun getTraceId ()Ljava/lang/String;
 	public final fun getTraceReport (Lcom/TTT/Debug/TraceFormat;)Ljava/lang/String;
 	public static synthetic fun getTraceReport$default (Lcom/TTT/Pipeline/MultiConnector;Lcom/TTT/Debug/TraceFormat;ILjava/lang/Object;)Ljava/lang/String;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
@@ -12258,6 +12838,7 @@ public final class com/TTT/Pipeline/MultiConnector : com/TTT/P2P/P2PInterface {
 	public fun setPipeSettingsRecursively (Lcom/TTT/Structs/PipeSettings;)V
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public fun supportsStreamingCallbackRemoval ()Z
 }
 
 public final class com/TTT/Pipeline/MultiConnector$ExecutionMode : java/lang/Enum {
@@ -12344,6 +12925,37 @@ public final synthetic class com/TTT/Pipeline/NestedP2PCompleted$$serializer : k
 
 public final class com/TTT/Pipeline/NestedP2PCompleted$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/OnCondition : com/TTT/Pipeline/PumpStationWaitSpec {
+	public fun <init> ()V
+	public fun <init> (Lkotlin/jvm/functions/Function2;I)V
+	public synthetic fun <init> (Lkotlin/jvm/functions/Function2;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lkotlin/jvm/functions/Function2;
+	public final fun component2 ()I
+	public final fun copy (Lkotlin/jvm/functions/Function2;I)Lcom/TTT/Pipeline/OnCondition;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/OnCondition;Lkotlin/jvm/functions/Function2;IILjava/lang/Object;)Lcom/TTT/Pipeline/OnCondition;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPollIntervalMs ()I
+	public final fun getPredicate ()Lkotlin/jvm/functions/Function2;
+	public fun hashCode ()I
+	public fun label ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/OnEvent : com/TTT/Pipeline/PumpStationWaitSpec {
+	public fun <init> (Lkotlin/jvm/functions/Function1;Ljava/lang/String;)V
+	public synthetic fun <init> (Lkotlin/jvm/functions/Function1;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lkotlin/jvm/functions/Function1;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Lkotlin/jvm/functions/Function1;Ljava/lang/String;)Lcom/TTT/Pipeline/OnEvent;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/OnEvent;Lkotlin/jvm/functions/Function1;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/OnEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFilter ()Lkotlin/jvm/functions/Function1;
+	public final fun getWakeName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun label ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/TTT/Pipeline/ParticipantOpinion {
@@ -12817,6 +13429,7 @@ public final class com/TTT/Pipeline/PathObject : com/TTT/P2P/P2PInterface {
 	public synthetic fun <init> (Lcom/TTT/P2P/KillSwitch;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun P2PInit (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun clearStreamingCallbacksRecursive ()V
 	public fun enablePipeTimeoutRecursive (ZJZI)V
 	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
 	public fun executeLocal (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -12850,6 +13463,7 @@ public final class com/TTT/Pipeline/PathObject : com/TTT/P2P/P2PInterface {
 	public final fun isInternalAgentSet ()Z
 	public final fun isRunsInBackground ()Z
 	public final fun isSuppressHistoryEmit ()Z
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public final fun setDispatchHint (Ljava/lang/String;)V
@@ -12873,23 +13487,27 @@ public final class com/TTT/Pipeline/PathObject : com/TTT/P2P/P2PInterface {
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun setSuppressHistoryEmit (Z)V
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public fun supportsStreamingCallbackRemoval ()Z
 }
 
 public final class com/TTT/Pipeline/PathRequest {
 	public static final field Companion Lcom/TTT/Pipeline/PathRequest$Companion;
 	public fun <init> ()V
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/Pipeline/PathRequest;
-	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PathRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PathRequest;
+	public final fun component4 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)Lcom/TTT/Pipeline/PathRequest;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PathRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILjava/lang/Object;)Lcom/TTT/Pipeline/PathRequest;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInputData ()Lkotlinx/serialization/json/JsonObject;
 	public final fun getPathName ()Ljava/lang/String;
 	public final fun getPathSchema ()Ljava/lang/String;
 	public final fun getPathSelectionRationale ()Ljava/lang/String;
 	public fun hashCode ()I
+	public final fun setInputData (Lkotlinx/serialization/json/JsonObject;)V
 	public final fun setPathName (Ljava/lang/String;)V
 	public final fun setPathSchema (Ljava/lang/String;)V
 	public final fun setPathSelectionRationale (Ljava/lang/String;)V
@@ -13195,6 +13813,7 @@ public final class com/TTT/Pipeline/Pipeline : com/TTT/P2P/P2PInterface {
 	public final fun canPause ()Z
 	public final fun checkKillSwitch (IIJ)V
 	public final fun clearErrors ()V
+	public fun clearStreamingCallbacksRecursive ()V
 	public final fun enablePausePoints ()Lcom/TTT/Pipeline/Pipeline;
 	public final fun enablePausing ()Lcom/TTT/Pipeline/Pipeline;
 	public final fun enablePipeTimeout (ZJZILkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Pipeline;
@@ -13272,6 +13891,7 @@ public final class com/TTT/Pipeline/Pipeline : com/TTT/P2P/P2PInterface {
 	public final fun pauseBeforePipes ()Lcom/TTT/Pipeline/Pipeline;
 	public final fun pauseOnCompletion ()Lcom/TTT/Pipeline/Pipeline;
 	public final fun pauseWhen (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Pipeline;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun resume (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setConditionalPauseFunction (Lkotlin/jvm/functions/Function3;)V
 	public fun setContainerObject (Ljava/lang/Object;)V
@@ -13309,6 +13929,9 @@ public final class com/TTT/Pipeline/Pipeline : com/TTT/P2P/P2PInterface {
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
 	public final fun setUpdateGlobalContext (Z)V
+	public fun supportsStreamingCallbackRemoval ()Z
+	public final fun tracePipelineEvent (Lcom/TTT/Debug/TraceEventType;Lcom/TTT/Debug/TracePhase;Lcom/TTT/Pipe/MultimodalContent;Ljava/util/Map;Ljava/lang/Throwable;)Lcom/TTT/Pipeline/Pipeline;
+	public static synthetic fun tracePipelineEvent$default (Lcom/TTT/Pipeline/Pipeline;Lcom/TTT/Debug/TraceEventType;Lcom/TTT/Debug/TracePhase;Lcom/TTT/Pipe/MultimodalContent;Ljava/util/Map;Ljava/lang/Throwable;ILjava/lang/Object;)Lcom/TTT/Pipeline/Pipeline;
 	public final fun useGlobalContext (Ljava/lang/String;)Lcom/TTT/Pipeline/Pipeline;
 	public static synthetic fun useGlobalContext$default (Lcom/TTT/Pipeline/Pipeline;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/Pipeline;
 	public final fun wasTerminatedByError ()Z
@@ -13393,10 +14016,12 @@ public final class com/TTT/Pipeline/PreInitCompleted$Companion {
 public final class com/TTT/Pipeline/PromptConfigurationBlock {
 	public fun <init> (Lcom/TTT/Pipeline/PumpStationBuilder;)V
 	public final fun getDeduplicateLatestContentAgainstHistory ()Z
+	public final fun getGoalHistorySource ()Lcom/TTT/Enums/PumpStationGoalHistorySource;
 	public final fun getHistoryTransport ()Lcom/TTT/Enums/PumpStationHistoryTransport;
 	public final fun getLatestContentInjectionEnabled ()Z
 	public final fun getLatestContentPosition ()Lcom/TTT/Enums/PumpStationLatestContentPosition;
 	public final fun setDeduplicateLatestContentAgainstHistory (Z)V
+	public final fun setGoalHistorySource (Lcom/TTT/Enums/PumpStationGoalHistorySource;)V
 	public final fun setHistoryTransport (Lcom/TTT/Enums/PumpStationHistoryTransport;)V
 	public final fun setLatestContentInjectionEnabled (Z)V
 	public final fun setLatestContentPosition (Lcom/TTT/Enums/PumpStationLatestContentPosition;)V
@@ -13404,11 +14029,12 @@ public final class com/TTT/Pipeline/PromptConfigurationBlock {
 
 public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public fun <init> ()V
-	public fun <init> (Lcom/TTT/P2P/KillSwitch;Lcom/TTT/Pipeline/PumpStationSteeringService;)V
-	public synthetic fun <init> (Lcom/TTT/P2P/KillSwitch;Lcom/TTT/Pipeline/PumpStationSteeringService;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/TTT/P2P/KillSwitch;Lcom/TTT/Pipeline/PumpStationSteeringService;Lcom/TTT/Pipeline/PumpStationWaitService;)V
+	public synthetic fun <init> (Lcom/TTT/P2P/KillSwitch;Lcom/TTT/Pipeline/PumpStationSteeringService;Lcom/TTT/Pipeline/PumpStationWaitService;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun P2PInit (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun addDispatcherRule (Lcom/TTT/Pipeline/DispatcherRule;)V
+	public final fun addEventObserver (Lkotlin/jvm/functions/Function1;)Ljava/lang/AutoCloseable;
 	public final fun addHarnessAgent (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;)Lcom/TTT/Pipeline/PumpStation;
 	public static synthetic fun addHarnessAgent$default (Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun addHarnessAgentBuilder (Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;)Lcom/TTT/Pipeline/PumpStation;
@@ -13422,10 +14048,12 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public static synthetic fun appendTurnEntryAsync$default (Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/Context/ConverseData;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun cancelAsyncJobs (Ljava/lang/Long;)V
 	public static synthetic fun cancelAsyncJobs$default (Lcom/TTT/Pipeline/PumpStation;Ljava/lang/Long;ILjava/lang/Object;)V
+	public final fun cancelWait (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun checkPathSafety (Lcom/TTT/Pipeline/PathObject;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun clearHarnessAgentBuilders ()Lcom/TTT/Pipeline/PumpStation;
 	public final fun clearHarnessAgents ()Lcom/TTT/Pipeline/PumpStation;
 	public final fun clearSteering (Lcom/TTT/Pipeline/PumpStationPausePhase;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun clearStreamingCallbacksRecursive ()V
 	public final fun disableSafePruneStrategy (Lcom/TTT/Pipeline/SafePruneStrategy;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun drainSteeringForPhase (Lcom/TTT/Pipeline/PumpStationPausePhase;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun enablePipeTimeoutRecursive (ZJZI)V
@@ -13436,6 +14064,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public fun executeLocal (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun executeP2PRequest (Lcom/TTT/P2P/P2PRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun forceHalt (Lcom/TTT/Pipeline/PumpStationExitReason;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getActiveControlRoute ()Lcom/TTT/Pipeline/PumpStationControlRoute;
 	public final fun getAdditionalHarnessAgentSlots ()Ljava/util/List;
 	public final fun getAsyncJobGracePeriodMs ()Ljava/lang/Long;
 	public final fun getAsyncScope ()Lkotlinx/coroutines/CoroutineScope;
@@ -13449,8 +14078,11 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun getExternalContextProvider ()Lkotlin/jvm/functions/Function0;
 	public final fun getFailureAnalysis ()Lcom/TTT/Debug/FailureAnalysis;
 	public final fun getFailurePolicy ()Lcom/TTT/Pipeline/PumpStationFailurePolicy;
+	public final fun getGoalHistorySource ()Lcom/TTT/Enums/PumpStationGoalHistorySource;
 	public final fun getImplementationPlan ()Ljava/lang/String;
+	public final fun getIncludeRejectedDispatchOutputInRepairPrompt ()Z
 	public final fun getInterruptService ()Lcom/TTT/Pipeline/PumpStationInterruptService;
+	public final fun getInterruptTargetMode ()Lcom/TTT/Pipeline/PumpStationControlTargetMode;
 	public final fun getJudgeAgent ()Lcom/TTT/Pipeline/Pipeline;
 	public final fun getJudgeJsonContractEnabled ()Z
 	public final fun getJudgeRunMode ()Lcom/TTT/Pipeline/PumpStationJudgeRunMode;
@@ -13480,9 +14112,11 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public fun getPipelinesFromInterface ()Ljava/util/List;
 	public final fun getRawTurnHistory ()Lcom/TTT/Context/ConverseHistory;
 	public final fun getReservePathNames ()Ljava/util/List;
+	public final fun getRetainRejectedDispatchOutputInTurnHistory ()Z
 	public final fun getSkipJudgeOnFirstTurn ()Z
 	public final fun getStashManifest ()Ljava/util/List;
 	public final fun getSteeringService ()Lcom/TTT/Pipeline/PumpStationSteeringService;
+	public final fun getSteeringTargetMode ()Lcom/TTT/Pipeline/PumpStationControlTargetMode;
 	public final fun getSummaryMutex ()Lkotlinx/coroutines/sync/Mutex;
 	public final fun getTaskState ()Lcom/TTT/Pipeline/PumpStationTaskState;
 	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
@@ -13493,17 +14127,28 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun getTurnHistory ()Lcom/TTT/Context/ConverseHistory;
 	public final fun getVisiblePathDescriptorsForDispatch ()Lcom/TTT/Pipeline/PathDescriptionList;
 	public final fun getVisiblePathNames ()Ljava/util/List;
+	public final fun getWaitAllPathsOnMultiDispatch ()Z
+	public final fun getWaitDefaultTimeoutMs ()Ljava/lang/Long;
+	public final fun getWaitService ()Lcom/TTT/Pipeline/PumpStationWaitService;
 	public final fun hasMetaPageKeys ()Z
 	public final fun interrupt (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun interrupt (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun interruptNow (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun interruptNow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun isAsyncAgentsAppendToTurnHistory ()Z
 	public final fun isAsyncJobsScopedToStation ()Z
 	public final fun isAsyncPathsAppendToTurnHistory ()Z
 	public final fun isAsyncScopeActive ()Z
+	public final fun openSession (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationSession;
+	public static synthetic fun openSession$default (Lcom/TTT/Pipeline/PumpStation;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationSession;
 	public final fun pauseAt ([Lcom/TTT/Pipeline/PumpStationPausePhase;)V
 	public final fun pullMetaPageKeysIntoPumpStationMetadata ()V
+	public final fun releaseWait (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun removePath (Ljava/lang/String;)V
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun requestJudgeNextTurn ()Lcom/TTT/Pipeline/PumpStation;
+	public final fun requestWait (Lcom/TTT/Pipeline/PumpStationWaitSpec;Ljava/lang/String;Ljava/lang/Long;)Lcom/TTT/Pipeline/PumpStationWaitHandle;
+	public static synthetic fun requestWait$default (Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/Pipeline/PumpStationWaitSpec;Ljava/lang/String;Ljava/lang/Long;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationWaitHandle;
 	public final fun restoreSnapshot (Lcom/TTT/Pipeline/PumpStationSnapshot;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun resume (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun retrieveStash (Ljava/lang/String;)Lcom/TTT/Context/ConverseData;
@@ -13534,6 +14179,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setForegroundTurnInterval (I)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setGoalAgent (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setGoalAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setGoalHistorySource (Lcom/TTT/Enums/PumpStationGoalHistorySource;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setGoalSystemPrompt (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setHealthAgent (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setHealthAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/PumpStation;
@@ -13544,6 +14190,8 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setHistoryTransport (Lcom/TTT/Enums/PumpStationHistoryTransport;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setHybridWholeHeadroom (D)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setImplementationPlan (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setIncludeRejectedDispatchOutputInRepairPrompt (Z)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setInterruptTargetMode (Lcom/TTT/Pipeline/PumpStationControlTargetMode;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setInterventionAgent (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setInterventionAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setJudgeAgent (Lcom/TTT/Pipeline/Pipeline;)Lcom/TTT/Pipeline/PumpStation;
@@ -13607,6 +14255,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setPreValidationDispatchFunction (Lkotlin/jvm/functions/Function5;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setPreValidationJudgeFunction (Lkotlin/jvm/functions/Function4;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setRequirePathSelectionRationale (Z)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setRetainRejectedDispatchOutputInTurnHistory (Z)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setSafePruneEnabled (Z)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setSafePruneHashWindow (I)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setSafePruneMaxToolArgLength (I)Lcom/TTT/Pipeline/PumpStation;
@@ -13618,6 +14267,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setSafePruneStrategyPolicies (Ljava/util/Map;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setSafePruneStrategyPolicy (Lcom/TTT/Pipeline/SafePruneStrategy;Lcom/TTT/Pipeline/SafePrunePolicy;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setSkipJudgeOnFirstTurn (Z)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setSteeringTargetMode (Lcom/TTT/Pipeline/PumpStationControlTargetMode;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setStopHarnessOnInvalidPathRequest (Z)Lcom/TTT/Pipeline/PumpStation;
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun setSummaryAgent (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipeline/PumpStation;
@@ -13625,11 +14275,18 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setSystemTask (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
 	public final fun setUserGuidelines (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setWaitAllPathsOnMultiDispatch (Z)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setWaitDefaultTimeoutMs (Ljava/lang/Long;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun steer (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun steer (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun steerNow (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun steerNow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun steerPersistent (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun steerPersistent (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun supportsStreamingCallbackRemoval ()Z
 	public final fun tripKillSwitch ()V
+	public final fun waitUntil (Lcom/TTT/Pipeline/PumpStationWaitSpec;Ljava/lang/String;Ljava/lang/Long;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun waitUntil$default (Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/Pipeline/PumpStationWaitSpec;Ljava/lang/String;Ljava/lang/Long;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class com/TTT/Pipeline/PumpStationBuilder {
@@ -13662,6 +14319,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun getForegroundTurnInterval ()I
 	public final fun getGoalAgent ()Lcom/TTT/P2P/P2PInterface;
 	public final fun getGoalAgentBuilderFunction ()Lkotlin/jvm/functions/Function2;
+	public final fun getGoalHistorySource ()Lcom/TTT/Enums/PumpStationGoalHistorySource;
 	public final fun getGoalSystemPrompt ()Ljava/lang/String;
 	public final fun getHealthAgent ()Lcom/TTT/P2P/P2PInterface;
 	public final fun getHealthAgentBuilderFunction ()Lkotlin/jvm/functions/Function2;
@@ -13671,6 +14329,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun getHealthSystemPrompt ()Ljava/lang/String;
 	public final fun getHistoryTransport ()Lcom/TTT/Enums/PumpStationHistoryTransport;
 	public final fun getImplementationPlan ()Ljava/lang/String;
+	public final fun getIncludeRejectedDispatchOutputInRepairPrompt ()Z
 	public final fun getInterruptConfiguration ()Lcom/TTT/Pipeline/PumpStationInterruptConfiguration;
 	public final fun getInterventionAgent ()Lcom/TTT/P2P/P2PInterface;
 	public final fun getInterventionAgentBuilderFunction ()Lkotlin/jvm/functions/Function2;
@@ -13726,6 +14385,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun getPreValidationJudgeFunction ()Lkotlin/jvm/functions/Function4;
 	public final fun getRequirePathSelectionRationale ()Z
 	public final fun getReservePaths ()Ljava/util/Map;
+	public final fun getRetainRejectedDispatchOutputInTurnHistory ()Z
 	public final fun getSafePruneEnabled ()Z
 	public final fun getSafePruneHashWindow ()I
 	public final fun getSafePruneMaxToolArgLength ()I
@@ -13739,6 +14399,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun getSystemTask ()Ljava/lang/String;
 	public final fun getTracingConfiguration ()Lcom/TTT/Debug/TraceConfig;
 	public final fun getUserGuidelines ()Ljava/lang/String;
+	public final fun getWaitConfiguration ()Lcom/TTT/Pipeline/PumpStationWaitConfiguration;
 	public final fun harnessAgent (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
 	public static synthetic fun harnessAgent$default (Lcom/TTT/Pipeline/PumpStationBuilder;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationBuilder;
 	public final fun harnessAgentBuilder (Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
@@ -13774,6 +14435,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun setForegroundTurnInterval (I)V
 	public final fun setGoalAgent (Lcom/TTT/P2P/P2PInterface;)V
 	public final fun setGoalAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)V
+	public final fun setGoalHistorySource (Lcom/TTT/Enums/PumpStationGoalHistorySource;)V
 	public final fun setGoalSystemPrompt (Ljava/lang/String;)V
 	public final fun setHealthAgent (Lcom/TTT/P2P/P2PInterface;)V
 	public final fun setHealthAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)V
@@ -13783,6 +14445,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun setHealthSystemPrompt (Ljava/lang/String;)V
 	public final fun setHistoryTransport (Lcom/TTT/Enums/PumpStationHistoryTransport;)V
 	public final fun setImplementationPlan (Ljava/lang/String;)V
+	public final fun setIncludeRejectedDispatchOutputInRepairPrompt (Z)V
 	public final fun setInterruptConfiguration (Lcom/TTT/Pipeline/PumpStationInterruptConfiguration;)V
 	public final fun setInterventionAgent (Lcom/TTT/P2P/P2PInterface;)V
 	public final fun setInterventionAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)V
@@ -13836,6 +14499,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun setPreValidationDispatchFunction (Lkotlin/jvm/functions/Function5;)V
 	public final fun setPreValidationJudgeFunction (Lkotlin/jvm/functions/Function4;)V
 	public final fun setRequirePathSelectionRationale (Z)V
+	public final fun setRetainRejectedDispatchOutputInTurnHistory (Z)V
 	public final fun setSafePruneEnabled (Z)V
 	public final fun setSafePruneHashWindow (I)V
 	public final fun setSafePruneMaxToolArgLength (I)V
@@ -13853,8 +14517,10 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun setSystemTask (Ljava/lang/String;)V
 	public final fun setTracingConfiguration (Lcom/TTT/Debug/TraceConfig;)V
 	public final fun setUserGuidelines (Ljava/lang/String;)V
+	public final fun setWaitConfiguration (Lcom/TTT/Pipeline/PumpStationWaitConfiguration;)V
 	public final fun steeringPolicy (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
 	public final fun tracing (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
+	public final fun waitPolicy (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
 }
 
 public final class com/TTT/Pipeline/PumpStationBuilder$Companion {
@@ -13879,6 +14545,32 @@ public final class com/TTT/Pipeline/PumpStationConcurrencyMode : java/lang/Enum 
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationConcurrencyMode;
 	public static fun values ()[Lcom/TTT/Pipeline/PumpStationConcurrencyMode;
+}
+
+public final class com/TTT/Pipeline/PumpStationControlRoute {
+	public fun <init> (Ljava/lang/String;ILjava/util/List;Z)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/lang/String;ILjava/util/List;Z)Lcom/TTT/Pipeline/PumpStationControlRoute;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationControlRoute;Ljava/lang/String;ILjava/util/List;ZILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationControlRoute;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCycleDetected ()Z
+	public final fun getDepth ()I
+	public final fun getPathChain ()Ljava/util/List;
+	public final fun getTargetRunId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationControlTargetMode : java/lang/Enum {
+	public static final field DeepestActive Lcom/TTT/Pipeline/PumpStationControlTargetMode;
+	public static final field Local Lcom/TTT/Pipeline/PumpStationControlTargetMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationControlTargetMode;
+	public static fun values ()[Lcom/TTT/Pipeline/PumpStationControlTargetMode;
 }
 
 public final class com/TTT/Pipeline/PumpStationDefaultsKt {
@@ -13950,28 +14642,34 @@ public final class com/TTT/Pipeline/PumpStationExitReason : java/lang/Enum {
 public final class com/TTT/Pipeline/PumpStationFailurePolicy {
 	public static final field Companion Lcom/TTT/Pipeline/PumpStationFailurePolicy$Companion;
 	public fun <init> ()V
-	public fun <init> (ZIZZZZ)V
-	public synthetic fun <init> (ZIZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (ZIZZZZZZ)V
+	public synthetic fun <init> (ZIZZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Z
 	public final fun component2 ()I
 	public final fun component3 ()Z
 	public final fun component4 ()Z
 	public final fun component5 ()Z
 	public final fun component6 ()Z
-	public final fun copy (ZIZZZZ)Lcom/TTT/Pipeline/PumpStationFailurePolicy;
-	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationFailurePolicy;ZIZZZZILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationFailurePolicy;
+	public final fun component7 ()Z
+	public final fun component8 ()Z
+	public final fun copy (ZIZZZZZZ)Lcom/TTT/Pipeline/PumpStationFailurePolicy;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationFailurePolicy;ZIZZZZZZILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationFailurePolicy;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCallInterventionOnPathFailure ()Z
+	public final fun getIncludeRejectedDispatchOutputInRepairPrompt ()Z
 	public final fun getMaxDispatchRepairAttempts ()I
 	public final fun getRepairInvalidDispatchJson ()Z
 	public final fun getRequirePathSelectionRationale ()Z
+	public final fun getRetainRejectedDispatchOutputInTurnHistory ()Z
 	public final fun getStashOversizedOutputs ()Z
 	public final fun getStopHarnessOnInvalidPathRequest ()Z
 	public fun hashCode ()I
 	public final fun setCallInterventionOnPathFailure (Z)V
+	public final fun setIncludeRejectedDispatchOutputInRepairPrompt (Z)V
 	public final fun setMaxDispatchRepairAttempts (I)V
 	public final fun setRepairInvalidDispatchJson (Z)V
 	public final fun setRequirePathSelectionRationale (Z)V
+	public final fun setRetainRejectedDispatchOutputInTurnHistory (Z)V
 	public final fun setStashOversizedOutputs (Z)V
 	public final fun setStopHarnessOnInvalidPathRequest (Z)V
 	public fun toString ()Ljava/lang/String;
@@ -13996,12 +14694,15 @@ public final class com/TTT/Pipeline/PumpStationInterruptConfiguration {
 	public fun <init> ()V
 	public fun <init> (Ljava/util/Map;)V
 	public synthetic fun <init> (Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/util/Map;Lcom/TTT/Pipeline/PumpStationControlTargetMode;)V
 	public final fun component1 ()Ljava/util/Map;
 	public final fun copy (Ljava/util/Map;)Lcom/TTT/Pipeline/PumpStationInterruptConfiguration;
 	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationInterruptConfiguration;Ljava/util/Map;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationInterruptConfiguration;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getInitialQueue ()Ljava/util/Map;
+	public final fun getTargetMode ()Lcom/TTT/Pipeline/PumpStationControlTargetMode;
 	public fun hashCode ()I
+	public final fun setTargetMode (Lcom/TTT/Pipeline/PumpStationControlTargetMode;)V
 	public fun toString ()Ljava/lang/String;
 }
 
@@ -14014,7 +14715,9 @@ public final class com/TTT/Pipeline/PumpStationInterruptException : java/lang/Ru
 public final class com/TTT/Pipeline/PumpStationInterruptPolicyBuilder {
 	public fun <init> ()V
 	public final fun getInitialQueue ()Ljava/util/Map;
+	public final fun getTargetMode ()Lcom/TTT/Pipeline/PumpStationControlTargetMode;
 	public final fun initialQueue (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/util/List;)V
+	public final fun setTargetMode (Lcom/TTT/Pipeline/PumpStationControlTargetMode;)V
 }
 
 public final class com/TTT/Pipeline/PumpStationInterruptService {
@@ -14022,6 +14725,7 @@ public final class com/TTT/Pipeline/PumpStationInterruptService {
 	public final fun drainAllForPhase (Lcom/TTT/Pipeline/PumpStationPausePhase;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun drainForPhase (Lcom/TTT/Pipeline/PumpStationPausePhase;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun enqueue (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun enqueueNextBoundary (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun hasPending (Lcom/TTT/Pipeline/PumpStationPausePhase;)Z
 	public final fun queueDepth (Lcom/TTT/Pipeline/PumpStationPausePhase;)I
 }
@@ -14094,6 +14798,78 @@ public final class com/TTT/Pipeline/PumpStationPhase : java/lang/Enum {
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationPhase;
 	public static fun values ()[Lcom/TTT/Pipeline/PumpStationPhase;
+}
+
+public final class com/TTT/Pipeline/PumpStationSession : java/lang/AutoCloseable {
+	public final fun abort (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public final fun currentControlRoute ()Lcom/TTT/Pipeline/PumpStationControlRoute;
+	public final fun execute (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getSessionId ()Ljava/lang/String;
+	public final fun getUpdates ()Lkotlinx/coroutines/channels/ReceiveChannel;
+	public final fun interrupt (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun interrupt (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun interruptNow (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun interruptNow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun steer (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun steer (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun steerNow (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun steerNow (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/TTT/Pipeline/PumpStationSessionEventUpdate : com/TTT/Pipeline/PumpStationSessionUpdate {
+	public fun <init> (JLjava/lang/String;Lcom/TTT/Pipeline/PumpStationSessionSource;Lcom/TTT/Pipeline/PumpStationEvent;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/TTT/Pipeline/PumpStationSessionSource;
+	public final fun component4 ()Lcom/TTT/Pipeline/PumpStationEvent;
+	public final fun copy (JLjava/lang/String;Lcom/TTT/Pipeline/PumpStationSessionSource;Lcom/TTT/Pipeline/PumpStationEvent;)Lcom/TTT/Pipeline/PumpStationSessionEventUpdate;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationSessionEventUpdate;JLjava/lang/String;Lcom/TTT/Pipeline/PumpStationSessionSource;Lcom/TTT/Pipeline/PumpStationEvent;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationSessionEventUpdate;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEvent ()Lcom/TTT/Pipeline/PumpStationEvent;
+	public fun getSequence ()J
+	public fun getSessionId ()Ljava/lang/String;
+	public fun getSource ()Lcom/TTT/Pipeline/PumpStationSessionSource;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationSessionSource {
+	public fun <init> (Ljava/lang/String;ILjava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;ILjava/util/List;)Lcom/TTT/Pipeline/PumpStationSessionSource;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationSessionSource;Ljava/lang/String;ILjava/util/List;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationSessionSource;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDepth ()I
+	public final fun getPathChain ()Ljava/util/List;
+	public final fun getRunId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationSessionStreamUpdate : com/TTT/Pipeline/PumpStationSessionUpdate {
+	public fun <init> (JLjava/lang/String;Lcom/TTT/Pipeline/PumpStationSessionSource;Ljava/lang/String;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/TTT/Pipeline/PumpStationSessionSource;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (JLjava/lang/String;Lcom/TTT/Pipeline/PumpStationSessionSource;Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationSessionStreamUpdate;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationSessionStreamUpdate;JLjava/lang/String;Lcom/TTT/Pipeline/PumpStationSessionSource;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationSessionStreamUpdate;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChunk ()Ljava/lang/String;
+	public fun getSequence ()J
+	public fun getSessionId ()Ljava/lang/String;
+	public fun getSource ()Lcom/TTT/Pipeline/PumpStationSessionSource;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/TTT/Pipeline/PumpStationSessionUpdate {
+	public abstract fun getSequence ()J
+	public abstract fun getSessionId ()Ljava/lang/String;
+	public abstract fun getSource ()Lcom/TTT/Pipeline/PumpStationSessionSource;
 }
 
 public final class com/TTT/Pipeline/PumpStationSnapshot {
@@ -14171,6 +14947,7 @@ public final class com/TTT/Pipeline/PumpStationSteeringConfiguration {
 	public fun <init> ()V
 	public fun <init> (Ljava/util/Map;Ljava/util/Map;)V
 	public synthetic fun <init> (Ljava/util/Map;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/util/Map;Ljava/util/Map;Lcom/TTT/Pipeline/PumpStationControlTargetMode;)V
 	public final fun component1 ()Ljava/util/Map;
 	public final fun component2 ()Ljava/util/Map;
 	public final fun copy (Ljava/util/Map;Ljava/util/Map;)Lcom/TTT/Pipeline/PumpStationSteeringConfiguration;
@@ -14178,7 +14955,9 @@ public final class com/TTT/Pipeline/PumpStationSteeringConfiguration {
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getInitialOneShotInstructions ()Ljava/util/Map;
 	public final fun getInitialPersistentOverlays ()Ljava/util/Map;
+	public final fun getTargetMode ()Lcom/TTT/Pipeline/PumpStationControlTargetMode;
 	public fun hashCode ()I
+	public final fun setTargetMode (Lcom/TTT/Pipeline/PumpStationControlTargetMode;)V
 	public fun toString ()Ljava/lang/String;
 }
 
@@ -14224,6 +15003,7 @@ public final class com/TTT/Pipeline/PumpStationSteeringService {
 	public synthetic fun <init> (Lcom/TTT/Pipeline/PumpStationSteeringConfiguration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun clearPersistent (Lcom/TTT/Pipeline/PumpStationPausePhase;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun drainForPhase (Lcom/TTT/Pipeline/PumpStationPausePhase;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun enqueueNextBoundary (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun enqueueOneShot (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun hasPersistentOverlay (Lcom/TTT/Pipeline/PumpStationPausePhase;)Z
 	public final fun oneShotCount (Lcom/TTT/Pipeline/PumpStationPausePhase;)I
@@ -14328,6 +15108,79 @@ public final class com/TTT/Pipeline/PumpStationTracingDsl {
 	public static synthetic fun includeMetadata$default (Lcom/TTT/Pipeline/PumpStationTracingDsl;ZILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationTracingDsl;
 	public final fun maxHistory (I)Lcom/TTT/Pipeline/PumpStationTracingDsl;
 	public final fun outputFormat (Lcom/TTT/Debug/TraceFormat;)Lcom/TTT/Pipeline/PumpStationTracingDsl;
+}
+
+public final class com/TTT/Pipeline/PumpStationWaitConfiguration {
+	public fun <init> ()V
+	public fun <init> (ZLjava/lang/Long;ILjava/util/List;)V
+	public final fun getDefaultPollIntervalMs ()I
+	public final fun getDefaultTimeoutMs ()Ljava/lang/Long;
+	public final fun getInitialWaits ()Ljava/util/List;
+	public final fun getJoinAllPathsOnMultiDispatch ()Z
+	public final fun setDefaultPollIntervalMs (I)V
+	public final fun setDefaultTimeoutMs (Ljava/lang/Long;)V
+	public final fun setInitialWaits (Ljava/util/List;)V
+	public final fun setJoinAllPathsOnMultiDispatch (Z)V
+}
+
+public final class com/TTT/Pipeline/PumpStationWaitHandle {
+	public final fun awaitResolution (Ljava/lang/Long;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun cancel ()V
+	public final fun getRequestedAtMs ()J
+	public final fun getWaitName ()Ljava/lang/String;
+	public final fun getWaitSpec ()Lcom/TTT/Pipeline/PumpStationWaitSpec;
+	public final fun release ()V
+}
+
+public final class com/TTT/Pipeline/PumpStationWaitReason : java/lang/Enum {
+	public static final field Cancelled Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public static final field ForceHalted Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public static final field Resolved Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public static final field Timeout Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public static fun values ()[Lcom/TTT/Pipeline/PumpStationWaitReason;
+}
+
+public final class com/TTT/Pipeline/PumpStationWaitResult {
+	public static final field Companion Lcom/TTT/Pipeline/PumpStationWaitResult$Companion;
+	public fun <init> (Ljava/lang/String;ZLcom/TTT/Pipeline/PumpStationWaitReason;JLjava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public final fun component4 ()J
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;ZLcom/TTT/Pipeline/PumpStationWaitReason;JLjava/lang/String;)Lcom/TTT/Pipeline/PumpStationWaitResult;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationWaitResult;Ljava/lang/String;ZLcom/TTT/Pipeline/PumpStationWaitReason;JLjava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationWaitResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getElapsedMs ()J
+	public final fun getName ()Ljava/lang/String;
+	public final fun getReason ()Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public final fun getSatisfied ()Z
+	public final fun getSpecLabel ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationWaitResult$Companion {
+	public final fun cancelled (Ljava/lang/String;JLjava/lang/String;Lcom/TTT/Pipeline/PumpStationWaitReason;)Lcom/TTT/Pipeline/PumpStationWaitResult;
+	public final fun resolved (Ljava/lang/String;JLjava/lang/String;)Lcom/TTT/Pipeline/PumpStationWaitResult;
+	public final fun timedOut (Ljava/lang/String;JLjava/lang/String;)Lcom/TTT/Pipeline/PumpStationWaitResult;
+}
+
+public final class com/TTT/Pipeline/PumpStationWaitService {
+	public fun <init> ()V
+	public final fun activeWaitCount ()I
+	public final fun cancelAll ()V
+	public final fun eventObserved (Lcom/TTT/Pipeline/PumpStationEvent;)V
+	public final fun hasEventFilters ()Z
+	public final fun notifyPathSettled (Lcom/TTT/Pipeline/PumpStation;)V
+	public final fun release (Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationWaitReason;)V
+	public final fun request (Lcom/TTT/Pipeline/PumpStationWaitSpec;Ljava/lang/String;Ljava/lang/Long;Lcom/TTT/Pipeline/PumpStation;)Lcom/TTT/Pipeline/PumpStationWaitHandle;
+}
+
+public abstract interface class com/TTT/Pipeline/PumpStationWaitSpec {
+	public abstract fun label ()Ljava/lang/String;
 }
 
 public final class com/TTT/Pipeline/ReservePathBlock {
@@ -14567,6 +15420,7 @@ public final class com/TTT/Pipeline/Splitter : com/TTT/P2P/P2PInterface {
 	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun addContent (Ljava/lang/Object;Lcom/TTT/Pipe/MultimodalContent;)Lcom/TTT/Pipeline/Splitter;
 	public final fun addPipeline (Ljava/lang/Object;Lcom/TTT/Pipeline/Pipeline;)Lcom/TTT/Pipeline/Splitter;
+	public fun clearStreamingCallbacksRecursive ()V
 	public final fun disableTracing ()Lcom/TTT/Pipeline/Splitter;
 	public fun enablePipeTimeoutRecursive (ZJZI)V
 	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
@@ -14601,6 +15455,7 @@ public final class com/TTT/Pipeline/Splitter : com/TTT/P2P/P2PInterface {
 	public static synthetic fun init$default (Lcom/TTT/Pipeline/Splitter;Lcom/TTT/Debug/TraceConfig;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun removeKey (Ljava/lang/Object;)Lcom/TTT/Pipeline/Splitter;
 	public final fun removePipeline (Lcom/TTT/Pipeline/Pipeline;)Lcom/TTT/Pipeline/Splitter;
+	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
@@ -14615,6 +15470,7 @@ public final class com/TTT/Pipeline/Splitter : com/TTT/P2P/P2PInterface {
 	public fun setPipeSettingsRecursively (Lcom/TTT/Structs/PipeSettings;)V
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
+	public fun supportsStreamingCallbackRemoval ()Z
 }
 
 public final class com/TTT/Pipeline/Splitter$Companion {
@@ -14758,10 +15614,12 @@ public final class com/TTT/Pipeline/SteeringInjected$Companion {
 
 public final class com/TTT/Pipeline/SteeringPolicyBuilder {
 	public fun <init> ()V
+	public final fun getTargetMode ()Lcom/TTT/Pipeline/PumpStationControlTargetMode;
 	public final fun persistentOverlay (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;)V
 	public final fun persistentOverlay (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/lang/String;)V
 	public final fun phaseBoundContent (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;)V
 	public final fun phaseBoundContent (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/lang/String;)V
+	public final fun setTargetMode (Lcom/TTT/Pipeline/PumpStationControlTargetMode;)V
 }
 
 public final class com/TTT/Pipeline/SummaryInjectionConfiguration {
@@ -14938,6 +15796,98 @@ public final synthetic class com/TTT/Pipeline/VotingResult$$serializer : kotlinx
 }
 
 public final class com/TTT/Pipeline/VotingResult$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/WaitCompleted : com/TTT/Pipeline/PumpStationEvent {
+	public static final field Companion Lcom/TTT/Pipeline/WaitCompleted$Companion;
+	public fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipeline/PumpStationWaitReason;J)V
+	public synthetic fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipeline/PumpStationWaitReason;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()J
+	public final fun component4 ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Z
+	public final fun component8 ()Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public final fun component9 ()J
+	public final fun copy (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipeline/PumpStationWaitReason;J)Lcom/TTT/Pipeline/WaitCompleted;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/WaitCompleted;Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ZLcom/TTT/Pipeline/PumpStationWaitReason;JILjava/lang/Object;)Lcom/TTT/Pipeline/WaitCompleted;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getElapsedMs ()J
+	public fun getPhase ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun getReason ()Lcom/TTT/Pipeline/PumpStationWaitReason;
+	public fun getRunId ()Ljava/lang/String;
+	public final fun getSatisfied ()Z
+	public final fun getSpecLabel ()Ljava/lang/String;
+	public fun getTimestamp ()J
+	public fun getTurnIndex ()I
+	public final fun getWaitName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/WaitCompleted$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/WaitCompleted$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/WaitCompleted;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/WaitCompleted;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/WaitCompleted$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/WaitPolicyBuilder {
+	public fun <init> ()V
+	public final fun getDefaultTimeoutMs ()Ljava/lang/Long;
+	public final fun getJoinAllPathsOnMultiDispatch ()Z
+	public final fun setDefaultTimeoutMs (Ljava/lang/Long;)V
+	public final fun setJoinAllPathsOnMultiDispatch (Z)V
+}
+
+public final class com/TTT/Pipeline/WaitStarted : com/TTT/Pipeline/PumpStationEvent {
+	public static final field Companion Lcom/TTT/Pipeline/WaitStarted$Companion;
+	public fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()J
+	public final fun component4 ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;)Lcom/TTT/Pipeline/WaitStarted;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/WaitStarted;Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;ILjava/lang/Object;)Lcom/TTT/Pipeline/WaitStarted;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getPhase ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public fun getRunId ()Ljava/lang/String;
+	public final fun getSpecLabel ()Ljava/lang/String;
+	public final fun getTimeoutMs ()Ljava/lang/Long;
+	public fun getTimestamp ()J
+	public fun getTurnIndex ()I
+	public final fun getWaitName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/WaitStarted$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/WaitStarted$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/WaitStarted;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/WaitStarted;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/WaitStarted$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
@@ -16754,6 +17704,26 @@ public final class com/TTT/Util/ProgramResult {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/TTT/Util/ReasoningStream {
+	public static final field CLOSE_TAG Ljava/lang/String;
+	public static final field INSTANCE Lcom/TTT/Util/ReasoningStream;
+	public static final field OPEN_TAG Ljava/lang/String;
+	public final fun split (Ljava/lang/String;)Lcom/TTT/Util/ReasoningStream$ReasoningSplit;
+}
+
+public final class com/TTT/Util/ReasoningStream$ReasoningSplit {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/Util/ReasoningStream$ReasoningSplit;
+	public static synthetic fun copy$default (Lcom/TTT/Util/ReasoningStream$ReasoningSplit;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Util/ReasoningStream$ReasoningSplit;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReasoning ()Ljava/lang/String;
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/TTT/Util/RestKt {
 	public static final fun httpDelete (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun httpDelete$default (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
@@ -16924,3 +17894,4 @@ public final class com/TTT/Util/UtilKt {
 	public static final fun splitProgramString (Ljava/lang/String;)Ljava/util/List;
 	public static final fun writeStringToFile (Ljava/lang/String;Ljava/lang/String;)V
 }
+

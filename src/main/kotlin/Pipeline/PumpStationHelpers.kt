@@ -171,6 +171,23 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
         }
         is HarnessResumed -> eventType = TraceEventType.PUMP_STATION_RESUMED
 
+        is WaitStarted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_WAIT_STARTED
+            baseMetadata["waitName"] = event.waitName
+            baseMetadata["specLabel"] = event.specLabel
+            baseMetadata["timeoutMs"] = event.timeoutMs ?: -1L
+        }
+        is WaitCompleted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_WAIT_COMPLETED
+            baseMetadata["waitName"] = event.waitName
+            baseMetadata["specLabel"] = event.specLabel
+            baseMetadata["satisfied"] = event.satisfied
+            baseMetadata["reason"] = event.reason.name
+            baseMetadata["elapsedMs"] = event.elapsedMs
+        }
+
         is InterruptOverflowDropped ->
         {
             eventType = TraceEventType.PUMP_STATION_INTERRUPT_OVERFLOW_DROPPED

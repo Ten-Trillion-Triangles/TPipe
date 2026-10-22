@@ -91,6 +91,16 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      */
     var interruptConfiguration: PumpStationInterruptConfiguration? = null
 
+    /**
+     * Configuration captured from the `waitPolicy { ... }` DSL block.
+     * Null when the user did not configure a wait / join mode. Applied at
+     * construction time by constructing a [PumpStationWaitService], passing it
+     * to the [PumpStation] constructor, and forwarding
+     * [joinAllPathsOnMultiDispatch] / [defaultTimeoutMs] through the fluent
+     * setters.
+     */
+    var waitConfiguration: PumpStationWaitConfiguration? = null
+
     /** Optional stable implementation guidance for the station control agents. */
     var implementationPlan: String? = null
 
@@ -978,6 +988,37 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     }
 
     /**
+     * Configure wait / join mode. Inside the block, declare whether a
+     * MultiPath dispatch should join on all in-flight paths
+     * ([WaitPolicyBuilder.joinAllPathsOnMultiDispatch]) and the default
+     * timeout for joins / [PumpStation.waitUntil] calls
+     * ([WaitPolicyBuilder.defaultTimeoutMs]). The configured policy is applied
+     * to the built station as a [PumpStationWaitService] at construction time.
+     *
+     * Example:
+     * ```
+     * pumpStation {
+     *     pathExecutionShape = PathExecutionShape.MultiPath
+     *     waitPolicy {
+     *         joinAllPathsOnMultiDispatch = true
+     *         defaultTimeoutMs = 30_000
+     *     }
+     * }
+     * ```
+     */
+    fun waitPolicy(block: WaitPolicyBuilder.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        require(targetBuilder.waitConfiguration == null) {
+            "waitPolicy { } has already been configured for this PumpStation DSL."
+        }
+        val builder = WaitPolicyBuilder()
+        builder.block()
+        targetBuilder.waitConfiguration = builder.build()
+        return this
+    }
+
+    /**
      * Configure compaction for the harness. The captured configuration is applied
      * to the built station via [build] so the per-attempt orchestrator picks up
      * the developer-chosen strategy, fan-out mode, retry budget, chunk budget, and
@@ -1101,6 +1142,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         compactionConfiguration = source.compactionConfiguration
         steeringConfiguration = source.steeringConfiguration
         interruptConfiguration = source.interruptConfiguration
+        waitConfiguration = source.waitConfiguration
         implementationPlan = source.implementationPlan
         judgeAgent = source.judgeAgent
         dispatchAgent = source.dispatchAgent
@@ -1233,7 +1275,8 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
 
         val steeringService = steeringConfiguration?.let { PumpStationSteeringService(it) }
             ?: PumpStationSteeringService()
-        val station = PumpStation(steeringService = steeringService)
+        val waitService = PumpStationWaitService()
+        val station = PumpStation(steeringService = steeringService, waitService = waitService)
             .setSteeringTargetMode(
                 steeringConfiguration?.targetMode ?: PumpStationControlTargetMode.DeepestActive
             )
@@ -1249,6 +1292,13 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             interruptConfiguration?.initialQueue?.forEach { (phase, contents) ->
                 contents.forEach { station.interruptService.enqueue(phase, it) }
             }
+        }
+
+        // Wait / join configuration - applied through the fluent setters so the
+        // DSL round-trips with the public surface.
+        waitConfiguration?.let { cfg ->
+            station.setWaitAllPathsOnMultiDispatch(cfg.joinAllPathsOnMultiDispatch)
+            station.setWaitDefaultTimeoutMs(cfg.defaultTimeoutMs)
         }
 
         // Apply all configuration to the station using the public fluent setters.
@@ -2334,6 +2384,50 @@ class SteeringPolicyBuilder
             initialPersistentOverlays = persistentOverlays.toMap(),
             initialOneShotInstructions = oneShotInstructions.mapValues { it.value.toList() },
             targetMode = targetMode
+        )
+    }
+}
+
+//=========================================Wait Policy Block=========================================================
+
+/**
+ * Configuration block set via `pumpStation { waitPolicy { ... } }`. Declares
+ * the wait / join behavior of the built station: whether a MultiPath dispatch
+ * joins on all in-flight paths, and the default timeout for joins /
+ * [PumpStation.waitUntil] calls.
+ *
+ * The block builds a [PumpStationWaitConfiguration] that
+ * [PumpStationBuilder.build] applies through the public fluent setters.
+ */
+@PumpStationDslMarker
+class WaitPolicyBuilder
+{
+    /**
+     * When true, a MultiPath dispatch that fans out a batch of async paths
+     * joins on [AllPathsSettled] before the loop advances. Defaults to false
+     * to preserve the existing fire-and-collect behavior.
+     */
+    var joinAllPathsOnMultiDispatch: Boolean = false
+
+    /**
+     * Default timeout in milliseconds for joins and [PumpStation.waitUntil]
+     * calls that pass no explicit timeout. Null (the default) means unbounded
+     * until the condition is satisfied. A timed-out join degrades to
+     * warn + continue.
+     */
+    var defaultTimeoutMs: Long? = null
+
+    /**
+     * Build the [PumpStationWaitConfiguration] the
+     * [PumpStationBuilder.build] method applies to the built station.
+     */
+    internal fun build(): PumpStationWaitConfiguration
+    {
+        return PumpStationWaitConfiguration(
+            joinAllPathsOnMultiDispatch = joinAllPathsOnMultiDispatch,
+            defaultTimeoutMs = defaultTimeoutMs,
+            defaultPollIntervalMs = 50,
+            initialWaits = emptyList()
         )
     }
 }

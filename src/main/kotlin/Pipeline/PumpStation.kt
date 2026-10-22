@@ -901,7 +901,8 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
  */
 class PumpStation(
     killSwitch: KillSwitch? = null,
-    steeringService: PumpStationSteeringService = PumpStationSteeringService()
+    steeringService: PumpStationSteeringService = PumpStationSteeringService(),
+    waitService: PumpStationWaitService = PumpStationWaitService()
 ) : P2PInterface
 {
     private data class ActiveForegroundChild(
@@ -933,6 +934,8 @@ class PumpStation(
     private var _killSwitch: KillSwitch? = killSwitch
 
     private val _steeringService: PumpStationSteeringService = steeringService
+
+    private val _waitService: PumpStationWaitService = waitService
 
     /**
      * Kill switch attached to this PumpStation. The default [KillSwitch.onTripped] callback throws
@@ -972,6 +975,17 @@ class PumpStation(
      * by external producer code that wants to send an interrupt.
      */
     val interruptService: PumpStationInterruptService = PumpStationInterruptService()
+
+    /**
+     * The wait / join service instance the harness loop uses to suspend the main
+     * loop until a [PumpStationWaitSpec] condition is met (join-all-paths,
+     * wake-on-event, or polled condition). Always non-null — defaults to an
+     * empty [PumpStationWaitService] when no `waitPolicy { }` is configured.
+     *
+     * Exposed for external producer code that wants to request / release a wait
+     * directly, and for the harness loop's settle + event-funnel hooks.
+     */
+    val waitService: PumpStationWaitService get() = _waitService
 
     private data class ResolvedControlTarget(
         val station: PumpStation,
@@ -1992,6 +2006,26 @@ private fun pathKey(name: String): String = name.lowercase()
     val failurePolicy = PumpStationFailurePolicy()
 
     /**
+     * When true, a MultiPath dispatch that fans out a batch of async paths
+     * joins on an [AllPathsSettled] wait before returning to the loop —
+     * making "wait for every path I called to return" a first-class mode.
+     * Defaults to false to preserve the existing fire-and-collect semantics
+     * (results drain at the next judge turn). Configured via
+     * [setWaitAllPathsOnMultiDispatch] or the `waitPolicy { }` DSL block.
+     */
+    private var waitAllPathsOnMultiDispatch: Boolean = false
+
+    /**
+     * Default timeout in milliseconds applied to the multi-dispatch join and
+     * to [waitUntil] calls that do not pass an explicit timeout. Null (the
+     * default) means the join / wait is unbounded until settled. A timed-out
+     * join degrades to warn + continue: it emits
+     * [WaitCompleted] with [PumpStationWaitReason.Timeout] and the loop
+     * advances to the judge, which sees whatever results have settled.
+     */
+    private var waitDefaultTimeoutMs: Long? = null
+
+    /**
      * Monotonic sequence counter assigned to every [PendingTurnEntry] at enqueue time.
      * Async paths and async harness agents pull a [seq] from this counter, so the
      * foreground drain can sort pending entries by [seq] even when out-of-order
@@ -1999,6 +2033,40 @@ private fun pathKey(name: String): String = name.lowercase()
      * because the async fire site (which is a coroutine) is the only writer.
      */
     private val asyncSeqCounter = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /**
+     * Counter of in-flight async / background path legs (those launched via
+     * [com.TTT.Pipeline.launchAsyncPath] and not yet settled). Incremented on
+     * launch, decremented on settle (both the success and the isolated-exception
+     * paths count as settled, so a failed leg still unblocks a join). This is
+     * the "paths-only" join metric the [AllPathsSettled] wait spec reads:
+     * [PumpStationWaitService.notifyPathSettled] releases every active
+     * `AllPathsSettled` wait once [inFlightPathCount] returns to zero.
+     *
+     * Deliberately scoped to path legs only — the interval-gated async harness
+     * agent slots ([runBackgroundAgentsPhase]) do not participate, matching the
+     * locked "paths only" join scope. An [AtomicInteger] because the writers
+     * are the async launch / settle coroutines.
+     */
+    private val inFlightPathCounter = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /**
+     * Number of in-flight async / background path legs. Read by
+     * [PumpStationWaitService.notifyPathSettled] to decide when a join of
+     * [AllPathsSettled] may resolve.
+     */
+    internal fun inFlightPathCount(): Int = inFlightPathCounter.get()
+
+    /**
+     * Increment or decrement the in-flight path leg counter. [delta] is +1 on a
+     * [launchAsyncPath] start and -1 when that leg settles (success or
+     * isolated failure). Never drives a negative value below zero in practice;
+     * the harness is the sole pair of producers/consumers for this counter.
+     */
+    internal fun bumpInFlightPath(delta: Int)
+    {
+        inFlightPathCounter.addAndGet(delta)
+    }
 
     /**
      * Queue of pending turn entries produced by async paths and async harness agents.
@@ -3079,6 +3147,13 @@ private fun pathKey(name: String): String = name.lowercase()
         // in PumpStationHelpers.kt and is no-op when tracingEnabled is false, so the cost is a
         // single null check on the hot path.
         tracePumpStationEvent(event)
+        // Wait / join hook: an OnEvent wait auto-releases when a matching event flows
+        // through. Gated by hasEventFilters() so the default (no OnEvent wait) run is
+        // a single cheap check with no allocation.
+        if (waitService.hasEventFilters())
+        {
+            waitService.eventObserved(event)
+        }
     }
 
     /**
@@ -3111,6 +3186,14 @@ private fun pathKey(name: String): String = name.lowercase()
     internal val maxRepairPromptTokensInternal get() = maxRepairPromptTokens
     internal val maxBlowoutRecoveriesInternal get() = maxBlowoutRecoveries
     internal val blowoutThresholdInternal get() = blowoutThreshold
+
+    //=====================================Group W accessors (Wait/Join)============================================
+    // Internal read-only accessors so PumpStationLoop.kt extension functions (Group W:
+    // wait / join) can read the wait-mode configuration. Mutation goes through the
+    // public fluent setters to preserve the existing builder pattern.
+
+    internal val waitAllPathsOnMultiDispatchInternal get() = waitAllPathsOnMultiDispatch
+    internal val waitDefaultTimeoutMsInternal get() = waitDefaultTimeoutMs
 
     //=====================================Group Q accessors (SafePrune)============================================
     // Internal read-only accessors so PumpStationLoop.kt extension functions (Group Q:
@@ -3309,6 +3392,9 @@ private fun pathKey(name: String): String = name.lowercase()
     {
         taskState.exitReason = reason
         taskState.status = PumpStationStatus.Failed
+        // Wake any harness loop suspended on a wait / join so it observes the
+        // new exit reason and exits cleanly instead of blocking forever.
+        waitService.cancelAll()
         notifyResume()
         emitEventInternal(HarnessFailed(
             runId = taskState.runId,
@@ -3318,6 +3404,154 @@ private fun pathKey(name: String): String = name.lowercase()
             exitReason = reason
         ))
     }
+
+    //=====================================Wait / Join (Group W)=====================================================
+    // Public surface for suspending the main harness loop on a condition. The
+    // "main agent" (a path's executionFunction, a DITL hook, or external code)
+    // calls [requestWait] / [waitUntil] to make the harness sleep until the
+    // condition is met, then resume forward. The backing store is
+    // [PumpStationWaitService] ([waitService]).
+
+    /**
+     * Request a wait / join under a stable [name]. The harness can suspend on
+     * the returned handle via [PumpStationWaitHandle.awaitResolution]; external
+     * code can settle it via [releaseWait] / [cancelWait] or, for the built-in
+     * [AllPathsSettled] spec, automatically when the last in-flight path leg
+     * settles ([PumpStationWaitService.notifyPathSettled]).
+     *
+     * When [timeoutMs] is null the wait is bounded by [setWaitDefaultTimeoutMs]
+     * (default null = unbounded). A timed-out wait degrades to warn + continue:
+     * the loop advances and the judge sees whatever has settled.
+     *
+     * @param spec The condition to wait on.
+     * @param name A stable key for this wait; used for release / cancellation
+     *   and surfaced on [WaitStarted] / [WaitCompleted] events.
+     * @param timeoutMs Optional explicit timeout; null falls back to the
+     *   station default.
+     * @return A [PumpStationWaitHandle] to await, release, or cancel.
+     */
+    fun requestWait(
+        spec: PumpStationWaitSpec,
+        name: String,
+        timeoutMs: Long? = null
+    ): PumpStationWaitHandle
+    {
+        val handle = waitService.request(spec, name, timeoutMs ?: waitDefaultTimeoutMs, this)
+        emitEventInternal(WaitStarted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            phase = taskState.phase,
+            waitName = name,
+            specLabel = spec.label(),
+            timeoutMs = timeoutMs ?: waitDefaultTimeoutMs
+        ))
+        return handle
+    }
+
+    /**
+     * Convenience that requests a wait and suspends the current coroutine until
+     * it settles, returning the [PumpStationWaitResult]. This is the primary
+     * "make the harness go to sleep" call: a path's `executionFunction` or a
+     * DITL hook can call `stationRef.waitUntil(AllPathsSettled(), "join")` to
+     * join all in-flight paths before continuing.
+     *
+     * @param spec The condition to wait on.
+     * @param name A stable key for this wait.
+     * @param timeoutMs Optional explicit timeout; null falls back to the
+     *   station default.
+     * @return The [PumpStationWaitResult] describing how the wait settled.
+     */
+    suspend fun waitUntil(
+        spec: PumpStationWaitSpec,
+        name: String,
+        timeoutMs: Long? = null
+    ): PumpStationWaitResult
+    {
+        val handle = requestWait(spec, name, timeoutMs)
+        val result = handle.awaitResolution(timeoutMs)
+        emitEventInternal(WaitCompleted(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            phase = taskState.phase,
+            waitName = name,
+            specLabel = result.specLabel,
+            satisfied = result.satisfied,
+            reason = result.reason,
+            elapsedMs = result.elapsedMs
+        ))
+        return result
+    }
+
+    /**
+     * Manually release the wait named [name] so any suspended
+     * [PumpStationWaitHandle.awaitResolution] returns with
+     * [PumpStationWaitReason.Resolved]. Idempotent; releasing an unknown or
+     * already-settled name is a no-op.
+     *
+     * @return This PumpStation instance for method chaining.
+     */
+    fun releaseWait(name: String): PumpStation
+    {
+        waitService.release(name, PumpStationWaitReason.Resolved)
+        return this
+    }
+
+    /**
+     * Cancel the wait named [name] so any suspended
+     * [PumpStationWaitHandle.awaitResolution] returns with
+     * [PumpStationWaitReason.Cancelled]. Idempotent.
+     *
+     * @return This PumpStation instance for method chaining.
+     */
+    fun cancelWait(name: String): PumpStation
+    {
+        waitService.release(name, PumpStationWaitReason.Cancelled)
+        return this
+    }
+
+    /**
+     * Sets whether a MultiPath dispatch joins on [AllPathsSettled] before the
+     * loop advances, turning the batch fan-out into a first-class
+     * "wait for every path to return" mode. When false (the default) the
+     * existing fire-and-collect behavior is preserved: results drain at the
+     * next judge turn.
+     *
+     * @param value True to join on the multi-dispatch batch; false to keep
+     *   fire-and-collect.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setWaitAllPathsOnMultiDispatch(value: Boolean): PumpStation
+    {
+        waitAllPathsOnMultiDispatch = value
+        return this
+    }
+
+    /**
+     * Sets the default timeout applied to the multi-dispatch join and to
+     * [waitUntil] calls that pass no explicit timeout. Null (the default)
+     * means unbounded; a timed-out join degrades to warn + continue.
+     *
+     * @param ms The default timeout in milliseconds, or null for unbounded.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setWaitDefaultTimeoutMs(ms: Long?): PumpStation
+    {
+        waitDefaultTimeoutMs = ms
+        return this
+    }
+
+    /**
+     * Returns whether a MultiPath dispatch joins on [AllPathsSettled] before the
+     * loop advances. Read-back for the [setWaitAllPathsOnMultiDispatch] /
+     * `waitPolicy { }` configuration.
+     */
+    fun getWaitAllPathsOnMultiDispatch(): Boolean = waitAllPathsOnMultiDispatch
+
+    /**
+     * Returns the default join / [waitUntil] timeout in milliseconds, or null
+     * when unbounded. Read-back for [setWaitDefaultTimeoutMs].
+     */
+    fun getWaitDefaultTimeoutMs(): Long? = waitDefaultTimeoutMs
 
     /**
      * Internal accessor for the private [invokePath] funnel so that
@@ -3567,6 +3801,11 @@ private fun pathKey(name: String): String = name.lowercase()
         taskState.pausedAt = snapshot.taskState.pausedAt
         taskState.pauseReason = snapshot.taskState.pauseReason
         harnessIsReady = true
+
+        // A wait / join is a transient rendezvous, not snapshot state. Cancel any
+        // in-flight waits so a stale "waiting for N paths" does not linger after
+        // the restore rewinds the harness.
+        waitService.cancelAll()
 
         // Emit HarnessResumed event
         emitEventInternal(HarnessResumed(
@@ -5795,6 +6034,10 @@ private fun pathKey(name: String): String = name.lowercase()
                 }
             }
         }
+        // Any wait / join suspended on this station's async legs is now stale;
+        // cancel it so a later resume does not block on a condition that can
+        // no longer be satisfied.
+        waitService.cancelAll()
     }
 
     /**

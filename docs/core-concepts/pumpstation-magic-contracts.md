@@ -461,6 +461,55 @@ data class FlagCheckResult(
 )
 ```
 
+## Wait / Join Contract (Outbound)
+
+Not an LLM contract — a harness-control contract. It lets a path's `executionFunction`, a DITL hook, or external code suspend the main loop until a condition holds, then resume forward. Unlike the LLM-facing contracts above, this one has **no prompt and no JSON shape**: it is an imperative API. The "magic" is the join-all-paths mode — fanning out a batch of sub-agent paths and blocking the loop until every leg has returned a value.
+
+### API
+
+`Pipeline/PumpStationWaitModels.kt` and `Pipeline/PumpStation.kt` (Group W):
+
+```kotlin
+val station = buildTestStation()
+
+// Join all in-flight async paths
+station.waitUntil(AllPathsSettled(batchName = "research"), "join", timeoutMs = 30_000)
+
+// Wake on a specific event
+station.waitUntil(OnEvent(filter = { it is PathCompleted }), "evt")
+
+// Wait on a polled external condition
+station.waitUntil(OnCondition({ externalState.ready }, 50), "cond")
+
+// Manual control from a DITL hook / observer
+val handle = station.requestWait(AllPathsSettled(), "h")
+station.releaseWait("h")   // or station.cancelWait("h")
+```
+
+### Spec Shapes
+
+| Spec | Resolves when |
+|------|---------------|
+| `AllPathsSettled(batchName)` | The in-flight async path counter returns to zero (the join metric counts `launchAsyncPath` legs only — interval-gated harness agents do not participate) |
+| `OnEvent(filter, wakeName)` | A `PumpStationEvent` matching `filter` is emitted through the harness funnel |
+| `OnCondition(predicate, pollIntervalMs)` | A polled predicate returns true |
+
+### First-Class Join Mode
+
+`waitPolicy { joinAllPathsOnMultiDispatch = true }` makes `runDispatchPhaseMulti` block on an `AllPathsSettled` join before the turn returns, so the judge's next call observes the whole batch in one context. Off by default — when off, the existing fire-and-collect-on-next-judge-turn behavior is preserved exactly.
+
+### Timeout: Warn + Continue
+
+A timed-out wait emits `WaitCompleted(satisfied = false, reason = Timeout)` and the loop advances; the judge sees whatever settled and decides. Timeout is a soft correction, never a halt.
+
+### Events
+
+`WaitStarted(waitName, specLabel, timeoutMs)` and `WaitCompleted(waitName, specLabel, satisfied, reason, elapsedMs)`. Trace types `PUMP_STATION_WAIT_STARTED` / `PUMP_STATION_WAIT_COMPLETED` (icons `💤` / `☑️`).
+
+### Cancellation Boundaries
+
+`forceHalt`, `cancelAsyncJobs`, and `restoreSnapshot` all call `waitService.cancelAll()` — a suspended loop is never left blocking on a condition that can no longer be satisfied. Waits are transient rendezvous state, not part of `PumpStationSnapshot`.
+
 
 ## Strict vs Lenient Parsing
 

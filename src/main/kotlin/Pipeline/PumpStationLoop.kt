@@ -737,6 +737,23 @@ internal suspend fun PumpStation.runDispatchPhaseMulti(): PathRequest?
                 totalTokens = dispatchUsage?.second?.second
             ))
 
+            // Wait / join (Group W): when the developer opted into the
+            // first-class join mode, block this (foreground) turn until every
+            // fanned-out path leg has settled. A slow leg degrades to
+            // warn + continue — waitUntil returns an unsatisfied result on
+            // timeout and the loop advances to the judge, which reads
+            // whatever has landed. Default (flag off) leaves the existing
+            // fire-and-collect path untouched.
+            if (waitAllPathsOnMultiDispatchInternal && succeededCount > 0)
+            {
+                val joinTimeout = waitDefaultTimeoutMsInternal
+                waitUntil(
+                    spec = AllPathsSettled(batchName = pathRequestList.batchRationale),
+                    name = "multi-join-${taskState.turnIndex}",
+                    timeoutMs = joinTimeout
+                )
+            }
+
             return null
         }
 
@@ -939,6 +956,10 @@ private fun PumpStation.launchAsyncPath(
         permits = maxConcurrentBackgroundAgentsInternal.coerceAtLeast(1)
     )
 
+    // Wait / join (Group W): register this leg as in-flight so an
+    // AllPathsSettled join blocks until it (and any siblings) settle.
+    bumpInFlightPath(+1)
+
     launchOn.launch {
         try
         {
@@ -967,10 +988,15 @@ private fun PumpStation.launchAsyncPath(
                 terminatePipeline = result.terminatePipeline
             )
             pendingAsyncResultsInternal.trySend(entry)
+            // Wait / join (Group W): this leg settled successfully; unblock any join.
+            bumpInFlightPath(-1)
+            waitService.notifyPathSettled(this@launchAsyncPath)
         }
         catch (e: kotlinx.coroutines.CancellationException)
         {
-            // Honour cancellation: do not enqueue a partial result.
+            // Honour cancellation: do not enqueue a partial result. A cancelled
+            // leg is torn down with the station scope, so the whole-scope
+            // cancelAll() releases any pending join; do not decrement here.
             throw e
         }
         catch (e: Throwable)
@@ -988,6 +1014,10 @@ private fun PumpStation.launchAsyncPath(
                 error = classifyPathException(e),
                 errorMessage = e.message
             ))
+            // Wait / join (Group W): a failed leg still counts as settled, so an
+            // AllPathsSettled join is not blocked by a leg that threw.
+            bumpInFlightPath(-1)
+            waitService.notifyPathSettled(this@launchAsyncPath)
         }
     }
 }
