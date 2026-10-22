@@ -894,6 +894,29 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     }
 
     /**
+     * Declare a [SuperPath] that bundles multiple contained paths behind a single
+     * dispatchable path. The contained paths are reachable only through the [SuperPath]'s
+     * query protocol (list / describe / invoke) or schema sniffing, so they never appear
+     * in the dispatch menu individually — one stable menu line keeps the prompt cache
+     * intact while the LLM discovers the inner paths across 1–2 turns.
+     *
+     * Use this in place of the reserve/reveal system when you want to keep related paths
+     * grouped and avoid cache-breaks caused by revealing or hiding paths.
+     *
+     * @param pathName The [SuperPath]'s own name (the menu line the dispatch agent sees).
+     * @param block Builder block that configures the [SuperPath] and its contained paths.
+     * @return A [PumpStationBuilder] in the [PumpStationStage.Ready] stage - the
+     *         stage the [build] call is gated to.
+     */
+    fun superPath(pathName: String, block: SuperPathBlock.() -> Unit): PumpStationBuilder<PumpStationStage.Ready>
+    {
+        val spb = SuperPathBlock(pathName, this)
+        spb.block()
+        spb.build()
+        return promote()
+    }
+
+    /**
      * Configure dispatcher rules that govern path selection constraints.
      *
      * @param block Builder block that configures dispatcher rules.
@@ -2020,6 +2043,222 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
     fun build(): PathObject {
         builder.reservePaths[pathName] = pathObject
         return pathObject
+    }
+}
+
+/**
+ * Builder for [SuperPath] configuration. The block configures the outer bundle
+ * (its menu line, listing override, and strict router) and declares the contained
+ * paths via nested `path(name) { }` blocks.
+ *
+ * ```kotlin
+ * superPath("researchTools") {
+ *     description = "Bundles the research tool suite behind a single dispatchable path."
+ *     listingMessage = "Available: webSearch, factCheck, summarize — query me to use them."
+ *     path("webSearch") {
+ *         description = "Searches the web."
+ *         schema = """{"query": "string"}"""
+ *         setInternalAgent(webSearchAgent)
+ *     }
+ *     path("factCheck") {
+ *         description = "Verifies a claim."
+ *         setExecutionFunction { content, _, _, _ -> ... }
+ *     }
+ * }
+ * ```
+ *
+ * The contained paths are NOT registered on the station's path menu individually — only
+ * the [SuperPath] itself appears. They are reached through the query protocol
+ * (list / describe / invoke) or schema sniffing.
+ */
+@PumpStationDslMarker
+class SuperPathBlock(private val pathName: String, private val builder: PumpStationBuilder<*>)
+{
+    val superPath = SuperPath()
+
+    init { superPath.pathName = pathName }
+
+    /**
+     * The [SuperPath]'s own menu-line description. This is what the dispatch agent sees in its
+     * system prompt — describe the *bundle's* capability, not the individual contained paths.
+     */
+    var description: String
+        get() = superPath.pathDescription
+        set(value) { superPath.pathDescription = value }
+
+    /**
+     * Optional override for the `list` / zero-match reply. When null (the default), the reply
+     * is auto-generated from the contained paths' names and descriptions.
+     */
+    var listingMessage: String?
+        get() = superPath.defaultListingMessage
+        set(value) { superPath.defaultListingMessage = value }
+
+    /**
+     * Risk level applied to the [SuperPath] itself (not to the contained paths individually —
+     * per-inner-path risk gating is not enforced by the harness; see [SuperPath]).
+     */
+    var risk: PathRiskLevel
+        get() = superPath.riskLevel
+        set(value) { superPath.riskLevel = value }
+
+    /**
+     * Optional dispatch hint advisory to the LLM. Soft guidance only.
+     */
+    var dispatchHint: String
+        get() = superPath.dispatchHint
+        set(value) { superPath.dispatchHint = value }
+
+    /**
+     * Set a strict router that overrides the built-in envelope + sniff resolution. Return null
+     * from the router to defer to the built-in resolution for that call.
+     *
+     * @param router The routing function, or null to clear.
+     */
+    fun setCustomRouter(router: ((MultimodalContent, PumpStation, ConverseHistory?, String) -> PathObject?)?)
+    {
+        superPath.customRouter = router
+    }
+
+    /**
+     * Declare a contained path inside this [SuperPath]. The contained path is reachable only
+     * through the [SuperPath]'s query protocol — it is never registered on the station's
+     * path menu.
+     *
+     * @param containedName The contained path's name (what the LLM targets via `describe` / `invoke`).
+     * @param block Builder block configuring the contained [PathObject].
+     */
+    fun path(containedName: String, block: ContainedPathBlock.() -> Unit)
+    {
+        val cpb = ContainedPathBlock(containedName)
+        cpb.block()
+        superPath.addPath(cpb.pathObject)
+    }
+
+    /**
+     * Build and add this [SuperPath] to the parent builder. Validates at build time that the
+     * bundle is non-empty and every contained path has at least one execution mechanism —
+     * matching the [PathObject] house rule, but without invoking the contained agents'
+     * P2PInit (that still happens once, at station init).
+     *
+     * @return The configured [SuperPath].
+     */
+    fun build(): SuperPath
+    {
+        require(superPath.containedPaths.isNotEmpty())
+        {
+            "superPath('$pathName') requires at least one contained path declared via path(\"name\")."
+        }
+        for (p in superPath.containedPaths)
+        {
+            require(p.pathName.isNotBlank())
+            {
+                "superPath('$pathName') contains a named path with a blank name."
+            }
+            val hasMechanism = p.isExecutionFunctionSet || p.isInternalAgentSet ||
+                (p.pcpSchema != null && p.pcpSchema!!.tpipeOptions.isNotEmpty())
+            require(hasMechanism)
+            {
+                "Contained path '${p.pathName}' in superPath('$pathName') has no execution mechanism. " +
+                "Set one of: execution function, internal agent, or a bound PCP function."
+            }
+        }
+        // Auto-generate the cache-stable menu line unless the developer overrode it.
+        if (superPath.pathSchema.isBlank())
+        {
+            superPath.pathSchema = superPath.resolveProtocolSchema()
+        }
+        builder.pathObjects[pathName] = superPath
+        return superPath
+    }
+}
+
+/**
+ * Builder for a contained [PathObject] inside a [SuperPathBlock]. Thin surface over
+ * [PathObject] mirroring the [PathBlock] DSL members (minus reserve/harness concerns,
+ * which do not apply to contained paths).
+ */
+@PumpStationDslMarker
+class ContainedPathBlock(private val pathName: String)
+{
+    val pathObject = PathObject()
+
+    init { pathObject.pathName = pathName }
+
+    /**
+     * The contained path's description. This is what the dispatch LLM reads in the
+     * `list` and `describe` replies, so describe the *inner* path's capability.
+     */
+    var description: String
+        get() = pathObject.pathDescription
+        set(value) { pathObject.pathDescription = value }
+
+    /**
+     * The contained path's input schema. Drives schema sniffing (required-key match) and
+     * is what the `describe` reply surfaces.
+     */
+    var schema: String
+        get() = pathObject.pathSchema
+        set(value) { pathObject.pathSchema = value }
+
+    /**
+     * Risk level for the contained path. Advisory only — the harness does not run
+     * per-inner-path safety gates (contained paths are not in the station's path menu).
+     */
+    var risk: PathRiskLevel
+        get() = pathObject.riskLevel
+        set(value) { pathObject.riskLevel = value }
+
+    /**
+     * Optional pre-built PCP schema for the contained path.
+     */
+    var pcpSchema: PcpContext?
+        get() = pathObject.pcpSchema
+        set(value) { pathObject.pcpSchema = value }
+
+    /**
+     * Bind a Kotlin function to this contained path under its own name.
+     */
+    fun bindFunction(function: KFunction<*>)
+    {
+        pathObject.bindFunction(function.name, function)
+    }
+
+    /**
+     * Bind a Kotlin function to this contained path under an explicit name.
+     */
+    fun bindFunction(name: String, function: KFunction<*>)
+    {
+        pathObject.bindFunction(name, function)
+    }
+
+    /**
+     * Set an internal agent to execute this contained path.
+     *
+     * @param agent The P2PInterface agent to set.
+     */
+    fun setInternalAgent(agent: P2PInterface)
+    {
+        pathObject.setInternalAgent(agent)
+    }
+
+    /**
+     * Set the raw execution function for this contained path.
+     *
+     * @param function The suspend function to invoke when this contained path is routed to.
+     */
+    fun setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)
+    {
+        pathObject.setExecutionFunction(function)
+    }
+
+    /**
+     * Set the output capture function that observes the final [MultimodalContent] just before
+     * it returns from the contained path.
+     */
+    fun setOutputCaptureFunction(func: suspend (content: MultimodalContent) -> Unit)
+    {
+        pathObject.setOutputCaptureFunction(func)
     }
 }
 

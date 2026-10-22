@@ -187,6 +187,14 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["reason"] = event.reason.name
             baseMetadata["elapsedMs"] = event.elapsedMs
         }
+        is SuperPathRouted ->
+        {
+            eventType = TraceEventType.PUMP_STATION_SUPERPATH_ROUTED
+            baseMetadata["superPathName"] = event.superPathName
+            baseMetadata["op"] = event.op
+            baseMetadata["targetPathName"] = event.targetPathName ?: ""
+            baseMetadata["success"] = event.success
+        }
 
         is InterruptOverflowDropped ->
         {

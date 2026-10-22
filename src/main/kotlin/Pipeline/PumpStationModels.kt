@@ -609,6 +609,33 @@ data class PathFailed(
 ) : PumpStationEvent
 
 /**
+ * A [com.TTT.Pipeline.SuperPath] routed one of its contained paths. Emitted on every
+ * resolution branch of [com.TTT.Pipeline.SuperPath.execute] so observers and traces
+ * can follow sub-agent traffic that never appears in the dispatch menu.
+ *
+ * @property superPathName The outer [com.TTT.Pipeline.SuperPath]'s own pathName (what the dispatch
+ *         agent selected).
+ * @property op The resolution op that produced this event: `"list"`, `"describe"`, `"invoke"`,
+ *         `"sniff"`, `"customRouter"`, `"disambiguate"`, or `"unknown"`.
+ * @property targetPathName The contained path's name when the op resolved to a specific path;
+ *         null for list/disambiguate/unknown ops.
+ * @property success True when the op produced a useful reply (resolved listing, description,
+ *         inner result, or routed customRouter hit); false for disambiguation, unknown
+ *         targets, and unmatched inputs.
+ */
+@kotlinx.serialization.Serializable
+data class SuperPathRouted(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.PathExecution,
+    val superPathName: String,
+    val op: String,
+    val targetPathName: String?,
+    val success: Boolean
+) : PumpStationEvent
+
+/**
  * A batch of paths was selected for fan-out execution. Emitted at the start
  * of the multi-path dispatch phase when [com.TTT.Pipeline.PumpStation] is
  * configured with [PathExecutionShape.MultiPath].

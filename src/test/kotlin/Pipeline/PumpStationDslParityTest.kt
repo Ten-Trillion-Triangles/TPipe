@@ -10,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -177,6 +178,21 @@ class PumpStationDslParityTest
                     revealWhen { state, _ -> state.turnIndex > 0 }
                 }
 
+                // ===== SuperPath (bundle of contained paths) =====
+                superPath("researchTools") {
+                    description = "bundles research tools"
+                    listingMessage = "Available: webSearch, factCheck"
+                    risk = PathRiskLevel.Low
+                    path("webSearch") {
+                        description = "searches the web"
+                        setInternalAgent(SgTestAgent(agentTag = "ws-agent"))
+                    }
+                    path("factCheck") {
+                        description = "verifies a claim"
+                        setExecutionFunction { _, _, _, _ -> MultimodalContent(text = "verified") }
+                    }
+                }
+
                 // ===== Dispatcher rules =====
                 dispatcherRules {
                     maxConsecutive("alpha", 1)
@@ -204,6 +220,18 @@ class PumpStationDslParityTest
 
             val gamma = station.getReservePathNames()
             assertTrue("gamma" in gamma, "gamma reserve path should be registered; got $gamma")
+
+            // SuperPath round-trips through the path menu (bundle only, not the contained paths)
+            val research = station.getPath("researchTools")
+            assertNotNull(research, "researchTools SuperPath should be registered")
+            val sp = research as? SuperPath
+            assertNotNull(sp, "researchTools should be a SuperPath")
+            assertEquals(2, sp!!.containedPaths.size, "both contained paths should be bundled")
+            assertEquals("bundles research tools", sp.pathDescription)
+            assertEquals("Available: webSearch, factCheck", sp.defaultListingMessage)
+            assertNotNull(sp.pathSchema, "the cache-stable protocol schema should be auto-generated")
+            assertNull(station.getPath("webSearch"), "contained paths must not be registered individually")
+            assertNull(station.getPath("factCheck"))
 
             // Pause phases
             val state = station.getTaskState()

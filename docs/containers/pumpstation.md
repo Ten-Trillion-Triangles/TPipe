@@ -30,6 +30,7 @@
 - [Path Risk Levels](#path-risk-levels)
 - [Loop Guards](#loop-guards)
 - [Reserve Paths](#reserve-paths)
+- [Super Paths](#super-paths)
 - [Async Substrate](#async-substrate)
 - [Wait / Join: Suspending the Main Loop](#wait--join-suspending-the-main-loop)
 - [Stash, Snapshots, and Pause/Resume](#stash-snapshots-and-pauseresume)
@@ -1496,6 +1497,59 @@ reservePath("sandboxed-shell") {
 Once a reserve path is revealed, it stays visible for the remainder of the run (sticky). The `getVisiblePathDescriptorsInternal` method (`Pipeline/PumpStation.kt:1739`) is responsible for filtering reserve paths based on `revealWhen`. The set of revealed reserve paths is tracked in the internal `revealedReservePaths` set.
 
 A `ReservePathRevealed` event is emitted on the first turn a reserve path becomes visible, with `pathName` and the full list of reserve paths.
+
+A `SuperPathRouted` event (or the trace node `PUMP_STATION_SUPERPATH_ROUTED`) is emitted on every SuperPath resolution branch.
+
+
+## Super Paths
+
+A `SuperPath` (`Pipeline/PumpStationSuperPath.kt`) is a **bundle of contained paths exposed as a single dispatchable path** — the "connector of paths," mirroring what a connector is to a pipeline. It is the prompt-cache-friendly counterpart to the reserve/reveal system:
+
+| Mechanism | What's hidden | Cost of discovery |
+|-----------|---------------|-------------------|
+| Reserve/reveal | Paths are removed from the menu and re-added on demand | **Breaks the dispatch prompt cache** every time the visible set changes |
+| `SuperPath` | Paths are bundled behind one stable menu line | **1–2 extra LLM query turns**; the learned knowledge then persists in conversation history, and the menu line never changes |
+
+Use a `SuperPath` when you have many related paths (e.g. a tool suite) that you don't want to carry individually in the dispatch menu, but where you also don't want the cache churn of reveal/hide.
+
+### How it works
+
+Only the `SuperPath` itself appears in the dispatch menu — its contained paths are **never individually registered** on the station. The menu line carries an auto-generated **protocol schema** (the cache-stable line) that documents three query ops:
+
+| op | extra fields | effect |
+|----|--------------|--------|
+| `list` | — | reply with the names + descriptions of every contained path (the "initial search") |
+| `describe` | `pathName` | reply with the contained path's `PathDescriptionData` — the same record the dispatch agent would see in its own system prompt |
+| `invoke` | `pathName`, `args` | route into that contained path and run it through its **normal execution stack** ("like normal") |
+
+If the input carries **no valid envelope op**, the `SuperPath` falls back to **schema sniffing**: it parses the input JSON and matches it against each contained path's required top-level keys. A unique match is invoked with the whole candidate as input; multiple matches produce a **disambiguation reply**; zero matches fall back to the listing. A developer `customRouter` can override both the envelope and sniffing when strict, deterministic control is needed.
+
+An invoked contained path's loop-control flags (`passPipeline`, `terminatePipeline`, `interuptPipeline`) are carried on the returned content unchanged, so exit mechanics behave exactly as they do for a directly dispatched path. Results are stamped with `metadata["routedVia"] = "<superPath>/<innerPath>"`.
+
+```kotlin
+pumpStation("research") {
+    judgeAgent = Pipeline()
+    dispatchAgent = Pipeline()
+
+    superPath("researchTools") {
+        description = "Bundles the research tool suite behind one dispatchable path."
+        listingMessage = "Available: webSearch, factCheck — query me to use them."
+        path("webSearch") {
+            description = "Searches the web."
+            schema = """{"required":["query"]}"""
+            setInternalAgent(webSearchAgent)
+        }
+        path("factCheck") {
+            description = "Verifies a claim."
+            setExecutionFunction { content, _, _, _ -> MultimodalContent(text = "verified") }
+        }
+    }
+}
+```
+
+### Cost and kill switch
+
+Because contained paths are not members of the station's `pathList`, **per-inner-path kill switches are not individually enforced** by the harness — the `SuperPath`'s own `killSwitch` and the station-level checks cover cost. A `SuperPath` may nest other `SuperPath`s up to a depth of 4 (init-time error beyond).
 
 
 ## Async Substrate

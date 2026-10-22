@@ -510,6 +510,36 @@ A timed-out wait emits `WaitCompleted(satisfied = false, reason = Timeout)` and 
 
 `forceHalt`, `cancelAsyncJobs`, and `restoreSnapshot` all call `waitService.cancelAll()` — a suspended loop is never left blocking on a condition that can no longer be satisfied. Waits are transient rendezvous state, not part of `PumpStationSnapshot`.
 
+## SuperPath Query Protocol (Outbound)
+
+Not an LLM contract — a **routing contract**. It lets a `SuperPath` (a bundle of contained paths behind one dispatchable path) answer the dispatch agent's queries about what it contains, then route into a specific contained path. Unlike the LLM-facing contracts above, it has a small **wire envelope** the dispatch agent emits, plus a schema-sniffing fallback.
+
+### The Envelope
+
+`Pipeline/PumpStationSuperPath.kt` (companion constants `OP_LIST` / `OP_DESCRIBE` / `OP_INVOKE`, `SUPER_OP` / `SUPER_PATH_NAME` / `SUPER_ARGS`):
+
+```json
+{ "op": "list" }
+{ "op": "describe", "pathName": "webSearch" }
+{ "op": "invoke", "pathName": "webSearch", "args": { "query": "..." } }
+```
+
+| op | Resolves to | Reply |
+|----|-------------|-------|
+| `list` | — | names + descriptions of all contained paths (or the developer `listingMessage`) |
+| `describe` | a contained path by name | that path's `PathDescriptionData` (the record the agent would see in its own system prompt) |
+| `invoke` | a contained path by name | the contained path's **normal execution result**, with loop-control flags carried through |
+
+An unknown `pathName` produces a correction reply listing the valid names (teaches the LLM via history, harness-notice style). When the input has **no valid `op`**, the `SuperPath` **sniffs** the JSON against each contained path's required top-level keys: a unique match is invoked, multiple matches yield a disambiguation reply, zero matches fall back to the listing. A developer `customRouter` overrides both.
+
+### Why (the cache economics)
+
+The whole point is prompt-cache stability. A `SuperPath` keeps exactly **one stable line** in the dispatch menu (its auto-generated protocol schema), so the menu never changes and the cache survives. The per-inner-path knowledge is deferred to 1–2 query turns whose answers persist in the conversation history — the trade-off against the reserve/reveal system, which breaks the cache on every reveal/hide. See **[PumpStation — Super Paths](../containers/pumpstation.md#super-paths)**.
+
+### Events
+
+`SuperPathRouted(superPathName, op, targetPathName, success)` is emitted on every resolution branch (`list`, `describe`, `invoke`, `sniff`, `customRouter`, `disambiguate`, `unknown`). Trace type `PUMP_STATION_SUPERPATH_ROUTED` (icon `🔀`). Because contained paths are never in the station's `pathList`, this event (and the `routedVia` metadata on routed results) is the only way to follow sub-agent traffic that is invisible to the dispatch menu.
+
 
 ## Strict vs Lenient Parsing
 

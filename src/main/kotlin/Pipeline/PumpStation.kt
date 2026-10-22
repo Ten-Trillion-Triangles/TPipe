@@ -240,6 +240,10 @@ data class PathRequest(
  * calls. It comprises execution functions, internal agents, memory management, and PCP tool calls. It effectively
  * encapsulates the concept of a turn in a traditional agent harness and fully encloses the complexities that would
  * otherwise make the harness pattern inefficient.
+ *
+ * [PathObject] is open on purpose: [com.TTT.Pipeline.SuperPath] is the known subclass that bundles
+ * contained [PathObject]s behind a single dispatchable path. Subclasses inherit the full mechanism stack,
+ * kill-switch propagation, and P2P plumbing.
  */
 /**
  * Internal mirror of the [agentTokenUsage] helper from PumpStationLoop — duplicated here
@@ -256,7 +260,7 @@ private fun agentTokenUsageInternal(agent: P2PInterface?): Pair<Int, Pair<Int, I
     return input to (output to total)
 }
 
-class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
+open class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 {
 
 //============================================== Properties ============================================================
@@ -526,8 +530,11 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * @throws IllegalArgumentException if [pathName] is blank
      * @throws IllegalStateException if neither [executionFunction], [internalAgent], [agentBuilderFunction],
      *         nor a bound PCP function is configured (path has no means of execution)
+     *
+     * Open so [com.TTT.Pipeline.SuperPath] can extend the validation with its own
+     * contained-path checks before delegating to the base implementation.
      */
-    suspend fun init(): PathDescriptionData
+    open suspend fun init(): PathDescriptionData
     {
         // Step 1: Validate required configuration
         require(pathName.isNotBlank()) {
@@ -655,14 +662,17 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * 4. [agentBuilderFunction] — if present, a fresh agent is created, initialized via
      *    [P2PInterface.P2PInit], then called via [P2PInterface.executeLocal]
      *
-     * @param content The [MultimodalContent] input to this path
-     * @param station Reference to the parent [PumpStation]
-     * @param turnHistory Current turn history at invocation time (may be null)
-     * @param turnSummary Current turn summary at invocation time
-     * @return [MultimodalContent] result from the path execution
-     * @throws IllegalStateException if no execution mechanism is configured
-     */
-    internal suspend fun execute(
+    * @param content The [MultimodalContent] input to this path
+    * @param station Reference to the parent [PumpStation]
+    * @param turnHistory Current turn history at invocation time (may be null)
+    * @param turnSummary Current turn summary at invocation time
+    * @return [MultimodalContent] result from the path execution
+    * @throws IllegalStateException if no execution mechanism is configured
+    *
+    * Open so [com.TTT.Pipeline.SuperPath] and other subclasses can extend the mechanism stack
+    * while keeping the inherited priority order intact.
+    */
+    internal open suspend fun execute(
         content: MultimodalContent,
         station: PumpStation,
         turnHistory: ConverseHistory?,
@@ -771,8 +781,11 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
      * @param content The [MultimodalContent] input to this path.
      * @return The result produced by the first successful standalone execution mechanism.
      * @throws IllegalStateException if no standalone execution mechanism is configured.
+     *
+     * Open so [com.TTT.Pipeline.SuperPath] can provide a standalone (no-station) routing
+     * entry point alongside the station-aware [execute] override.
      */
-    override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
+    override open suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
         // Priority 1: PCP function — dispatch the request extracted from the content text.
         if (pcpSchema != null && pcpSchema!!.tpipeOptions.isNotEmpty())
