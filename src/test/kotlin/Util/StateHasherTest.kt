@@ -203,4 +203,47 @@ class StateHasherTest
         assertEquals(stateHash(firstConfig, quietOptions), stateHash(secondConfig, quietOptions))
         assertNotEquals(stateHash(firstConfig), stateHash(secondConfig))
     }
+
+    class FunctionHolder
+    {
+        var handler: ((Int) -> Int)? = null
+
+        fun withOffset(offsetValue: Int): FunctionHolder
+        {
+            handler = { value -> value + offsetValue }
+            return this
+        }
+    }
+
+    class ThrowingGetter
+    {
+        var stable: String = "stable"
+
+        val broken: Int
+            get() = throw IllegalStateException("getter disabled in tests")
+    }
+
+    @Test
+    fun functionFieldsStableByDefaultAcrossFreshInstances()
+    {
+        val firstHolder = FunctionHolder().withOffset(1)
+        val secondHolder = FunctionHolder().withOffset(1)
+
+        assertEquals(stateHash(firstHolder), stateHash(secondHolder))
+
+        val identityOptions = StateHashOptions().setEncodeFunctionIdentity(true)
+        assertNotEquals(stateHash(firstHolder, identityOptions), stateHash(secondHolder, identityOptions))
+    }
+
+    @Test
+    fun throwingGetterDegradesToStableMarker()
+    {
+        val firstGetter = ThrowingGetter()
+        val secondGetter = ThrowingGetter()
+
+        assertEquals(stateHash(firstGetter), stateHash(secondGetter))
+
+        firstGetter.stable = "changed"
+        assertNotEquals(stateHash(firstGetter), stateHash(secondGetter))
+    }
 }
