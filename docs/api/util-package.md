@@ -8,6 +8,7 @@
 - [Rest.kt - HTTP Utilities](#restkt---http-utilities)
 - [JsonCleaner.kt - JSON Cleaning](#jsoncleanerkt---json-cleaning)
 - [ReasoningStream.kt - Reasoning Stream Splitting](#reasoningstreamkt---reasoning-stream-splitting)
+- [StateHasher.kt - State Fingerprinting](#statehasherktr---state-fingerprinting)
 
 ## Overview
 
@@ -380,6 +381,34 @@ Splits a collected stream into reasoning and text.
 - Empty input: empty pair.
 - Matching is case-insensitive, so legacy embedded tag variants parse
   identically to the emitted canonical form.
+
+---
+
+## StateHasher.kt - State Fingerprinting
+
+Deterministic SHA-256 fingerprinting of an object's semantic state — an isDirty()-style drift check for Pipe objects (and any object graph).
+
+### Reference
+
+| Symbol | Signature | Behavior |
+|---|---|---|
+| `stateHash` | `fun stateHash(root: Any?, options: StateHashOptions = StateHashOptions()): String` | Lowercase hex SHA-256 digest of the canonical form of `root`'s semantic state graph. A null root is valid and stable. |
+| `isDirty` | `fun isDirty(root: Any?, lastHash: String, options: StateHashOptions = StateHashOptions()): Boolean` | True when the current fingerprint of `root` differs from `lastHash`. Options must match those that produced `lastHash`. |
+| `Pipe.stateSnapshot` | `fun Pipe.stateSnapshot(): String` | `stateHash(this)` — snapshot the pipe's semantic state. |
+| `Pipe.isDirtySince` | `fun Pipe.isDirtySince(lastSnapshot: String): Boolean` | `isDirty(this, lastSnapshot)` — has the pipe drifted since the snapshot? |
+| `StateHashOptions` | `class StateHashOptions` | Fluent configuration: `setMaxDepth` (default 64), `setMaxObjects` (default 10000), `setEncodeFunctionIdentity` (default false), `exclude { predicate }` (default mirrors `cloneInstance` exclusions). All setters return `this`. |
+
+### Behavioral Contract
+
+- **Canonical byte form:** fixed-width big-endian primitives, length-prefixed strings/enums/class names, a 16-tag encoding (null, bool..double, string, enum, array, list, set, map, object, func, exception-marker, cycle, truncated, ...).
+- **Determinism:** Map/Set encoding is insertion-order independent (entries/elements canonically sorted); List encoding is order-sensitive; reference cycles are guarded by an identity map and emit a stable cycle marker; depth and object caps emit a stable truncated marker.
+- **Exclusion boundary (default):** properties annotated `@RuntimeState` or with any annotation whose qualified name contains "Transient" — mirrors `cloneInstance` (`Util.kt:804-812`).
+- **Function values:** marker-only by default (fresh instances with equivalent lambda defaults hash equal); `setEncodeFunctionIdentity(true)` appends the instance identity hash code.
+- **Throwing property getters** degrade to a stable exception-class marker and never abort the fingerprint.
+- **Walk surface:** non-private declared + inherited properties only (private members are out of scope, matching `cloneInstance`).
+- **No `sun.misc.Unsafe`, no native code** — the mechanism stays valid across JDK upgrades.
+
+See [State Fingerprinting](../core-concepts/state-fingerprinting.md) for the tutorial and use cases.
 
 ---
 
