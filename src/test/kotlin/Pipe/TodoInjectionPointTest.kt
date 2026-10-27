@@ -224,4 +224,38 @@ class TodoInjectionPointTest
         assertTrue(entry!!.value.contains("Build the first thing"))
         assertFalse(content.text.contains("Build the first thing"))
     }
+
+    @Test
+    fun focusTaskTravelsWithTheListIntoUserSpace() = runBlocking {
+        val key = "todo-placement-focus-travels"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.AfterUserPrompt)
+            applySystemPrompt()
+        }
+        val content = MultimodalContent(text = "The user ask.")
+        content.metadata["todoTaskNumber"] = 2
+        pipe.injectTPipeTodo(content)
+        val focusIndex = content.text.indexOf("The current task you must focus on")
+        val listIndex = content.text.indexOf("Build the second thing")
+        assertTrue(focusIndex > -1)
+        assertTrue(listIndex > -1)
+        assertTrue(focusIndex > listIndex)
+        assertFalse(pipe.getPrompt().contains("The current task you must focus on"))
+    }
+
+    @Test
+    fun systemPromptTargetStillCarriesFocus()
+    {
+        val key = "todo-placement-focus-system"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setSystemPrompt("Base.")
+            setTodoListPageKey(key)
+            applySystemPrompt(MultimodalContent().apply { metadata["todoTaskNumber"] = 1 })
+        }
+        assertTrue(pipe.getPrompt().contains("The current task you must focus on"))
+        assertTrue(pipe.getPrompt().contains("Build the first thing"))
+    }
 }
