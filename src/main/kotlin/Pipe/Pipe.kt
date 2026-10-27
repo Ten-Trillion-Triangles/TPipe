@@ -3354,7 +3354,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         }
 
         //Inject todo list and focus point if supplied.
-        if(injectTodoList)
+        if(injectTodoList && todoInjectionPoint == TodoInjectionPoint.SystemPrompt)
         {
             val todoListObj = ContextBank.getPagedTodoList(todoPageKey)
             val taskNumber = content?.metadata["todoTaskNumber"] ?: -1
