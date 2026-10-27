@@ -3,6 +3,7 @@
 ## Table of Contents
 - [JSON Prompt Injection](#json-prompt-injection)
 - [System Prompt Configuration](#system-prompt-configuration)
+- [Todo Injection Placement](#todo-injection-placement)
 - [Complete JSON Workflow Example](#complete-json-workflow-example)
 - [Error Handling and Validation](#error-handling-and-validation)
 - [Best Practices](#best-practices)
@@ -300,6 +301,55 @@ pipe.setJsonInput(newInputSchema)
 ```
 
 **applySystemPrompt()**: Reconstructs the complete system prompt with current JSON schemas and other components.
+
+## Todo Injection Placement
+
+When a pipe is linked to a TodoList via `setTodoListPageKey()`, the todo payload — instructions, serialized list, and optional focus-task highlight — is by default composed into the system prompt at `applySystemPrompt()` time. That default is the legacy behavior. The placement is a first-class, selectable target:
+
+```kotlin
+val pipe = BedrockPipe()
+    .setSystemPrompt("You are a task executor.")
+    .setTodoListPageKey("my-tasks")
+    .setTodoInjectionPoint(TodoInjectionPoint.AfterUserPromptWithConverse)
+```
+
+`setTodoInjectionPoint(point: TodoInjectionPoint)` accepts six targets:
+
+| Target | Where the payload lands |
+|---|---|
+| `SystemPrompt` (default) | System prompt, at `applySystemPrompt()` time |
+| `BeforeUserPrompt` | Prepended to the user content, at request time |
+| `BeforeUserPromptWithConverse` | A discrete `ConverseData` entry at the top of a `ConverseHistory` block in user content; plain-text prepend when no history block is present |
+| `AfterUserPrompt` | Appended to the user content, at request time |
+| `AfterUserPromptWithConverse` | A discrete `ConverseData` entry at the bottom of a `ConverseHistory` block in user content; plain-text append when no history block is present |
+| `AsContext` | Merged into the pipe's context space under the `"todoList"` lorebook key, riding whichever context channel is configured (`<tpContext>` system block or auto-inject user tail) |
+
+Two rules keep the behavior predictable:
+
+1. **The focus highlight travels with the list.** When `metadata["todoTaskNumber"]` is set, the "current task you must focus on" section is part of the same payload and lands in the same target — it never splits across prompt spaces.
+2. **The payload is identical everywhere.** Instructions + serialized list + focus section are byte-identical across all six targets; only the slot changes.
+
+### Worked example: stable system prefix for a mutating list
+
+An agent that re-reads a shared todo list on every turn will churn the system prompt under the default target, defeating prefix caching on providers that cache the system message. Move the payload out of the system channel:
+
+```kotlin
+val page = ContextBank.getTodoListKeys().first()   // "team-tasks"
+
+val plannerPipe = BedrockPipe()
+    .setSystemPrompt("You are the team planner. Follow the task list exactly.")
+    .setTodoListPageKey(page)
+    .setTodoInjectionPoint(TodoInjectionPoint.AfterUserPromptWithConverse)
+    .wrapContentWithConverse(ConverseRole.agent)
+```
+
+Every turn, the serialized converse history from the previous pipe carries the todo block as its own entry at the bottom of the history, while the system prompt stays byte-stable across turns.
+
+### Use cases
+
+- **Prefix-cache-friendly agents:** user-space or `AsContext` targets keep the system channel immutable; prefer `AfterUserPrompt` when the model weighs recency, `BeforeUserPrompt` when it weighs primacy.
+- **Multi-agent pipelines sharing a page:** converse-history entries keep the todo payload visibly attributable inside the shared history, instead of hidden in one agent's system prompt.
+- **Context-space agents:** `AsContext` folds the list into the pipe's context space, so it participates in the same truncation and `<tpContext>` guard rules as any other context material.
 
 ## Complete JSON Workflow Example
 

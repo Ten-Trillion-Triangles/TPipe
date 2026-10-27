@@ -403,6 +403,8 @@ Links this pipe to a TodoList stored in ContextBank.
 3. Serializes the TodoList to JSON
 4. Appends it to the system prompt
 
+The placement of that payload is controlled by `setTodoInjectionPoint()` — the default `SystemPrompt` target performs step 4 as described; all other targets move the injection to request time (user content, a discrete `ConverseHistory` entry, or the pipe's context space).
+
 The AI receives the complete task list and can work on tasks accordingly. If the content object has `metadata["todoTaskNumber"]` set, that specific task is highlighted with additional focus instructions.
 
 **Example:**
@@ -436,6 +438,37 @@ pipe.setTodoListInstructions("""
 """.trimIndent())
 ```
 
+#### `setTodoInjectionPoint(point: TodoInjectionPoint): Pipe`
+Controls where the linked TodoList is injected into the prompt.
+
+**Behavior:** The default target `TodoInjectionPoint.SystemPrompt` composes the TodoList into the system prompt at `applySystemPrompt()` time (the legacy behavior described above). All other targets are opt-in: when one is selected, the system prompt no longer carries the TodoList, and the pipe injects the identical payload at request time, immediately before the model API call:
+
+| Target | Payload placement |
+|---|---|
+| `SystemPrompt` (default) | System prompt, composed at `applySystemPrompt()` time |
+| `BeforeUserPrompt` | Prepended to the user content |
+| `BeforeUserPromptWithConverse` | Discrete `ConverseData` entry at the top of a `ConverseHistory` block in the user content; plain-text prepend when no history block is present |
+| `AfterUserPrompt` | Appended to the user content |
+| `AfterUserPromptWithConverse` | Discrete `ConverseData` entry at the bottom of a `ConverseHistory` block in the user content; plain-text append when no history block is present |
+| `AsContext` | Merged into the pipe's context space under the lorebook key `"todoList"` (single `ContextWindow`, or a `"todoList"` page of `MiniBank`) and rides whichever context channel is configured |
+
+The focus-task highlight (`metadata["todoTaskNumber"]`) travels with the list in every target, and the payload — instructions + serialized list + focus section — is byte-identical across targets.
+
+**Prompt-caching implications:** `SystemPrompt` mutates the system message whenever the list changes, which invalidates prefix caching on providers that cache the system prompt. The user-space, converse, and `AsContext` targets keep the system channel stable.
+
+**Compatibility:** The converse targets are fully compatible with `wrapContentWithConverse()` — auto-wrapped pipeline input carries a serialized `ConverseHistory`, which the injector resolves. When `copySystemPromptToUserPrompt()` is enabled with the `SystemPrompt` target, the composed system prompt (TodoList included) folds into user space, so even that target ends up in user content at the wire.
+
+**Subscribers must register:** the default `SystemPrompt` target preserves pre-feature behavior. Changing placement requires calling `setTodoInjectionPoint()` explicitly; no existing pipe's placement changes implicitly.
+
+**Example:**
+```kotlin
+val pipe = BedrockPipe()
+    .setSystemPrompt("You are a task executor.")
+    .setTodoListPageKey("my-tasks")
+    .setTodoInjectionPoint(TodoInjectionPoint.AfterUserPromptWithConverse)
+    .wrapContentWithConverse(ConverseRole.agent)
+```
+
 **Properties:**
 
 **`todoPageKey`**
@@ -455,6 +488,12 @@ Custom instructions for TodoList interpretation. Set via `setTodoListInstruction
 var injectTodoList: Boolean = false
 ```
 Internal flag indicating whether TodoList injection is enabled. Automatically set to `true` when `setTodoListPageKey()` is called.
+
+**`todoInjectionPoint`**
+```kotlin
+var todoInjectionPoint: TodoInjectionPoint = TodoInjectionPoint.SystemPrompt
+```
+Placement target for the linked TodoList. Set via `setTodoInjectionPoint()`. Default `SystemPrompt` preserves the legacy system-prompt composition.
 
 ---
 

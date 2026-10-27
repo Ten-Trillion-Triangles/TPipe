@@ -310,6 +310,29 @@ task?.isComplete = true
 ContextBank.emplaceTodoList("feedback-analysis", updatedList, writeToDisk = true, overwrite = true)
 ```
 
+### Choosing an Injection Placement
+
+By default the TodoList is composed into the pipe's system prompt at `applySystemPrompt()` time. Choose a different target when you need the payload in user prompt space, as a discrete converse-history entry, or in the pipe's context space:
+
+```kotlin
+val pipe = BedrockPipe()
+    .setTodoListPageKey("feedback-analysis")
+    .setTodoInjectionPoint(TodoInjectionPoint.AfterUserPromptWithConverse)
+```
+
+| Target | Where the list lands |
+|---|---|
+| `SystemPrompt` (default) | System prompt, at `applySystemPrompt()` time |
+| `BeforeUserPrompt` / `AfterUserPrompt` | Prepended / appended to the user content, at request time |
+| `BeforeUserPromptWithConverse` / `AfterUserPromptWithConverse` | Discrete `ConverseHistory` entry at the top / bottom of a converse block in user content (plain-text fallback when no converse block is present) |
+| `AsContext` | Merged into the pipe's context space under the `"todoList"` lorebook key, riding the configured context channel |
+
+The focus-task highlight (`metadata["todoTaskNumber"]`) travels with the list in every target.
+
+**Prompt caching:** `SystemPrompt` mutates the system message when the list changes, which breaks prefix caching on providers that cache the system prompt. The user-space, converse, and `AsContext` targets keep the system channel byte-stable — prefer one of those for agents that re-read a mutating list on every turn.
+
+**Compatibility:** the converse targets work with `wrapContentWithConverse()` auto-wrapping, and the system fold (`copySystemPromptToUserPrompt()`) relocates even the `SystemPrompt` target's payload into user space when enabled. See [Pipe API - TodoList Integration](pipe.md#todolist-integration) for the full reference.
+
 ### Customizing Instructions
 
 The default instructions might not fit your use case. You can customize them:
