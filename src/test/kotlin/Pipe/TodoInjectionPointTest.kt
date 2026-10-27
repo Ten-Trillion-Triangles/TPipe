@@ -1,8 +1,10 @@
 package com.TTT.Pipe
 
 import com.TTT.Context.ContextBank
+import com.TTT.Context.ContextWindow
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ConverseRole
+import com.TTT.Context.MiniBank
 import com.TTT.Context.StorageMode
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
@@ -36,6 +38,10 @@ class TodoInjectionPointTest
         }
 
         fun getPrompt(): String = systemPrompt
+
+        fun contextWindowForTest(): ContextWindow = contextWindow
+
+        fun miniContextBankForTest(): MiniBank = miniContextBank
     }
 
     /**
@@ -179,5 +185,43 @@ class TodoInjectionPointTest
         assertTrue(content.text.contains("Plain text, no history."))
         assertTrue(content.text.contains("Build the first thing"))
         assertTrue(content.text.indexOf("Plain text, no history.") < content.text.indexOf("Build the first thing"))
+    }
+
+    @Test
+    fun asContextTargetMergesIntoPopulatedContextWindow() = runBlocking {
+        val key = "todo-placement-as-context"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.AsContext)
+            applySystemPrompt()
+        }
+        pipe.contextWindowForTest().addLoreBookEntry("seed", "existing seed entry")
+        val content = MultimodalContent(text = "The user ask.")
+        pipe.injectTPipeTodo(content)
+        val entry = pipe.contextWindowForTest().loreBookKeys["todoList"]
+        assertTrue(entry != null)
+        assertTrue(entry!!.value.contains("Build the first thing"))
+        assertFalse(content.text.contains("Build the first thing"))
+    }
+
+    @Test
+    fun asContextTargetMergesIntoPopulatedMiniContextBank() = runBlocking {
+        val key = "todo-placement-as-context-mini"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.AsContext)
+            applySystemPrompt()
+        }
+        pipe.miniContextBankForTest().contextMap["seed-page"] = ContextWindow()
+        val content = MultimodalContent(text = "The user ask.")
+        pipe.injectTPipeTodo(content)
+        val page = pipe.miniContextBankForTest().contextMap["todoList"]
+        assertTrue(page != null)
+        val entry = page!!.loreBookKeys["todoList"]
+        assertTrue(entry != null)
+        assertTrue(entry!!.value.contains("Build the first thing"))
+        assertFalse(content.text.contains("Build the first thing"))
     }
 }
