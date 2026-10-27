@@ -288,4 +288,42 @@ class StateHasherTest
         pipeIdField.isAccessible = true
         pipeIdField.set(pipe, fixedPipeId)
     }
+
+    class PrivateFieldHolder
+    {
+        private var hiddenToken: String = "alpha"
+
+        var publicLabel: String = "public-label"
+
+        fun rotateToken(newToken: String)
+        {
+            hiddenToken = newToken
+        }
+    }
+
+    @Test
+    fun privatePropertyHashedByDefault()
+    {
+        val firstHolder = PrivateFieldHolder()
+        val secondHolder = PrivateFieldHolder()
+
+        // The memberProperties seam (Util.kt:804, empirically verified in this build) includes
+        // private properties, so the default boundary already hashes them.
+        assertEquals(stateHash(firstHolder), stateHash(secondHolder))
+
+        firstHolder.rotateToken("changed")
+        assertNotEquals(stateHash(firstHolder), stateHash(secondHolder))
+    }
+
+    @Test
+    fun privateFieldMutationStillDetectableWithCustomExclusion()
+    {
+        val firstHolder = PrivateFieldHolder()
+        val secondHolder = PrivateFieldHolder()
+        firstHolder.rotateToken("changed")
+
+        // A caller that wants the narrower pre-private boundary can opt out explicitly.
+        val narrowOptions = StateHashOptions().exclude { property -> property.name == "hiddenToken" }
+        assertEquals(stateHash(firstHolder, narrowOptions), stateHash(secondHolder, narrowOptions))
+    }
 }

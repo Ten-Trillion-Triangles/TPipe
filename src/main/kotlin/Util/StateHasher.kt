@@ -87,10 +87,12 @@ class StateHashOptions
 /**
  * Computes a deterministic SHA-256 state fingerprint of an object's semantic state graph.
  *
- * The walk covers the non-private declared and inherited property surface (the same surface
- * [cloneInstance] persists), excludes properties per [StateHashOptions], guards cycles with an
- * identity map, and caps depth and object count so unbounded graphs terminate. Two structurally
- * identical instances hash equal regardless of object identity, Map/Set insertion order, or run.
+ * The walk covers the declared and inherited property surface, including private properties (the
+ * same [cloneInstance] `memberProperties` seam, Util.kt:804-812 — in this build the seam exposes
+ * private members, and they are hashed by default), excludes properties per [StateHashOptions],
+ * guards cycles with an identity map, and caps depth and object count so unbounded graphs
+ * terminate. Two structurally identical instances hash equal regardless of object identity,
+ * Map/Set insertion order, or run.
  *
  * @param root The object to fingerprint. Null is a valid, stable root.
  * @param options Encoding options. Defaults mirror [cloneInstance] exclusions.
