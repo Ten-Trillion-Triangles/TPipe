@@ -160,4 +160,47 @@ class StateHasherTest
         assertEquals(stateHash(chain, cappedOptions), stateHash(chain, cappedOptions))
         assertNotEquals(stateHash(chain, cappedOptions), stateHash(chain))
     }
+
+    class ExclusionConfig
+    {
+        var model: String = "m1"
+
+        @kotlinx.serialization.Transient
+        var scratchBuffer: String = ""
+
+        @RuntimeState
+        var runCount: Int = 0
+    }
+
+    class SignalNoiseConfig
+    {
+        var signal: String = "s"
+        var noise: Int = 0
+    }
+
+    @Test
+    fun transientAndRuntimeStateFieldsExcludedByDefault()
+    {
+        val firstConfig = ExclusionConfig()
+        val secondConfig = ExclusionConfig()
+
+        firstConfig.scratchBuffer = "junk"
+        firstConfig.runCount = 99
+        assertEquals(stateHash(firstConfig), stateHash(secondConfig))
+
+        firstConfig.model = "m2"
+        assertNotEquals(stateHash(firstConfig), stateHash(secondConfig))
+    }
+
+    @Test
+    fun customExclusionPredicateOverridesDefaults()
+    {
+        val firstConfig = SignalNoiseConfig()
+        val secondConfig = SignalNoiseConfig()
+        firstConfig.noise = 7
+
+        val quietOptions = StateHashOptions().exclude { property -> property.name == "noise" }
+        assertEquals(stateHash(firstConfig, quietOptions), stateHash(secondConfig, quietOptions))
+        assertNotEquals(stateHash(firstConfig), stateHash(secondConfig))
+    }
 }
