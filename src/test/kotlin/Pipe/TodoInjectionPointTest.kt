@@ -1,10 +1,14 @@
 package com.TTT.Pipe
 
 import com.TTT.Context.ContextBank
+import com.TTT.Context.ConverseHistory
+import com.TTT.Context.ConverseRole
 import com.TTT.Context.StorageMode
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
 import com.TTT.Enums.TodoInjectionPoint
+import com.TTT.Util.deserialize
+import com.TTT.Util.serializeConverseHistory
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,5 +123,61 @@ class TodoInjectionPointTest
         assertTrue(content.text.contains("Build the first thing"))
         assertTrue(content.text.indexOf("The user ask.") < content.text.indexOf("Build the first thing"))
         assertFalse(pipe.getPrompt().contains("Build the first thing"))
+    }
+
+    @Test
+    fun beforeConverseTargetInsertsDiscreteEntryAtTopOfHistory() = runBlocking {
+        val key = "todo-placement-before-converse"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.BeforeUserPromptWithConverse)
+            applySystemPrompt()
+        }
+        val history = ConverseHistory().apply {
+            add(ConverseRole.user, MultimodalContent(text = "The user ask."))
+        }
+        val content = MultimodalContent(text = serializeConverseHistory(history))
+        pipe.injectTPipeTodo(content)
+        val updated = deserialize<ConverseHistory>(content.text)!!
+        assertEquals(2, updated.history.size)
+        assertTrue(updated.history[0].content.text.contains("Build the first thing"))
+        assertFalse(pipe.getPrompt().contains("Build the first thing"))
+    }
+
+    @Test
+    fun afterConverseTargetAppendsDiscreteEntryAtBottomOfHistory() = runBlocking {
+        val key = "todo-placement-after-converse"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.AfterUserPromptWithConverse)
+            applySystemPrompt()
+        }
+        val history = ConverseHistory().apply {
+            add(ConverseRole.user, MultimodalContent(text = "The user ask."))
+        }
+        val content = MultimodalContent(text = serializeConverseHistory(history))
+        pipe.injectTPipeTodo(content)
+        val updated = deserialize<ConverseHistory>(content.text)!!
+        assertEquals(2, updated.history.size)
+        assertTrue(updated.history[1].content.text.contains("Build the first thing"))
+        assertFalse(updated.history[0].content.text.contains("Build the first thing"))
+    }
+
+    @Test
+    fun converseTargetFallsBackToTextPlacementOnPlainTextContent() = runBlocking {
+        val key = "todo-placement-converse-fallback"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.AfterUserPromptWithConverse)
+            applySystemPrompt()
+        }
+        val content = MultimodalContent(text = "Plain text, no history.")
+        pipe.injectTPipeTodo(content)
+        assertTrue(content.text.contains("Plain text, no history."))
+        assertTrue(content.text.contains("Build the first thing"))
+        assertTrue(content.text.indexOf("Plain text, no history.") < content.text.indexOf("Build the first thing"))
     }
 }
