@@ -2,7 +2,6 @@ package codexPipe
 
 import codexPipe.auth.CodexAuthManager
 import codexPipe.model.CodexModelCatalogClient
-import genericOpenAIPipe.env.ReasoningConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -40,7 +39,7 @@ class CodexLiveTest
             streamingPipe.setSystemPrompt("Answer concisely and identify the active model.")
             if(reasoning != null)
             {
-                streamingPipe.setReasoningConfig(ReasoningConfig(effort = reasoning))
+                streamingPipe.setReasoning(reasoning)
             }
             streamingPipe.setStreamingCallback(callback = { chunk -> streamedChunks.add(chunk) })
             streamingPipe.init()
