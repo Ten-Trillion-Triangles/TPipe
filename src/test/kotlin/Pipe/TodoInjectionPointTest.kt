@@ -42,6 +42,8 @@ class TodoInjectionPointTest
         fun contextWindowForTest(): ContextWindow = contextWindow
 
         fun miniContextBankForTest(): MiniBank = miniContextBank
+
+        fun copySystemToUserPromptForTest(): Boolean = copySystemToUserPrompt
     }
 
     /**
@@ -256,6 +258,51 @@ class TodoInjectionPointTest
             applySystemPrompt(MultimodalContent().apply { metadata["todoTaskNumber"] = 1 })
         }
         assertTrue(pipe.getPrompt().contains("The current task you must focus on"))
+        assertTrue(pipe.getPrompt().contains("Build the first thing"))
+    }
+
+    @Test
+    fun autoConverseWrapModeResolvesConverseTargets() = runBlocking {
+        //The auto-converse-wrap mode (wrapContentWithConverse) produces serialized
+        //ConverseHistory content at every output stage. This test proves the converse
+        //todo targets resolve that exact JSON shape, so a wrapped pipeline keeps the
+        //todo payload inside the history instead of dropping it.
+        val key = "todo-placement-auto-wrap"
+        seedTodoPage(key)
+        val history = ConverseHistory().apply {
+            add(ConverseRole.user, MultimodalContent(text = "The user ask."))
+        }
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.AfterUserPromptWithConverse)
+            wrapContentWithConverse(ConverseRole.agent)
+            applySystemPrompt()
+        }
+        val content = MultimodalContent(text = serializeConverseHistory(history))
+        pipe.injectTPipeTodo(content)
+        val updated = deserialize<ConverseHistory>(content.text)!!
+        assertEquals(2, updated.history.size)
+        assertTrue(updated.history[1].content.text.contains("Build the first thing"))
+    }
+
+    @Test
+    fun systemTargetTodoSurvivesSystemFoldComposition()
+    {
+        //copySystemPromptToUserPrompt() sets the fold flag; the actual fold is the
+        //private copySystemPrompt step in the execution flow, which moves the composed
+        //system prompt (todo block included) into user space and blanks the system
+        //prompt. This test pins the composition half: with the SystemPrompt target the
+        //todo block lands in the system prompt, so the fold relocates it verbatim.
+        val key = "todo-placement-fold"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setSystemPrompt("Base system prompt.")
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.SystemPrompt)
+            copySystemPromptToUserPrompt()
+            applySystemPrompt()
+        }
+        assertTrue(pipe.copySystemToUserPromptForTest())
         assertTrue(pipe.getPrompt().contains("Build the first thing"))
     }
 }
