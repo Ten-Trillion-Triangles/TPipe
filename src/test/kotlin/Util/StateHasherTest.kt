@@ -51,4 +51,41 @@ class StateHasherTest
         assertEquals(stateHash(null), stateHash(null))
         assertNotEquals(stateHash(null), stateHash(42))
     }
+
+    @Test
+    fun mapInsertionOrderInsensitive()
+    {
+        val orderedMap = linkedMapOf("a" to 1, "b" to 2, "c" to 3)
+        val reversedMap = linkedMapOf("c" to 3, "b" to 2, "a" to 1)
+
+        assertEquals(stateHash(orderedMap), stateHash(reversedMap))
+    }
+
+    @Test
+    fun setInsertionOrderInsensitive()
+    {
+        val orderedSet = linkedSetOf("x", "y", "z")
+        val shuffledSet = linkedSetOf("z", "x", "y")
+
+        assertEquals(stateHash(orderedSet), stateHash(shuffledSet))
+    }
+
+    @Test
+    fun listOrderSensitiveAndContentSensitive()
+    {
+        assertEquals(stateHash(listOf(1, 2, 3)), stateHash(listOf(1, 2, 3)))
+        assertNotEquals(stateHash(listOf(1, 2, 3)), stateHash(listOf(3, 2, 1)))
+        assertNotEquals(stateHash(listOf(1, 2, 3)), stateHash(listOf(1, 2, 4)))
+    }
+
+    @Test
+    fun arraysEncodeByContent()
+    {
+        val firstArray = intArrayOf(5, 6, 7)
+        val secondArray = intArrayOf(5, 6, 7)
+        val thirdArray = intArrayOf(5, 6, 8)
+
+        assertEquals(stateHash(firstArray), stateHash(secondArray))
+        assertNotEquals(stateHash(firstArray), stateHash(thirdArray))
+    }
 }
