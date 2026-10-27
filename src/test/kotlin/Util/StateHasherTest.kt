@@ -88,4 +88,76 @@ class StateHasherTest
         assertEquals(stateHash(firstArray), stateHash(secondArray))
         assertNotEquals(stateHash(firstArray), stateHash(thirdArray))
     }
+
+    class CycleHolder
+    {
+        var self: String = "a"
+
+        val partner: CyclePartner = CyclePartner()
+
+        class CyclePartner
+        {
+            var self: String = "b"
+
+            var back: CycleHolder? = null
+        }
+    }
+
+    class ChainLevel5
+    {
+        val level4 = ChainLevel4()
+
+        class ChainLevel4
+        {
+            val level3 = ChainLevel3()
+
+            class ChainLevel3
+            {
+                val level2 = ChainLevel2()
+
+                class ChainLevel2
+                {
+                    val leaf: String = "leaf"
+                }
+            }
+        }
+    }
+
+    @Test
+    fun cycleTerminatesAndIsStable()
+    {
+        fun buildHolder(): CycleHolder
+        {
+            val holder = CycleHolder()
+            holder.partner.back = holder
+            return holder
+        }
+        val firstHolder = buildHolder()
+        val secondHolder = buildHolder()
+
+        val firstHash = stateHash(firstHolder)
+        val secondHash = stateHash(secondHolder)
+
+        assertEquals(firstHash, secondHash)
+    }
+
+    @Test
+    fun depthCapTruncatesDeterministically()
+    {
+        val chain = ChainLevel5()
+        val cappedOptions = StateHashOptions().setMaxDepth(2)
+
+        assertEquals(stateHash(chain, cappedOptions), stateHash(chain, cappedOptions))
+        assertNotEquals(stateHash(chain, cappedOptions), stateHash(chain))
+    }
+
+    @Test
+    fun objectCapTruncatesDeterministically()
+    {
+        val chain = ChainLevel5()
+        val cappedOptions = StateHashOptions().setMaxObjects(2)
+
+        assertEquals(stateHash(chain, cappedOptions), stateHash(chain, cappedOptions))
+        assertNotEquals(stateHash(chain, cappedOptions), stateHash(chain))
+    }
 }
