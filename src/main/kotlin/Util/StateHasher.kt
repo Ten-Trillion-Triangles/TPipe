@@ -155,6 +155,12 @@ private class IntHolder
 {
     private var encodedCount: Int = 0
 
+    /**
+     * Increments the encoded-object counter when the [StateHashOptions.getMaxObjects] limit has not been reached.
+     *
+     * @param limit The maximum number of object encodings allowed.
+     * @return False when the limit is already reached (truncation applies); true otherwise.
+     */
     fun checkAndIncrement(limit: Int): Boolean
     {
         if(encodedCount >= limit)
@@ -175,29 +181,34 @@ private class CanonicalWriter
     private val chunks: MutableList<ByteArray> = ArrayList()
     private var totalBytes: Int = 0
 
+    /** Emits a single tag byte. */
     fun tag(value: Byte)
     {
         chunks.add(byteArrayOf(value))
         totalBytes++
     }
 
+    /** Emits a 4-byte big-endian integer. */
     fun writeInt(value: Int)
     {
         chunks.add(intToBigEndian(value))
         totalBytes += 4
     }
 
+    /** Emits an 8-byte big-endian long. */
     fun writeLong(value: Long)
     {
         chunks.add(longToBigEndian(value))
         totalBytes += 8
     }
 
+    /** Emits a float as its 4-byte raw-bit encoding. */
     fun writeFloatBits(value: Float)
     {
         writeInt(value.toRawBits())
     }
 
+    /** Emits a double as its 8-byte raw-bit encoding. */
     fun writeDoubleBits(value: Double)
     {
         writeLong(value.toRawBits())
@@ -211,12 +222,14 @@ private class CanonicalWriter
         totalBytes += 4 + payload.size
     }
 
+    /** Appends the given payload bytes verbatim. */
     fun writeRaw(bytes: ByteArray)
     {
         chunks.add(bytes)
         totalBytes += bytes.size
     }
 
+    /** Materializes the accumulated stream as a single byte array. */
     fun toBytes(): ByteArray
     {
         val materialized = ByteArray(totalBytes)
@@ -230,6 +243,7 @@ private class CanonicalWriter
     }
 }
 
+/** Converts an int into its 4-byte big-endian representation. */
 private fun intToBigEndian(value: Int): ByteArray
 {
     return byteArrayOf(
@@ -240,6 +254,7 @@ private fun intToBigEndian(value: Int): ByteArray
     )
 }
 
+/** Converts a long into its 8-byte big-endian representation. */
 private fun longToBigEndian(value: Long): ByteArray
 {
     return byteArrayOf(
