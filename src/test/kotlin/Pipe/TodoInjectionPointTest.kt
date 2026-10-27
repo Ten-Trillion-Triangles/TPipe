@@ -5,6 +5,7 @@ import com.TTT.Context.StorageMode
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
 import com.TTT.Enums.TodoInjectionPoint
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -86,5 +87,37 @@ class TodoInjectionPointTest
         val prompt = pipe.getPrompt()
         assertFalse(prompt.contains("Build the first thing"))
         assertFalse(prompt.contains("todo list"))
+    }
+
+    @Test
+    fun beforeUserPromptTargetPrependsPayloadToUserContent() = runBlocking {
+        val key = "todo-placement-before-user"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.BeforeUserPrompt)
+            applySystemPrompt()
+        }
+        val content = MultimodalContent(text = "The user ask.")
+        pipe.injectTPipeTodo(content)
+        assertTrue(content.text.contains("Build the first thing"))
+        assertTrue(content.text.indexOf("Build the first thing") < content.text.indexOf("The user ask."))
+        assertFalse(pipe.getPrompt().contains("Build the first thing"))
+    }
+
+    @Test
+    fun afterUserPromptTargetAppendsPayloadToUserContent() = runBlocking {
+        val key = "todo-placement-after-user"
+        seedTodoPage(key)
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.AfterUserPrompt)
+            applySystemPrompt()
+        }
+        val content = MultimodalContent(text = "The user ask.")
+        pipe.injectTPipeTodo(content)
+        assertTrue(content.text.contains("Build the first thing"))
+        assertTrue(content.text.indexOf("The user ask.") < content.text.indexOf("Build the first thing"))
+        assertFalse(pipe.getPrompt().contains("Build the first thing"))
     }
 }

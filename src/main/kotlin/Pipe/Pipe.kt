@@ -7631,6 +7631,9 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 trace(TraceEventType.PIPE_FAILURE, TracePhase.EXECUTION, processedContent, error = e)
             }
 
+            //Place todo content at its configured target. Runs regardless of reasoning pipe presence.
+            injectTPipeTodo(processedContent)
+
             if(comprehensiveTokenTracking)
             {
                 reasoningPipe?.let { pipe ->
@@ -8997,6 +9000,129 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 if(!contextWindow.isEmpty()) contextWindow.merge(newContextWindow, emplaceLorebook, appendLoreBook)
                 if(!miniContextBank.isEmpty()) miniContextBank.contextMap["reasoning"] = newContextWindow
             }
+        }
+
+    }
+
+    /**
+     * Request-time todo list injection for every [TodoInjectionPoint] target other than
+     * SystemPrompt. Called in the execution flow immediately after the reasoning injection
+     * step so user-space targets see the final content shape.
+     *
+     * The SystemPrompt target is handled at applySystemPrompt composition time and is
+     * intentionally a no-op here. The converse targets insert a discrete ConverseData
+     * entry when the content carries a ConverseHistory block and fall back to plain-text
+     * placement otherwise. AsContext merges the list into the pipe's context space under
+     * key "todoList" so it rides whichever context channel is configured.
+     *
+     * Exposed as internal for in-module tests and pipeline internals - the consumer-facing
+     * surface is exclusively [setTodoInjectionPoint].
+     *
+     * @param content The working content object for this execution step.
+     */
+    internal suspend fun injectTPipeTodo(content: MultimodalContent)
+    {
+        if(!injectTodoList || todoInjectionPoint == TodoInjectionPoint.SystemPrompt) return
+
+        val todoListObj = ContextBank.getPagedTodoListSuspend(todoPageKey)
+        if(todoListObj.isEmpty()) return
+
+        val taskNumber = (content.metadata["todoTaskNumber"] ?: -1) as Int
+        val focusTask = if(taskNumber > 0) todoListObj.find(taskNumber) else null
+        val block = buildTodoInjectionBlock(todoListObj, focusTask)
+        if(block.isEmpty()) return
+
+        when(todoInjectionPoint)
+        {
+            TodoInjectionPoint.BeforeUserPrompt ->
+            {
+                content.text = "$block\n\n${content.text}"
+            }
+
+            TodoInjectionPoint.AfterUserPrompt ->
+            {
+                content.text = "${content.text}\n\n$block"
+            }
+
+            TodoInjectionPoint.BeforeUserPromptWithConverse ->
+            {
+                placeTodoIntoConverseHistory(content, block, prepend = true)
+            }
+
+            TodoInjectionPoint.AfterUserPromptWithConverse ->
+            {
+                placeTodoIntoConverseHistory(content, block, prepend = false)
+            }
+
+            TodoInjectionPoint.AsContext ->
+            {
+                mergeTodoIntoContextSpace(todoListObj, block)
+            }
+
+            else -> Unit
+        }
+    }
+
+    /**
+     * Place the todo payload as a discrete ConverseData entry inside a ConverseHistory
+     * block in user content. When no ConverseHistory block is found, falls back to
+     * plain-text prepend or append so the payload is never dropped.
+     *
+     * @param content Working content object carrying the user space payload.
+     * @param block The shared todo injection payload from [buildTodoInjectionBlock].
+     * @param prepend When true the entry goes to the top of the history; otherwise the bottom.
+     */
+    private fun placeTodoIntoConverseHistory(content: MultimodalContent, block: String, prepend: Boolean)
+    {
+        val entry = ConverseData(ConverseRole.system, MultimodalContent(text = block))
+        val jsonObjectsFound = extractAllJsonObjects(content.text)
+
+        for(jsonObject in jsonObjectsFound)
+        {
+            val history = deserialize<ConverseHistory>(jsonObject.toString()) ?: continue
+            if(prepend)
+            {
+                history.history.add(0, entry)
+            }
+            else
+            {
+                history.history.add(entry)
+            }
+            content.text = serializeConverseHistory(history)
+            return
+        }
+
+        if(prepend)
+        {
+            content.text = "$block\n\n${content.text}"
+        }
+        else
+        {
+            content.text = "${content.text}\n\n$block"
+        }
+    }
+
+    /**
+     * Merge the todo payload into this pipe's context space so it rides the context
+     * channel (system <tpContext> block or auto-inject user tail). Mirrors the AsContext
+     * behavior of [injectTPipeReasoning] with the lorebook key "todoList".
+     *
+     * @param todoListObj The resolved todo list for the configured page key.
+     * @param block The shared todo injection payload.
+     */
+    private fun mergeTodoIntoContextSpace(todoListObj: TodoList, block: String)
+    {
+        val newContextWindow = ContextWindow()
+        newContextWindow.addLoreBookEntry("todoList", block)
+
+        if(!contextWindow.isEmpty())
+        {
+            contextWindow.merge(newContextWindow, emplaceLorebook, appendLoreBook)
+        }
+
+        if(!miniContextBank.isEmpty())
+        {
+            miniContextBank.contextMap["todoList"] = newContextWindow
         }
     }
 
