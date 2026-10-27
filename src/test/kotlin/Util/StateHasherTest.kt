@@ -1,8 +1,12 @@
 package com.TTT.Util
 
+import com.TTT.Pipe.DummyPipe
+import com.TTT.Pipe.Pipe
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class StateHasherTest
 {
@@ -245,5 +249,43 @@ class StateHasherTest
 
         firstGetter.stable = "changed"
         assertNotEquals(stateHash(firstGetter), stateHash(secondGetter))
+    }
+
+    @Test
+    fun pipeSnapshotDetectsDrift()
+    {
+        val builtPipe = DummyPipe().setPipeName("probe")
+        val referencePipe = DummyPipe().setPipeName("probe")
+
+        // pipeId (Pipe.kt:2069) is a per-instance generated UUID that the approved boundary hashes
+        // deliberately. Pin it so the equality assertion measures structural parity, not identity noise.
+        pinGeneratedPipeId(builtPipe, "fixed-pipe-id")
+        pinGeneratedPipeId(referencePipe, "fixed-pipe-id")
+
+        val snapshotHash = builtPipe.stateSnapshot()
+        assertEquals(stateHash(referencePipe), snapshotHash)
+        assertFalse(builtPipe.isDirtySince(snapshotHash))
+
+        builtPipe.setPipeName("drifted")
+        assertTrue(builtPipe.isDirtySince(snapshotHash))
+    }
+
+    @Test
+    fun pipeExtensionMirrorsStateHash()
+    {
+        val builtPipe = DummyPipe().setPipeName("mirror")
+
+        assertEquals(stateHash(builtPipe), builtPipe.stateSnapshot())
+    }
+
+    /**
+     * Pins the protected [Pipe.pipeId] to a fixed value so two independently built pipes share the
+     * only per-instance generated field in the hash boundary.
+     */
+    private fun pinGeneratedPipeId(pipe: Pipe, fixedPipeId: String)
+    {
+        val pipeIdField = Pipe::class.java.getDeclaredField("pipeId")
+        pipeIdField.isAccessible = true
+        pipeIdField.set(pipe, fixedPipeId)
     }
 }
