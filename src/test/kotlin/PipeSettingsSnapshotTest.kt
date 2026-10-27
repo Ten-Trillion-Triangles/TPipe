@@ -6,6 +6,7 @@ import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Enums.PromptMode
 import com.TTT.Enums.ProviderName
 import com.TTT.Enums.SystemContextInjectionPoint
+import com.TTT.Enums.TodoInjectionPoint
 import com.TTT.Pipe.MultimodalContent
 import com.TTT.Pipe.Pipe
 import com.TTT.Pipe.TokenBudgetSettings
@@ -133,6 +134,7 @@ class PipeSettingsSnapshotTest
             updatePipelineContextOnExit = true,
             autoInjectContext = false,
             systemContextInjectionPoint = SystemContextInjectionPoint.Middle,
+            todoInjectionPoint = TodoInjectionPoint.BeforeUserPromptWithConverse,
             autoTruncateContext = true,
             emplaceLorebook = false,
             appendLoreBook = true,
@@ -200,6 +202,7 @@ class PipeSettingsSnapshotTest
         assertTrue(applied.updatePipelineContextOnExit!!)
         assertFalse(applied.autoInjectContext!!)
         assertEquals(SystemContextInjectionPoint.Middle, applied.systemContextInjectionPoint)
+        assertEquals(TodoInjectionPoint.BeforeUserPromptWithConverse, applied.todoInjectionPoint)
         assertTrue(applied.autoTruncateContext!!)
         assertFalse(applied.emplaceLorebook!!)
         assertTrue(applied.appendLoreBook!!)

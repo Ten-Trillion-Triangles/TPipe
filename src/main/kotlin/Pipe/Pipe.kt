@@ -9084,6 +9084,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
             updatePipelineContextOnExit = updatePipelineContextOnExit,
             autoInjectContext = autoInjectContext,
             systemContextInjectionPoint = systemContextInjectionPoint,
+            todoInjectionPoint = todoInjectionPoint,
             autoTruncateContext = autoTruncateContext,
             emplaceLorebook = emplaceLorebook,
             appendLoreBook = appendLoreBook,
@@ -9155,6 +9156,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         snapshot.updatePipelineContextOnExit?.let { updatePipelineContextOnExit = it }
         snapshot.autoInjectContext?.let { autoInjectContext = it }
         snapshot.systemContextInjectionPoint?.let { setSystemContextInjectionPoint(it) }
+        snapshot.todoInjectionPoint?.let { setTodoInjectionPoint(it) }
         snapshot.autoTruncateContext?.let { autoTruncateContext = it }
         snapshot.emplaceLorebook?.let { emplaceLorebook = it }
         snapshot.appendLoreBook?.let { appendLoreBook = it }
