@@ -20,6 +20,7 @@ import com.TTT.Enums.ContextWindowSettings
 import com.TTT.Enums.PromptMode
 import com.TTT.Enums.ProviderName
 import com.TTT.Enums.SystemContextInjectionPoint
+import com.TTT.Enums.TodoInjectionPoint
 import com.TTT.P2P.AgentDescriptor
 import com.TTT.PipeContextProtocol.PcpExecutionDispatcher
 import com.TTT.PipeContextProtocol.PcpExecutionResult
@@ -2112,6 +2113,15 @@ abstract class Pipe : P2PInterface, ProviderInterface
     var injectTodoList = false
 
     /**
+     * Placement target for todo list injection when [setTodoListPageKey] is configured.
+     * [com.TTT.Enums.TodoInjectionPoint.SystemPrompt] preserves the legacy
+     * applySystemPrompt composition behavior. All other targets inject at request
+     * time via the internal [injectTPipeTodo] step so they can reach user prompt
+     * space, converse history blocks, and TPipe context space.
+     */
+    var todoInjectionPoint: TodoInjectionPoint = TodoInjectionPoint.SystemPrompt
+
+    /**
      * If true, automatically cache the input of the pipe upon startup.
      */
     @kotlinx.serialization.Transient
@@ -3663,6 +3673,26 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun setTodoListInstructions(instructions: String) : Pipe
     {
         todoListInstructions = instructions
+        return this
+    }
+
+    /**
+     * Set the placement target for todo list injection on this pipe.
+     * [com.TTT.Enums.TodoInjectionPoint.SystemPrompt] composes the list into the system
+     * prompt at applySystemPrompt time (legacy behavior). BeforeUserPrompt and
+     * AfterUserPrompt place the payload in user prompt space at request time. The
+     * WithConverse variants insert a discrete ConverseData entry at the top or bottom
+     * of a ConverseHistory block, falling back to plain-text placement when the content
+     * carries no converse history. AsContext merges the list into a context space page
+     * under key "todoList" and lets it ride the context channel. The focus-task
+     * highlight travels with the list in every target.
+     *
+     * @param point Placement target for todo list injection.
+     * @return This Pipe for method chaining.
+     */
+    fun setTodoInjectionPoint(point: TodoInjectionPoint) : Pipe
+    {
+        todoInjectionPoint = point
         return this
     }
 
