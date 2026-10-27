@@ -83,7 +83,7 @@ if(isDirty(config, beforeHash))
 
 ## What Is Included, What Is Excluded
 
-**Included:** the non-private declared and inherited property surface of every reachable object (the same surface `cloneInstance` persists, `Util.kt:804-812`), transitive objects, List contents, Map/Set entries, arrays, strings, enums, and primitives.
+**Included:** the full declared and inherited property surface of every reachable object — including private properties (the `memberProperties` seam that `cloneInstance` persists, `Util.kt:804-812`; in this build the seam empirically exposes private members, so they are hashed by default), transitive objects, List contents, Map/Set entries, arrays, strings, enums, and primitives. A caller who wants the narrower boundary can opt out per property with `StateHashOptions().exclude { property -> ... }`.
 
 **Excluded by default:** properties annotated `@RuntimeState` (per-execution state: counters, pause flags, session caches, generated identities) or annotated with any annotation whose qualified name contains `Transient` (covers `@kotlinx.serialization.Transient`). Override the whole boundary with `StateHashOptions().exclude { property -> ... }`.
 
@@ -91,6 +91,6 @@ if(isDirty(config, beforeHash))
 
 ## Limitations
 
-- **Private members are outside the surface** — the walk sees non-private properties only, matching `cloneInstance` semantics.
+- **Bare Java fields without accessors are outside the surface** — the walk is property-based, so a Java class field that exposes no getter/setter pair is invisible to it. Kotlin private properties *are* inside the surface (the seam includes them); narrow the boundary with `StateHashOptions().exclude { ... }` when needed.
 - **In-JVM guarantee:** digests are guaranteed stable within one JVM run-to-run; comparing digests across JVM restarts or processes is not promised.
 - **Capped graphs** produce a truncated-but-stable digest; raising the caps after the fact changes the hash.

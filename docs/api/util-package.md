@@ -405,7 +405,7 @@ Deterministic SHA-256 fingerprinting of an object's semantic state — an isDirt
 - **Exclusion boundary (default):** properties annotated `@RuntimeState` or with any annotation whose qualified name contains "Transient" — mirrors `cloneInstance` (`Util.kt:804-812`).
 - **Function values:** marker-only by default (fresh instances with equivalent lambda defaults hash equal); `setEncodeFunctionIdentity(true)` appends the instance identity hash code.
 - **Throwing property getters** degrade to a stable exception-class marker and never abort the fingerprint.
-- **Walk surface:** non-private declared + inherited properties only (private members are out of scope, matching `cloneInstance`).
+- **Walk surface:** the declared + inherited property surface, including private properties (the `memberProperties` seam `cloneInstance` persists, `Util.kt:804-812`; verified in this build — the seam exposes private members and they hash by default). Bare Java fields without accessors are out of scope; narrow the boundary with `exclude { ... }` when needed.
 - **No `sun.misc.Unsafe`, no native code** — the mechanism stays valid across JDK upgrades.
 
 See [State Fingerprinting](../core-concepts/state-fingerprinting.md) for the tutorial and use cases.
