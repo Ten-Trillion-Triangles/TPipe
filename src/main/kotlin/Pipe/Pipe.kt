@@ -14,6 +14,8 @@ import com.TTT.Context.MemoryIntrospectionTools
 import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Context.SerializedFrameEstimator
+import com.TTT.Context.TodoList
+import com.TTT.Context.TodoListTask
 import com.TTT.Debug.*
 import com.TTT.Debug.EventPriorityMapper
 import com.TTT.Enums.ContextWindowSettings
@@ -3355,29 +3357,12 @@ abstract class Pipe : P2PInterface, ProviderInterface
         if(injectTodoList)
         {
             val todoListObj = ContextBank.getPagedTodoList(todoPageKey)
-            if(!todoListObj.isEmpty())
+            val taskNumber = content?.metadata["todoTaskNumber"] ?: -1
+            val focusTask = if(taskNumber as Int > 0) todoListObj.find(taskNumber) else null
+            val todoBlock = buildTodoInjectionBlock(todoListObj, focusTask)
+            if(todoBlock.isNotEmpty())
             {
-                val defaultTodoListInstructions = """You will be provided with a todo list that has a list of tasks
-                    |you have been asked to complete. Each element on the list will contain a description of the task,
-                    |the requirements to verify it has been completed, and weather it has been completed or not. The
-                    |todo list is as follows:
-                """.trimMargin()
-
-                val actualTodoListInstructions = todoListInstructions.ifEmpty { defaultTodoListInstructions }
-
-                val todoListInjector = "${actualTodoListInstructions}\n\n${serialize(todoListObj)}"
-                systemPrompt+= "\n\n${todoListInjector}"
-
-                val taskNumber = content?.metadata["todoTaskNumber"] ?: -1
-                if(taskNumber as Int > 0)
-                {
-                    val task = todoListObj.find(taskNumber)
-                    if(task != null)
-                    {
-                        val focusInstructions = """The current task you must focus on from this todo list is:"""
-                        systemPrompt+= "\n\n${focusInstructions}\n\n${serialize(task)}"
-                    }
-                }
+                systemPrompt += "\n\n$todoBlock"
             }
         }
 
@@ -3426,6 +3411,38 @@ abstract class Pipe : P2PInterface, ProviderInterface
             |$serializedContext
             |</tpContext>
         """.trimMargin()
+    }
+
+    /**
+     * Build the complete todo injection payload: the active instructions, the serialized
+     * todo list, and the optional focus-task section when a task resolves. Every
+     * [TodoInjectionPoint] target renders this identical payload so the model sees the
+     * same structure regardless of placement.
+     *
+     * @param todoListObj The resolved todo list for the configured page key.
+     * @param focusTask The focused task when a task number resolves, otherwise null.
+     * @return The complete injection payload, or an empty string when the list is empty.
+     */
+    private fun buildTodoInjectionBlock(todoListObj: TodoList, focusTask: TodoListTask?): String
+    {
+        if(todoListObj.isEmpty()) return ""
+
+        val defaultTodoListInstructions = """You will be provided with a todo list that has a list of tasks
+            |you have been asked to complete. Each element on the list will contain a description of the task,
+            |the requirements to verify it has been completed, and weather it has been completed or not. The
+            |todo list is as follows:
+        """.trimMargin()
+
+        val actualTodoListInstructions = todoListInstructions.ifEmpty { defaultTodoListInstructions }
+        var block = "${actualTodoListInstructions}\n\n${serialize(todoListObj)}"
+
+        if(focusTask != null)
+        {
+            val focusInstructions = """The current task you must focus on from this todo list is:"""
+            block += "\n\n$focusInstructions\n\n${serialize(focusTask)}"
+        }
+
+        return block
     }
 
 
