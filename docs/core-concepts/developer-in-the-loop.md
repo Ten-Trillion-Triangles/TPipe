@@ -6,6 +6,7 @@
 ## Table of Contents
 - [Overview of DITL Functions](#overview-of-ditl-functions)
 - [Execution Order](#execution-order)
+- [Pre-Execute Function](#pre-execute-function)
 - [Pre-Init Function](#pre-init-function)
 - [Pre-Validation Function](#pre-validation-function)
 - [Pre-Invoke Function](#pre-invoke-function)
@@ -22,24 +23,45 @@ TPipe offers sophisticated developer-in-the-loop (DITL) capabilities through a s
 
 ## Overview of DITL Functions
 
-TPipe offers nine key intervention points during pipe execution:
+TPipe offers ten key intervention points during pipe execution:
 
-1. **Pre-Init Function**: Execute before any processing begins
-2. **Pre-Validation Function**: Modify context after it's loaded but before AI call
-3. **Pre-Invoke Function**: Final check before making the AI API call
-4. **Post-Generate Function**: Immediate action after AI generates content, before validation
-5. **Validator Function**: Validate AI output and control pipeline flow
-6. **Transformation Function**: **Most Critical** - Transform AI output after validation
-7. **On-Failure Function**: Handle errors and provide recovery logic
-8. **Reasoning Capture Function**: Observe raw reasoning output before it is unraveled into the parent pipe's prompt
-9. **Final Capture Function**: Observe the final content object just before it exits to the parent
+1. **Pre-Execute Function**: Reconfigure the pipe's structure before execution; drift is auto-detected and the pipe rebuilds itself
+2. **Pre-Init Function**: Execute before any processing begins
+3. **Pre-Validation Function**: Modify context after it's loaded but before AI call
+4. **Pre-Invoke Function**: Final check before making the AI API call
+5. **Post-Generate Function**: Immediate action after AI generates content, before validation
+6. **Validator Function**: Validate AI output and control pipeline flow
+7. **Transformation Function**: **Most Critical** - Transform AI output after validation
+8. **On-Failure Function**: Handle errors and provide recovery logic
+9. **Reasoning Capture Function**: Observe raw reasoning output before it is unraveled into the parent pipe's prompt
+10. **Final Capture Function**: Observe the final content object just before it exits to the parent
 ## Execution Order
 
 ```
-Input → Pre-Init → Context Loading → Pre-Validation → Pre-Invoke → AI Call → [Reasoning Capture, if reasoning pipe present] → Post-Generate → Validator → Transformation → On-Failure (if needed) → Final Capture → Output
+Input → Pre-Execute (rebuilds the pipe if the hook drifted it) → Pre-Init → Context Loading → Pre-Validation → Pre-Invoke → AI Call → [Reasoning Capture, if reasoning pipe present] → Post-Generate → Validator → Transformation → On-Failure (if needed) → Final Capture → Output
 ```
 
 
+
+## Pre-Execute Function
+
+**What it does**: The very first thing to run on every execution, before context loading, prompt assembly, or any other processing. Unlike the other DITL hooks, it receives a live reference to the pipe itself and is designed to *modify* it: swap internal child pipes, swap models, or apply radical config changes that would require a rebuild to do safely.
+
+After the hook returns, TPipe fingerprints the pipe's state ([State Fingerprinting](state-fingerprinting.md)) and, if the hook mutated anything, automatically calls `init()` to rebuild the pipe and re-link all children before any stage that locks in the prompt. Structural drift is auto-detected — the developer does not have to manually report that they altered the pipe's structure.
+
+**When to use**: Runtime structural reconfiguration — model swaps, swapping internal child pipes, or any radical config change that would crash or corrupt state if applied mid-execution without a rebuild.
+
+```kotlin
+pipe.setPreExecuteFunction { livePipe, content ->
+    // Route long inputs to a long-context reasoning pipe.
+    if(content.text.length > 4000)
+    {
+        livePipe.setReasoningPipe(buildLongContextReasoningPipe())
+    }
+}
+```
+
+**Stateful by design**: adjustments made to the pipe's config through this hook remain in that exact state after execution finishes, and continue to be held on the next run. Build pipes using functions so they can be discarded after running if you need the pipe back to its default config each go-around. On retry, the pre-execute block runs again (snapshot → hook → drift check → rebuild), and because the snapshot is taken after the previous rebuild, a hook that converges to the same structure will not trigger another rebuild.
 
 ## Pre-Init Function
 

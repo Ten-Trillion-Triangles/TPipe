@@ -100,6 +100,12 @@ If true, timeout and retry settings propagate to child pipes (validator, branch,
 
 ### Function Hooks
 
+**`preExecuteFunction`**
+```kotlin
+var preExecuteFunction: (suspend (pipe: Pipe, content: MultimodalContent) -> Unit)? = null
+```
+The first thing to run on every execution, before context loading and prompt assembly. Receives a live reference to the pipe, enabling radical structural changes (swapping child pipes, model swaps). After the hook returns, the pipe's state is fingerprinted; if the hook mutated the pipe, `init()` is automatically called to rebuild and re-link all children before any stage that locks in the prompt. Modifications persist after the run. The `setPreExecuteFunction` builder form returns the pipe for chaining.
+
 **`preInitFunction`**
 ```kotlin
 var preInitFunction: (suspend (MultimodalContent) -> Unit)? = null
@@ -217,7 +223,7 @@ Enables timeout tracking and configures retry behavior for this pipe.
 - `Retry`: Automatically restores snapshot and retries up to `retryLimit` times
 - `CustomLogic`: Invokes `customLogic` function to determine retry action
 
-> ⚠️ **Warning:** Retry re-executes ALL pre-execution DITL functions (`preInitFunction`, `preValidationFunction`, etc.). These functions MUST be read-only. Writing to ContextBank or program memory will cause duplicate writes on retry. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
+> ⚠️ **Warning:** Retry re-executes ALL pre-execution DITL functions (`preInitFunction`, `preValidationFunction`, etc.). These functions MUST be read-only. Writing to ContextBank or program memory will cause duplicate writes on retry. `preExecuteFunction` is the deliberate exception: it exists to mutate the pipe, and TPipe auto-detects the drift and rebuilds the pipe via `init()` — keep the hook convergent so a retry that converges to the same structure does not rebuild again. See [Timeout and Retry](../core-concepts/timeout-and-retry.md) for details.
 
 #### `abort(visited: MutableSet<String> = mutableSetOf())` (suspend, open)
 Cancels the current execution. Default base implementation calls `propagateAbortRecursively()` which walks this pipe's descendant tree (validator, transformation, branch, reasoning child pipes and their own children). Subclasses override this to add provider-specific cleanup (closing HTTP clients, releasing AWS SDK resources) before calling `super.abort()` to continue the cascade. A custom override that does NOT call `super.abort()` will silently skip the descendant cascade — every custom override must call super.
@@ -1170,6 +1176,9 @@ Sets function to transform AI output.
 
 #### `setStringTransformationFunction(func: (String) -> String): Pipe`
 Sets string-based transformation function.
+
+#### `setPreExecuteFunction(func: suspend (pipe: Pipe, content: MultimodalContent) -> Unit): Pipe`
+Registers the pre-execute hook (see [Function Hooks](#function-hooks)): runs before any processing, may modify the pipe's structure, and triggers an automatic rebuild when the pipe drifted. Returns the pipe for method chaining.
 
 #### `setPreInitFunction(func: suspend (MultimodalContent) -> Unit): Pipe`
 Sets function called before context loading.

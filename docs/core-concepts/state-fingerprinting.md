@@ -24,7 +24,7 @@ No `sun.misc.Unsafe`, no native code, no FFM heap addressing: the fingerprint is
 
 ## When To Use It
 
-- A pipe's configuration can be mutated at execution time (DITL `preExecuteFunction` hooks and friends are stateful by design — the KDoc on `Pipe.preExecuteFunction` warns the modified state persists past the run). Snapshot before the run, compare after, and you know if the pipe drifted.
+- A pipe's configuration can be mutated at execution time. The pre-execute DITL hook is stateful by design (the modified state persists past the run, per the KDoc on `Pipe.preExecuteFunction`), and TPipe auto-detects that drift and rebuilds the pipe via `init()` — see [Developer-in-the-Loop Functions](developer-in-the-loop.md). For any other code path that reconfigures a pipe, snapshot at build time with `stateSnapshot()` and compare afterward with `isDirtySince()`.
 - You want to invalidate caches keyed on a pipe's structure.
 - You want a regression guard that pins a pipe's shape after arbitrary initialization code.
 
