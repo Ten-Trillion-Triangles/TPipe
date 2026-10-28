@@ -60,8 +60,10 @@ import com.TTT.Util.buildSemanticDecompressionInstructions
 import com.TTT.Util.semanticCompress
 import com.TTT.Util.SemanticCompressionResult
 import com.TTT.Util.SemanticCompressionSettings
+import com.TTT.Util.isDirtySince
 import com.TTT.Util.serializeConverseHistory
 import com.TTT.Util.serialize
+import com.TTT.Util.stateSnapshot
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
@@ -1864,6 +1866,30 @@ abstract class Pipe : P2PInterface, ProviderInterface
      */
     @Serializable
     protected var stopSequences = listOf<String>()
+
+    /**
+     * DITL hook that allows the user to reconfigure and modify the structure of the pipe itself at
+     * execution time. This can be useful for swapping internal child pipes, radical changes like model
+     * swaps, or other destructive config changes that would require a rebuild of the pipe in order to
+     * not cause crashes, memory corruption, or other issues when  attempting to do a dynamic modification
+     * at execution time.
+     *
+     * @param pipe Reference to the pipe being modified. This allows it to be writable and interactable inside
+     * the scope of the function. This will always be the acutal pipe that has entered execution with
+     * [executeMultimodal] so beware of handling stateful events safely.
+     *
+     * @param content The [MultimodalContent] supplied to the pipe at execution time. This is provided just
+     * in case it might be useful.
+     *
+     *
+     *
+     * WARNING: Adjustments to pipe config ARE STATEFUL!!! This means that if you modify the config of a pipe using
+     * this hook. It will remeain in that exact state even after execution is finished and continue to be held
+     * in this state if you re-run it. Execute cuation using this feature, and build pipes using functions so that
+     * they can be discarded after runninng if you need the pipe to remain in it's default config each go around.
+     */
+    @kotlinx.serialization.Transient
+    var preExecuteFunction: (suspend (pipe: Pipe, content: MultimodalContent) -> Unit)? = null
 
     /**
      * Function called just prior to starting the loading of context, merging input with the base user prompt
@@ -5435,6 +5461,20 @@ abstract class Pipe : P2PInterface, ProviderInterface
     }
 
     /**
+     * Sets the [preExecuteFunction] for this pipe which allows for radical config and pipe state modifications
+     * prior to execution. This is the first thing that runs when you execute a pipe, and should be used for
+     * changes to your pipe's config instead of changes to your pipe's prompt and data which is what the
+     * [preInitFunction] is intended for instead.
+     *
+     * @return Returns this pipe for method chaining.
+     */
+    fun setPreExecuteFunction(func: (suspend (pipe: Pipe, content: MultimodalContent) -> Unit)): Pipe
+    {
+        preExecuteFunction = func
+        return this
+    }
+
+    /**
      * setter to assign the pre init function that executes at the very start of the pipe.
      * Pre-init allows for actions like taking a snapshot of the input content, making last minute changes
      * to the content before it gets merged into the user prompt, and the context data.
@@ -7028,7 +7068,25 @@ abstract class Pipe : P2PInterface, ProviderInterface
     /**
      * Internal multimodal execution logic shared by both execute methods
      */
-    private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope{
+    private suspend fun executeMultimodal(inputContent: MultimodalContent): MultimodalContent = coroutineScope {
+
+        /* Immedeatly intercept and run the preExecution function if valid. If the developer wants to make
+        radical changes to the pipe based on logic of their program. These changes should be done before
+        any context, or prompt assembly occurs because we'll need to safely re-link children and other bound
+        systems ASAP.
+         */
+        if (preExecuteFunction != null)
+        {
+           val hash = this@Pipe.stateSnapshot()
+           preExecuteFunction?.invoke(this@Pipe, inputContent)
+
+           //Auto-detect changes so the developer does not have to manually report they mutated the pipe.
+           if (this@Pipe.isDirtySince(hash))
+           {
+               init() //Safely rebuild this pipe and re-link all children prior to stages that lock in the prompt.
+           }
+        }
+
         val executionStartTime = System.currentTimeMillis()
 
         /**
