@@ -214,8 +214,8 @@ The tier that actually served the response is readable via the read-only `lastRe
 val pipe = GenericOpenAIPipe()
     .setBedrockMantle(region = "us-east-1", modelId = "google.gemma-4-31b")
     .setBedrockMantleServiceTier(MantleServiceTier.Flex)
-    .setMaxTokens(64)
-    .init()
+pipe.setMaxTokens(64)
+pipe.init()
 val response = pipe.execute("Reply with the single word 'pong'.")
 println(pipe.lastResponseServiceTier) // tier that actually served the request
 ```
