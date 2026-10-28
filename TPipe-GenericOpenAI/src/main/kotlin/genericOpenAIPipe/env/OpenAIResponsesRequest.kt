@@ -50,6 +50,12 @@ data class OpenAIResponsesRequest(
      */
     @SerialName("prompt_cache_options")
     val promptCacheOptions: PromptCacheOptions? = null,
+    /**
+     * Bedrock Mantle service tier request value (`default` / `priority` /
+     * `flex`). Null omits the `service_tier` field from the wire.
+     */
+    @SerialName("service_tier")
+    val serviceTier: String? = null,
 )
 
 /**

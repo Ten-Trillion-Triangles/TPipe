@@ -24,7 +24,14 @@ data class OpenAIResponsesResponse(
     val model: String,
     val output: List<OpenAIResponsesOutputItem> = emptyList(),
     val usage: OpenAIResponsesUsage? = null,
-    val error: OpenAIResponsesErrorDetail? = null
+    val error: OpenAIResponsesErrorDetail? = null,
+    /**
+     * The service tier that actually served the request, echoed by the
+     * provider on the `service_tier` response field. Null when the provider
+     * did not echo one.
+     */
+    @SerialName("service_tier")
+    val serviceTier: String? = null
 )
 
 /**

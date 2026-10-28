@@ -147,6 +147,7 @@ class OpenAIResponsesRequestSerializer : RequestSerializer
             reasoning = convertReasoning(request.reasoning),
             user = if (policy?.emitUser != false) request.user else null,
             promptCacheOptions = cacheMeta?.let { PromptCacheOptions(mode = it.mode, ttl = it.ttl) },
+            serviceTier = request.serviceTier,
         )
     }
 

@@ -37,6 +37,10 @@ import kotlinx.serialization.Serializable
  * @property cacheControl Anthropic-style caching with ttl
  * @property user End-user identifier for abuse detection
  * @property n Number of completions to generate
+ * @property serviceTier Bedrock Mantle service tier request value
+ *        (`default` / `priority` / `flex` via [genericOpenAIPipe.mantle.MantleServiceTier]).
+ *        Null omits the `service_tier` field from the wire. Never emitted on
+ *        the Anthropic Messages wire.
  */
 @Serializable
 data class GenericOpenAIChatRequest(
@@ -85,5 +89,7 @@ data class GenericOpenAIChatRequest(
     @SerialName("cache_control")
     val cacheControl: CacheControl? = null,
     val user: String? = null,
-    val n: Int? = null
+    val n: Int? = null,
+    @SerialName("service_tier")
+    val serviceTier: String? = null
 )

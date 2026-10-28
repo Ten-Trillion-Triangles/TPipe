@@ -14,6 +14,9 @@ import kotlinx.serialization.Serializable
  * @property choices List of completion choices
  * @property usage Token usage statistics
  * @property systemFingerprint System fingerprint for the response
+ * @property serviceTier The service tier that actually served the request,
+ *        echoed by the provider on the `service_tier` response field.
+ *        Null when the provider did not echo one.
  */
 @Serializable
 data class GenericOpenAIChatResponse(
@@ -26,6 +29,8 @@ data class GenericOpenAIChatResponse(
     val usage: UsageInfo? = null,
     @SerialName("system_fingerprint")
     val systemFingerprint: String? = null,
+    @SerialName("service_tier")
+    val serviceTier: String? = null,
     /**
      * Model reasoning text (chain-of-thought) for reasoning-capable models.
      *
