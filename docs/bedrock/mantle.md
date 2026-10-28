@@ -10,6 +10,7 @@
 - [Environment Variable Reference](#environment-variable-reference)
 - [Reasoning on Mantle](#reasoning-on-mantle)
 - [Streaming](#streaming)
+- [Service Tiers](#service-tiers)
 - [Function Calling, Structured Output, Tool Choice](#function-calling-structured-output-tool-choice)
 - [Error Conditions](#error-conditions)
 - [API Reference](#api-reference)
@@ -267,6 +268,39 @@ The streaming path accumulates the response in three buffers:
 The returned `MultimodalContent` carries both `text` and `modelReasoning` even on the streaming path.
 
 The pipe's internal failure guard raises `P2PException(P2PError.transport, …)` when an OpenAI-family stream completes with empty output text — this distinguishes "the model produced no content" from "the validator pipe terminated the pipeline".
+
+## Service Tiers
+
+Mantle accepts AWS service tiers on OpenAI-shaped calls via a top-level
+`service_tier` request field — the same field OpenAI's own API uses.
+Bedrock accepts `default`, `priority`, and `flex`; OpenAI's `auto` value
+is not accepted.
+
+```kotlin
+import genericOpenAIPipe.GenericOpenAIPipe
+import genericOpenAIPipe.mantle.MantleServiceTier
+
+val pipe = GenericOpenAIPipe()
+    .setBedrockMantle(region = "us-east-1", modelId = "google.gemma-4-31b")
+    .setBedrockMantleServiceTier(MantleServiceTier.Flex)
+    .setMaxTokens(64)
+    .init()
+
+val response = pipe.execute("Reply with the single word 'pong'.")
+println(pipe.lastResponseServiceTier) // the tier that actually served the request
+```
+
+Notes:
+
+- `MantleServiceTier` maps to wire values: `Standard` → `default`, `Priority` → `priority`, `Flex` → `flex`.
+- When no tier is set, the field is omitted and the request wire shape is unchanged.
+- Read back the **actual** served tier via `pipe.lastResponseServiceTier` (populated on the non-streaming path); it is also emitted as `serviceTier` in the `API_CALL_SUCCESS` trace metadata when the provider echoed one.
+- Flex shares on-demand quota with the standard tier, so Mantle may serve a flex request on `default` or `priority` — check the echo rather than assuming the requested tier was used.
+- An IAM policy using the `bedrock:ServiceTier` condition key can block a tier account-side; a tier request that fails with an IAM error is a policy issue, not a TPipe defect.
+- Do **not** copy a Mantle tier value onto Anthropic Messages calls — that API's `service_tier` takes different values, and TPipe's Anthropic wire never emits the field.
+- Flex support varies by model and sometimes by API; check each model's page before relying on it.
+
+Endpoint-shape note: some Mantle models are served at `https://bedrock-mantle.{region}.api.aws/v1` while others (e.g. Gemma 4) use `/openai/v1`. `setBaseUrl` overrides the auto-constructed URL where the suffix differs.
 
 ## Function Calling, Structured Output, Tool Choice
 

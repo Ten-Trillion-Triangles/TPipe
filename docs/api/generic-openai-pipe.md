@@ -200,9 +200,29 @@ val pipe = GenericOpenAIPipe()
     .init()
 ```
 
-> **IAM actions for SigV4:** the AWS service identifier is `bedrock-mantle`. Required actions are documented in the AWS Bedrock Mantle IAM reference; the typical minimum is `bedrock-mantle:CreateInference` plus the standard `Get*` / `List*` actions for the model you are calling. Bearer-key users authenticate through the Bedrock API key gateway and do not require IAM permissions on the caller.
+#### `setBedrockMantleServiceTier(tier: MantleServiceTier?): GenericOpenAIPipe`
+Sets the Amazon Bedrock Mantle service tier for OpenAI-shaped (Chat Completions / Responses) requests. Mantle accepts exactly the `MantleServiceTier` values — OpenAI's `auto` is NOT accepted by Mantle. The tier is emitted as the top-level `service_tier` request field; when `null`, the field is omitted and the wire shape is unchanged. The Anthropic Messages wire never emits it.
 
-The full reference for `BedrockMantleAuth` (every sealed-class variant, every companion-object factory, the SigV4 streaming chunk wire format), `BedrockMantleConfiguration`, and `BedrockMantleEnv` (env-var precedence) lives in [`docs/api/bedrock-mantle.md`](bedrock-mantle.md). The provider-level getting-started — env-var resolution chain, model catalog, streaming and reasoning examples, error mapping — lives in [`docs/bedrock/mantle.md`](../bedrock/mantle.md).
+- `MantleServiceTier.Standard` → wire value `default`
+- `MantleServiceTier.Priority` → wire value `priority`
+- `MantleServiceTier.Flex` → wire value `flex` (shares on-demand quota with `Standard`)
+
+The tier that actually served the response is readable via the read-only `lastResponseServiceTier: String?` property after a completed non-streaming call; it is also emitted as `serviceTier` in the `API_CALL_SUCCESS` trace metadata when the provider echoed one. Streaming responses do not surface the echo in v1.
+
+**Example — flex tier with served-tier readback:**
+```kotlin
+val pipe = GenericOpenAIPipe()
+    .setBedrockMantle(region = "us-east-1", modelId = "google.gemma-4-31b")
+    .setBedrockMantleServiceTier(MantleServiceTier.Flex)
+    .setMaxTokens(64)
+    .init()
+val response = pipe.execute("Reply with the single word 'pong'.")
+println(pipe.lastResponseServiceTier) // tier that actually served the request
+```
+
+> **IAM actions for SigV4:** the AWS service identifier is `bedrock-mantle`. Required actions are documented in the AWS Bedrock Mantle IAM reference; the typical minimum is `bedrock-mantle:CreateInference` plus the standard `Get*` / `List*` actions for the model you are calling. Bearer-key users authenticate through the Bedrock API key gateway and do not require IAM permissions on the caller. An IAM policy using the `bedrock:ServiceTier` condition key can additionally block specific tiers account-side.
+
+The full reference for `BedrockMantleAuth` (every sealed-class variant, every companion-object factory, the SigV4 streaming chunk wire format), `BedrockMantleConfiguration`, `MantleServiceTier`, and `BedrockMantleEnv` (env-var precedence) lives in [`docs/api/bedrock-mantle.md`](bedrock-mantle.md). The provider-level getting-started — env-var resolution chain, model catalog, streaming, service tiers, reasoning examples, error mapping — lives in [`docs/bedrock/mantle.md`](../bedrock/mantle.md).
 
 ---
 

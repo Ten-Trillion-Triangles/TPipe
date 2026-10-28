@@ -8,17 +8,19 @@
   - [SigV4](#sigv4)
   - [Streaming](#streaming)
 - [BedrockMantleEnv](#bedrockmantleenv)
+- [MantleServiceTier](#mantleservicetier)
 - [Next Steps](#next-steps)
 
 ## Overview
 
-The Bedrock Mantle package lives under `TPipe-GenericOpenAI/src/main/kotlin/genericOpenAIPipe/`. It exposes three public types:
+The Bedrock Mantle package lives under `TPipe-GenericOpenAI/src/main/kotlin/genericOpenAIPipe/`. It exposes four public types:
 
 ```kotlin
 package genericOpenAIPipe.mantle
 
 sealed class BedrockMantleAuth { … }
 data class  BedrockMantleConfiguration(region: String, modelId: String, apiMode: ApiMode = ApiMode.OpenAI)
+enum class MantleServiceTier { Standard, Priority, Flex }
 
 package genericOpenAIPipe.env
 
@@ -232,8 +234,48 @@ The same chain applies symmetrically to the secret access key, session token, an
 | `resolveSessionToken(): String` | session token (empty when nothing is set) | Walk the precedence chain. |
 | `resolveRegion(): String` | AWS region (defaults to `us-east-1`) | Walk the precedence chain; fall through to `us-east-1` when nothing is set. |
 
+## MantleServiceTier
+
+```kotlin
+enum class MantleServiceTier(private val wireValue: String)
+{
+    Standard("default"),
+    Priority("priority"),
+    Flex("flex");
+
+    fun toWireValue(): String = wireValue
+}
+```
+
+Service tiers accepted by Amazon Bedrock Mantle on OpenAI-shaped calls
+(Chat Completions and Responses). Mantle's `service_tier` request field
+accepts exactly these three Bedrock values. OpenAI's own `auto` value is
+NOT accepted by Mantle and has no variant in this enum.
+
+| Variant | Wire value | Notes |
+|---------|------------|-------|
+| `Standard` | `default` | Standard on-demand tier. |
+| `Priority` | `priority` | The priority queue. |
+| `Flex` | `flex` | Shares on-demand quota with `Standard`. |
+
+### Pipe surface
+
+| Member | Returns | Description |
+|--------|---------|-------------|
+| `GenericOpenAIPipe.setBedrockMantleServiceTier(tier: MantleServiceTier?)` | `GenericOpenAIPipe` | Sets the tier for OpenAI-shaped requests. When `null`, the `service_tier` request field is omitted and the wire shape is unchanged. |
+| `GenericOpenAIPipe.lastResponseServiceTier` | `String?` (read-only) | The service tier that actually served the most recent completed non-streaming response, as echoed by the provider in the response body's `service_tier` field. `null` when the provider did not echo one. |
+
+Behavior notes:
+
+- The tier is emitted as the top-level `service_tier` field on the Chat Completions and Responses request bodies.
+- The Anthropic Messages wire **never** emits `service_tier` — that API's `service_tier` takes a different value vocabulary, and the Anthropic serializer builds its request from an explicit field list, so a Mantle tier cannot leak onto that wire.
+- When the tier is unset, the field is omitted entirely (existing wire shape byte-preserved).
+- The `API_CALL_SUCCESS` trace metadata carries a `serviceTier` key when the provider echoed one.
+- Flex shares on-demand quota with the standard tier, and an IAM policy using the `bedrock:ServiceTier` condition key can block specific tiers on a given account — a tier request that fails with an IAM error is a policy issue, not a TPipe defect.
+- Streaming limitation: `lastResponseServiceTier` is populated on the non-streaming success path. Streaming responses do not surface it in v1 (the Responses SSE `response.completed` event is not modeled by the SSE parser).
+
 ## Next Steps
 
 - [`docs/bedrock/mantle.md`](../bedrock/mantle.md) — getting-started, auth setup, streaming, reasoning on Mantle
-- [`docs/api/generic-openai-pipe.md`](generic-openai-pipe.md) — `GenericOpenAIPipe` builders that consume these types (`setBedrockMantle`, `setBedrockMantleWithResponses`, `setBedrockMantleAuth`)
+- [`docs/api/generic-openai-pipe.md`](generic-openai-pipe.md) — `GenericOpenAIPipe` builders that consume these types (`setBedrockMantle`, `setBedrockMantleWithResponses`, `setBedrockMantleAuth`, `setBedrockMantleServiceTier`)
 - [`docs/core-concepts/reasoning-pipes.md`](../core-concepts/reasoning-pipes.md) — how `modelReasoning` is populated across non-streaming and streaming paths
