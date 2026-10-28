@@ -12,6 +12,7 @@ public final class genericOpenAIPipe/GenericOpenAIPipe : com/TTT/Pipe/Pipe {
 	public fun generateContent (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun generateText (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun generateTextForTest (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getLastResponseServiceTier ()Ljava/lang/String;
 	public fun getStreamingEnabled ()Z
 	public final fun getStreamingFinishReason ()Ljava/lang/String;
 	public final fun httpClientForTest ()Lio/ktor/client/HttpClient;
@@ -27,6 +28,7 @@ public final class genericOpenAIPipe/GenericOpenAIPipe : com/TTT/Pipe/Pipe {
 	public final fun setBaseUrl (Ljava/lang/String;)LgenericOpenAIPipe/GenericOpenAIPipe;
 	public final fun setBedrockMantle (Ljava/lang/String;Ljava/lang/String;)LgenericOpenAIPipe/GenericOpenAIPipe;
 	public final fun setBedrockMantleAuth (LgenericOpenAIPipe/mantle/BedrockMantleAuth;)LgenericOpenAIPipe/GenericOpenAIPipe;
+	public final fun setBedrockMantleServiceTier (LgenericOpenAIPipe/mantle/MantleServiceTier;)LgenericOpenAIPipe/GenericOpenAIPipe;
 	public final fun setBedrockMantleWithResponses (Ljava/lang/String;Ljava/lang/String;)LgenericOpenAIPipe/GenericOpenAIPipe;
 	public final fun setCacheControl (Ljava/lang/String;Ljava/lang/String;)LgenericOpenAIPipe/GenericOpenAIPipe;
 	public static synthetic fun setCacheControl$default (LgenericOpenAIPipe/GenericOpenAIPipe;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)LgenericOpenAIPipe/GenericOpenAIPipe;
@@ -1296,8 +1298,8 @@ public final class genericOpenAIPipe/env/FunctionSchema$Companion {
 
 public final class genericOpenAIPipe/env/GenericOpenAIChatRequest {
 	public static final field Companion LgenericOpenAIPipe/env/GenericOpenAIChatRequest$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ZLjava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/util/Map;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/ResponseFormat;Ljava/lang/Boolean;Ljava/util/List;LgenericOpenAIPipe/env/ReasoningConfig;Ljava/lang/String;LgenericOpenAIPipe/env/CacheControl;Ljava/lang/String;Ljava/lang/Integer;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ZLjava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/util/Map;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/ResponseFormat;Ljava/lang/Boolean;Ljava/util/List;LgenericOpenAIPipe/env/ReasoningConfig;Ljava/lang/String;LgenericOpenAIPipe/env/CacheControl;Ljava/lang/String;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ZLjava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/util/Map;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/ResponseFormat;Ljava/lang/Boolean;Ljava/util/List;LgenericOpenAIPipe/env/ReasoningConfig;Ljava/lang/String;LgenericOpenAIPipe/env/CacheControl;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ZLjava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/util/Map;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/ResponseFormat;Ljava/lang/Boolean;Ljava/util/List;LgenericOpenAIPipe/env/ReasoningConfig;Ljava/lang/String;LgenericOpenAIPipe/env/CacheControl;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component10 ()Ljava/lang/Double;
 	public final fun component11 ()Ljava/lang/Double;
@@ -1321,14 +1323,15 @@ public final class genericOpenAIPipe/env/GenericOpenAIChatRequest {
 	public final fun component28 ()Ljava/lang/String;
 	public final fun component29 ()Ljava/lang/Integer;
 	public final fun component3 ()Ljava/lang/Double;
+	public final fun component30 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/Double;
 	public final fun component5 ()Ljava/lang/Integer;
 	public final fun component6 ()Ljava/lang/Integer;
 	public final fun component7 ()Ljava/lang/Integer;
 	public final fun component8 ()Z
 	public final fun component9 ()Ljava/util/List;
-	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ZLjava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/util/Map;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/ResponseFormat;Ljava/lang/Boolean;Ljava/util/List;LgenericOpenAIPipe/env/ReasoningConfig;Ljava/lang/String;LgenericOpenAIPipe/env/CacheControl;Ljava/lang/String;Ljava/lang/Integer;)LgenericOpenAIPipe/env/GenericOpenAIChatRequest;
-	public static synthetic fun copy$default (LgenericOpenAIPipe/env/GenericOpenAIChatRequest;Ljava/lang/String;Ljava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ZLjava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/util/Map;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/ResponseFormat;Ljava/lang/Boolean;Ljava/util/List;LgenericOpenAIPipe/env/ReasoningConfig;Ljava/lang/String;LgenericOpenAIPipe/env/CacheControl;Ljava/lang/String;Ljava/lang/Integer;ILjava/lang/Object;)LgenericOpenAIPipe/env/GenericOpenAIChatRequest;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ZLjava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/util/Map;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/ResponseFormat;Ljava/lang/Boolean;Ljava/util/List;LgenericOpenAIPipe/env/ReasoningConfig;Ljava/lang/String;LgenericOpenAIPipe/env/CacheControl;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)LgenericOpenAIPipe/env/GenericOpenAIChatRequest;
+	public static synthetic fun copy$default (LgenericOpenAIPipe/env/GenericOpenAIChatRequest;Ljava/lang/String;Ljava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ZLjava/util/List;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Integer;Ljava/util/Map;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/ResponseFormat;Ljava/lang/Boolean;Ljava/util/List;LgenericOpenAIPipe/env/ReasoningConfig;Ljava/lang/String;LgenericOpenAIPipe/env/CacheControl;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILjava/lang/Object;)LgenericOpenAIPipe/env/GenericOpenAIChatRequest;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCacheControl ()LgenericOpenAIPipe/env/CacheControl;
 	public final fun getFrequencyPenalty ()Ljava/lang/Double;
@@ -1348,6 +1351,7 @@ public final class genericOpenAIPipe/env/GenericOpenAIChatRequest {
 	public final fun getRepetitionPenalty ()Ljava/lang/Double;
 	public final fun getResponseFormat ()LgenericOpenAIPipe/env/ResponseFormat;
 	public final fun getSeed ()Ljava/lang/Integer;
+	public final fun getServiceTier ()Ljava/lang/String;
 	public final fun getStop ()Ljava/util/List;
 	public final fun getStream ()Z
 	public final fun getStructuredOutputs ()Ljava/lang/Boolean;
@@ -1380,8 +1384,8 @@ public final class genericOpenAIPipe/env/GenericOpenAIChatRequest$Companion {
 
 public final class genericOpenAIPipe/env/GenericOpenAIChatResponse {
 	public static final field Companion LgenericOpenAIPipe/env/GenericOpenAIChatResponse$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/UsageInfo;Ljava/lang/String;Ljava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/UsageInfo;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/UsageInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/UsageInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()J
@@ -1390,8 +1394,9 @@ public final class genericOpenAIPipe/env/GenericOpenAIChatResponse {
 	public final fun component6 ()LgenericOpenAIPipe/env/UsageInfo;
 	public final fun component7 ()Ljava/lang/String;
 	public final fun component8 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/UsageInfo;Ljava/lang/String;Ljava/lang/String;)LgenericOpenAIPipe/env/GenericOpenAIChatResponse;
-	public static synthetic fun copy$default (LgenericOpenAIPipe/env/GenericOpenAIChatResponse;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/UsageInfo;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)LgenericOpenAIPipe/env/GenericOpenAIChatResponse;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/UsageInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)LgenericOpenAIPipe/env/GenericOpenAIChatResponse;
+	public static synthetic fun copy$default (LgenericOpenAIPipe/env/GenericOpenAIChatResponse;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/UsageInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)LgenericOpenAIPipe/env/GenericOpenAIChatResponse;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getChoices ()Ljava/util/List;
 	public final fun getCreated ()J
@@ -1399,6 +1404,7 @@ public final class genericOpenAIPipe/env/GenericOpenAIChatResponse {
 	public final fun getModel ()Ljava/lang/String;
 	public final fun getObjectType ()Ljava/lang/String;
 	public final fun getReasoningContent ()Ljava/lang/String;
+	public final fun getServiceTier ()Ljava/lang/String;
 	public final fun getSystemFingerprint ()Ljava/lang/String;
 	public final fun getUsage ()LgenericOpenAIPipe/env/UsageInfo;
 	public fun hashCode ()I
@@ -2039,8 +2045,8 @@ public final class genericOpenAIPipe/env/OpenAIResponsesReasoning$Companion {
 
 public final class genericOpenAIPipe/env/OpenAIResponsesRequest {
 	public static final field Companion LgenericOpenAIPipe/env/OpenAIResponsesRequest$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/OpenAIResponsesTextConfig;LgenericOpenAIPipe/env/OpenAIResponsesReasoning;Ljava/lang/String;LgenericOpenAIPipe/env/PromptCacheOptions;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/OpenAIResponsesTextConfig;LgenericOpenAIPipe/env/OpenAIResponsesReasoning;Ljava/lang/String;LgenericOpenAIPipe/env/PromptCacheOptions;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/OpenAIResponsesTextConfig;LgenericOpenAIPipe/env/OpenAIResponsesReasoning;Ljava/lang/String;LgenericOpenAIPipe/env/PromptCacheOptions;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/OpenAIResponsesTextConfig;LgenericOpenAIPipe/env/OpenAIResponsesReasoning;Ljava/lang/String;LgenericOpenAIPipe/env/PromptCacheOptions;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component10 ()Ljava/util/List;
 	public final fun component11 ()Ljava/lang/String;
@@ -2049,6 +2055,7 @@ public final class genericOpenAIPipe/env/OpenAIResponsesRequest {
 	public final fun component14 ()LgenericOpenAIPipe/env/OpenAIResponsesReasoning;
 	public final fun component15 ()Ljava/lang/String;
 	public final fun component16 ()LgenericOpenAIPipe/env/PromptCacheOptions;
+	public final fun component17 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/util/List;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/Integer;
@@ -2057,8 +2064,8 @@ public final class genericOpenAIPipe/env/OpenAIResponsesRequest {
 	public final fun component7 ()Z
 	public final fun component8 ()Ljava/lang/Boolean;
 	public final fun component9 ()Ljava/util/List;
-	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/OpenAIResponsesTextConfig;LgenericOpenAIPipe/env/OpenAIResponsesReasoning;Ljava/lang/String;LgenericOpenAIPipe/env/PromptCacheOptions;)LgenericOpenAIPipe/env/OpenAIResponsesRequest;
-	public static synthetic fun copy$default (LgenericOpenAIPipe/env/OpenAIResponsesRequest;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/OpenAIResponsesTextConfig;LgenericOpenAIPipe/env/OpenAIResponsesReasoning;Ljava/lang/String;LgenericOpenAIPipe/env/PromptCacheOptions;ILjava/lang/Object;)LgenericOpenAIPipe/env/OpenAIResponsesRequest;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/OpenAIResponsesTextConfig;LgenericOpenAIPipe/env/OpenAIResponsesReasoning;Ljava/lang/String;LgenericOpenAIPipe/env/PromptCacheOptions;Ljava/lang/String;)LgenericOpenAIPipe/env/OpenAIResponsesRequest;
+	public static synthetic fun copy$default (LgenericOpenAIPipe/env/OpenAIResponsesRequest;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Double;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/Boolean;LgenericOpenAIPipe/env/OpenAIResponsesTextConfig;LgenericOpenAIPipe/env/OpenAIResponsesReasoning;Ljava/lang/String;LgenericOpenAIPipe/env/PromptCacheOptions;Ljava/lang/String;ILjava/lang/Object;)LgenericOpenAIPipe/env/OpenAIResponsesRequest;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getInclude ()Ljava/util/List;
 	public final fun getInput ()Ljava/util/List;
@@ -2068,6 +2075,7 @@ public final class genericOpenAIPipe/env/OpenAIResponsesRequest {
 	public final fun getParallelToolCalls ()Ljava/lang/Boolean;
 	public final fun getPromptCacheOptions ()LgenericOpenAIPipe/env/PromptCacheOptions;
 	public final fun getReasoning ()LgenericOpenAIPipe/env/OpenAIResponsesReasoning;
+	public final fun getServiceTier ()Ljava/lang/String;
 	public final fun getStore ()Ljava/lang/Boolean;
 	public final fun getStream ()Z
 	public final fun getTemperature ()Ljava/lang/Double;
@@ -2097,8 +2105,8 @@ public final class genericOpenAIPipe/env/OpenAIResponsesRequest$Companion {
 
 public final class genericOpenAIPipe/env/OpenAIResponsesResponse {
 	public static final field Companion LgenericOpenAIPipe/env/OpenAIResponsesResponse$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/OpenAIResponsesUsage;LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/OpenAIResponsesUsage;LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/OpenAIResponsesUsage;LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/OpenAIResponsesUsage;LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()J
@@ -2107,8 +2115,9 @@ public final class genericOpenAIPipe/env/OpenAIResponsesResponse {
 	public final fun component6 ()Ljava/util/List;
 	public final fun component7 ()LgenericOpenAIPipe/env/OpenAIResponsesUsage;
 	public final fun component8 ()LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/OpenAIResponsesUsage;LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;)LgenericOpenAIPipe/env/OpenAIResponsesResponse;
-	public static synthetic fun copy$default (LgenericOpenAIPipe/env/OpenAIResponsesResponse;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/OpenAIResponsesUsage;LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;ILjava/lang/Object;)LgenericOpenAIPipe/env/OpenAIResponsesResponse;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/OpenAIResponsesUsage;LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;Ljava/lang/String;)LgenericOpenAIPipe/env/OpenAIResponsesResponse;
+	public static synthetic fun copy$default (LgenericOpenAIPipe/env/OpenAIResponsesResponse;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;Ljava/util/List;LgenericOpenAIPipe/env/OpenAIResponsesUsage;LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;Ljava/lang/String;ILjava/lang/Object;)LgenericOpenAIPipe/env/OpenAIResponsesResponse;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCreatedAt ()J
 	public final fun getError ()LgenericOpenAIPipe/env/OpenAIResponsesErrorDetail;
@@ -2116,6 +2125,7 @@ public final class genericOpenAIPipe/env/OpenAIResponsesResponse {
 	public final fun getModel ()Ljava/lang/String;
 	public final fun getObjectType ()Ljava/lang/String;
 	public final fun getOutput ()Ljava/util/List;
+	public final fun getServiceTier ()Ljava/lang/String;
 	public final fun getStatus ()Ljava/lang/String;
 	public final fun getUsage ()LgenericOpenAIPipe/env/OpenAIResponsesUsage;
 	public fun hashCode ()I
@@ -3018,6 +3028,16 @@ public final class genericOpenAIPipe/mantle/MantleMetadataKeys {
 public final class genericOpenAIPipe/mantle/MantleMetadataKt {
 	public static final fun requireMantleGpt56ExplicitCachingSupport (Ljava/lang/String;LgenericOpenAIPipe/api/ApiMode;)V
 	public static final fun supportsMantleGpt56ExplicitCaching (Ljava/lang/String;LgenericOpenAIPipe/api/ApiMode;)Z
+}
+
+public final class genericOpenAIPipe/mantle/MantleServiceTier : java/lang/Enum {
+	public static final field Flex LgenericOpenAIPipe/mantle/MantleServiceTier;
+	public static final field Priority LgenericOpenAIPipe/mantle/MantleServiceTier;
+	public static final field Standard LgenericOpenAIPipe/mantle/MantleServiceTier;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun toWireValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)LgenericOpenAIPipe/mantle/MantleServiceTier;
+	public static fun values ()[LgenericOpenAIPipe/mantle/MantleServiceTier;
 }
 
 public final class genericOpenAIPipe/mantle/SigV4Signer {
