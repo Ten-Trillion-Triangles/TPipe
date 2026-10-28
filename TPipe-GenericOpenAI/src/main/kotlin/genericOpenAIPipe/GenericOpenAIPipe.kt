@@ -17,6 +17,7 @@ import genericOpenAIPipe.access.GenericOpenAIAccessProfile
 import genericOpenAIPipe.mantle.BedrockMantleAuth
 import genericOpenAIPipe.mantle.BedrockMantleConfiguration
 import genericOpenAIPipe.mantle.ChunkedSigV4Signer
+import genericOpenAIPipe.mantle.MantleServiceTier
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -186,6 +187,21 @@ class GenericOpenAIPipe : Pipe()
         private set
 
     /**
+     * The service tier that actually served the most recent completed
+     * non-streaming response, as echoed by the provider in the
+     * response body's `service_tier` field. Null when the provider did
+     * not echo one.
+     *
+     * Populated on the non-streaming success path. The streaming path
+     * does not surface it (the Responses SSE `response.completed` event
+     * is not modeled by the SSE parser in v1) — a documented limitation.
+     * Surfaced in the API_CALL_SUCCESS trace metadata under the
+     * `serviceTier` key when non-null.
+     */
+    var lastResponseServiceTier: String? = null
+        private set
+
+    /**
      * Function calling tool definitions.
      */
     @kotlinx.serialization.Transient
@@ -294,6 +310,15 @@ class GenericOpenAIPipe : Pipe()
      */
     @kotlinx.serialization.Transient
     private var bedrockMantleAuth: BedrockMantleAuth? = null
+
+    /**
+     * Optional Bedrock Mantle service tier for OpenAI-shaped requests.
+     * When set, [buildGenericRequest] threads [MantleServiceTier.toWireValue]
+     * into the serialized `service_tier` request field. Never emitted on
+     * the Anthropic wire.
+     */
+    @kotlinx.serialization.Transient
+    private var bedrockMantleServiceTier: MantleServiceTier? = null
 
     /**
      * Optional transient access profile for rotating or externally managed
@@ -429,6 +454,7 @@ class GenericOpenAIPipe : Pipe()
         user = user,
         n = n,
         stream = wireStreaming,
+        serviceTier = bedrockMantleServiceTier?.toWireValue(),
     )
 
     /** Serializes a normalized request using the selected mode and policy. */
@@ -932,6 +958,27 @@ class GenericOpenAIPipe : Pipe()
     }
 
     /**
+     * Sets the Amazon Bedrock Mantle service tier for OpenAI-shaped
+     * (Chat Completions / Responses) requests on this pipe.
+     *
+     * Mantle accepts exactly the [MantleServiceTier] values — OpenAI's
+     * `auto` is NOT accepted by Mantle. The tier is emitted as the
+     * top-level `service_tier` request field; when `null`, the field
+     * is omitted and the wire shape is unchanged. The Anthropic
+     * Messages wire never emits it. The tier that actually served the
+     * response is readable via [lastResponseServiceTier] after a
+     * completed non-streaming call.
+     *
+     * @param tier Mantle service tier, or `null` to clear.
+     * @return This pipe instance for fluent chaining.
+     */
+    fun setBedrockMantleServiceTier(tier: MantleServiceTier?): GenericOpenAIPipe
+    {
+        bedrockMantleServiceTier = tier
+        return this
+    }
+
+    /**
      * Internal helper that wires baseUrl, apiMode, modelId, and auth for the
      * given Mantle configuration. Resolves credentials via
      * [genericOpenAIPipe.env.BedrockMantleEnv] and prefers SigV4 when both
@@ -1258,6 +1305,7 @@ class GenericOpenAIPipe : Pipe()
                 throw P2PException(P2PError.json, "Failed to parse GenericOpenAI response: ${e.message}", e)
             }
 
+            lastResponseServiceTier = response.serviceTier
             val contentText = when(val msg = response.choices.firstOrNull()?.message?.content)
             {
                 is MessageContent.TextContent -> msg.text
@@ -1473,6 +1521,7 @@ class GenericOpenAIPipe : Pipe()
                     throw P2PException(P2PError.json, "Failed to parse GenericOpenAI response: ${e.message}", e)
                 }
 
+                lastResponseServiceTier = response.serviceTier
                 val contentText = when(val msg = response.choices.firstOrNull()?.message?.content)
                 {
                     is MessageContent.TextContent -> msg.text
@@ -1510,6 +1559,11 @@ class GenericOpenAIPipe : Pipe()
                     "responseId" to (response.id ?: "unknown"),
                     "systemFingerprint" to (response.systemFingerprint ?: "none")
                 )
+                val servedTier = lastResponseServiceTier
+                if(servedTier != null)
+                {
+                    successMetadata["serviceTier"] = servedTier
+                }
                 if(reasoningContent.isNotEmpty())
                 {
                     successMetadata["reasoningLength"] = reasoningContent.length
