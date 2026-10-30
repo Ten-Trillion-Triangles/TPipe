@@ -45,15 +45,17 @@ object TraceInteractivity
                     }, 2000);
                 }
                 
-                mermaid.initialize({ 
-                    startOnLoad: true,
-                    theme: 'default',
-                    flowchart: { 
-                        useMaxWidth: true, 
-                        htmlLabels: true 
-                    },
-                    securityLevel: 'loose'
-                });
+                if (typeof mermaid !== 'undefined') {
+                    mermaid.initialize({ 
+                        startOnLoad: true,
+                        theme: 'default',
+                        flowchart: { 
+                            useMaxWidth: true, 
+                            htmlLabels: true 
+                        },
+                        securityLevel: 'loose'
+                    });
+                }
             </script>
         """.trimIndent()
     }
