@@ -422,87 +422,6 @@ class TraceVisualizer
     }
 
     /**
-     * Emits the flow-graph runtime for a report: the pinned mermaid bundle inlined from
-     * resources (`mermaid/mermaid.min.js`, mermaid@10.9.1 UMD) so a trace file opens
-     * with zero network access, plus the degrade guard and its CSS.
-     *
-     * An unversioned CDN tag with no fallback used to be the sole render path here:
-     * when that one request failed, the raw graph source stayed in `div.mermaid` and
-     * rendered as a jumbled wall of text. A static debug artifact must not reach out
-     * to a CDN; the pin is only a fallback for pre-resource builds and stays versioned.
-     *
-     * @return The `<head>` script and style blocks defining `window.mermaid` and the guard.
-     */
-    private fun mermaidRuntimeScriptTag(): String
-    {
-        val banner = "TPipe mermaid runtime: pinned mermaid@10.9.1, inlined so the trace file opens offline"
-        val bundle = try {
-            javaClass.classLoader
-                .getResourceAsStream("mermaid/mermaid.min.js")
-                ?.bufferedReader()
-                ?.use { it.readText() }
-        }
-        catch(e: Exception)
-        {
-            null
-        }
-        val runtimeScript = if(bundle != null && bundle.isNotBlank())
-        {
-            """
-            <script>/* $banner */
-            $bundle
-            </script>
-            """.trimIndent()
-        }
-        else
-        {
-            """
-            <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
-            """.trimIndent()
-        }
-        return "$runtimeScript${mermaidFallbackGuardScript()}"
-    }
-
-    /**
-     * Degrade guard: if the mermaid runtime is unavailable when the page loads, the raw
-     * graph source is never left as the visible content of `div.mermaid` — each graph is
-     * replaced with a styled, labeled fallback block.
-     *
-     * @return The guard `<style>` + `<script>` blocks, emitted after the runtime script.
-     */
-    private fun mermaidFallbackGuardScript(): String
-    {
-        return """
-            <style>
-            .mermaid-fallback {
-                background: #fff3cd;
-                border: 1px solid #ffc107;
-                border-radius: 8px;
-                padding: 16px;
-                margin: 0;
-                font-family: Consolas, 'Courier New', monospace;
-                font-size: 0.85em;
-                white-space: pre-wrap;
-                word-break: break-word;
-            }
-            </style>
-            <script>
-            window.addEventListener('DOMContentLoaded', function () {
-                if (typeof window.mermaid === 'undefined') {
-                    document.querySelectorAll('div.mermaid').forEach(function (div) {
-                        var pre = document.createElement('pre');
-                        pre.className = 'mermaid-fallback';
-                        pre.textContent = 'diagram renderer unavailable — raw graph source:\n' + div.textContent;
-                        div.textContent = '';
-                        div.appendChild(pre);
-                    });
-                }
-            });
-            </script>
-        """.trimIndent()
-    }
-
-    /**
      * Map an aggregated node status onto the Mermaid style class used by the flow graph.
      *
      * @param status The aggregated status of the node.
@@ -713,7 +632,6 @@ class TraceVisualizer
      */
     private fun generateManifoldHtmlReport(trace: List<TraceEvent>): String {
         val nodes = buildManifoldNodes(trace)
-        val mermaidRuntimeTag = mermaidRuntimeScriptTag()
         val mermaidGraph = generateManifoldMermaidGraph(nodes, trace)
         val orchestrationTable = generateOrchestrationTable(trace, ::mapManifoldNodeName)
         val agentInteractionTable = generateAgentInteractionTable(trace)
@@ -725,7 +643,7 @@ class TraceVisualizer
             <html>
             <head>
                 <title>TPipe Manifold Execution Flow</title>
-                ${mermaidRuntimeTag}
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
                 <style>
                     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 24px; background: #f1f5f9; color: #1e293b; }
                     .container { max-width: 1200px; margin: 0 auto; background: white; padding: 28px; border-radius: 14px; box-shadow: 0 22px 50px rgba(15,23,42,0.16); }
@@ -838,7 +756,6 @@ class TraceVisualizer
     private fun generateJunctionHtmlReport(trace: List<TraceEvent>): String
     {
         val nodes = buildJunctionNodes(trace)
-        val mermaidRuntimeTag = mermaidRuntimeScriptTag()
         val mermaidGraph = generateJunctionMermaidGraph(nodes, trace)
         val stateRibbon = buildJunctionStateRibbon(trace)
         val orchestrationTable = generateOrchestrationTable(trace, ::mapJunctionNodeName)
@@ -851,7 +768,7 @@ class TraceVisualizer
             <html>
             <head>
                 <title>TPipe Junction Execution Analysis</title>
-                ${mermaidRuntimeTag}
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
                 <style>
                     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 24px; background: #f1f5f9; color: #1e293b; }
                     .container { max-width: 1200px; margin: 0 auto; background: white; padding: 28px; border-radius: 14px; box-shadow: 0 22px 50px rgba(15,23,42,0.16); }
@@ -973,7 +890,6 @@ class TraceVisualizer
     private fun generateDistributionGridHtmlReport(trace: List<TraceEvent>): String
     {
         val nodes = buildDistributionGridNodes(trace)
-        val mermaidRuntimeTag = mermaidRuntimeScriptTag()
         val mermaidGraph = generateDistributionGridMermaidGraph(nodes, trace)
         val orchestrationTable = generateOrchestrationTable(trace, ::mapDistributionGridNodeName)
         val activityTable = generateDistributionGridActivityTable(trace)
@@ -986,7 +902,7 @@ class TraceVisualizer
             <html>
             <head>
                 <title>TPipe DistributionGrid Execution Analysis</title>
-                ${mermaidRuntimeTag}
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
                 <style>
                     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 24px; background: #f1f5f9; color: #1e293b; }
                     .container { max-width: 1280px; margin: 0 auto; background: white; padding: 28px; border-radius: 14px; box-shadow: 0 22px 50px rgba(15,23,42,0.16); }
@@ -1110,7 +1026,6 @@ class TraceVisualizer
         val mermaidGraph = generateMermaidFlowGraph(trace, nodes)
         val tokenCard = buildContainerTokenCard(trace)
         val detailsTable = generateDetailsTable(trace)
-        val mermaidRuntimeTag = mermaidRuntimeScriptTag()
         val javascript = TraceInteractivity.generateJavaScript(nodes)
 
         return """
@@ -1118,7 +1033,7 @@ class TraceVisualizer
             <html>
             <head>
                 <title>TPipe Splitter Execution Flow</title>
-                ${mermaidRuntimeTag}
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
                 <style>
                     body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background: #f5f5f5; }
                     .container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -2148,14 +2063,13 @@ class TraceVisualizer
         val detailsTable = generateDetailsTable(trace)
         val javascript = TraceInteractivity.generateJavaScript(nodes)
         val enhancedCSS = generateEnhancedCSS()
-        val mermaidRuntimeTag = mermaidRuntimeScriptTag()
         
         return """
             <!DOCTYPE html>
             <html>
             <head>
                 <title>TPipe Pipeline Flow Visualization</title>
-                ${mermaidRuntimeTag}
+                <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
                 <style>$enhancedCSS</style>
             </head>
             <body>
