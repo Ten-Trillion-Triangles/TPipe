@@ -1,224 +1,71 @@
-TPipe Startup License 1.0
+# PolyForm Perimeter License 1.0.1
 
-Available to legal entities meeting the eligibility conditions below at no charge.
+<https://polyformproject.org/licenses/perimeter/1.0.1>
 
-================================================================================
-ELIGIBILITY
+## Acceptance
 
-You are eligible to use this license if ALL of the following are true:
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
-  - Your organization has total annual revenue (ARR) of $1,000,000 USD or less.
-    (If your project qualifies for the FOSS carve-out below, this revenue
-    cap does not apply — see FOSS CARVE-OUT.)
+## Copyright License
 
-  - Your use of TPipe is not competitive with TPipe (see Noncompete below)
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only distribute the software according to [Distribution License](#distribution-license) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
 
-  - You have not entered into a separate Commercial Agreement with
-    Ten Trillion Triangles LLC for TPipe
+## Distribution License
 
-If you do not meet these conditions, you may use TPipe under AGPL-3.0,
-or contact Ten Trillion Triangles LLC to negotiate a Commercial Agreement.
+The licensor grants you an additional copyright license to distribute copies of the software.  Your license to distribute covers distributing the software with changes and new works permitted by [Changes and New Works License](#changes-and-new-works-license).
 
-================================================================================
-ACCEPTANCE
+## Notices
 
-In order to get any license under these terms, you must agree to them as both
-strict obligations and conditions to all your licenses.
+You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with `Required Notice:` that the licensor provided with the software.  For example:
 
-================================================================================
-COPYRIGHT LICENSE
+> Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
 
-The licensor (Ten Trillion Triangles LLC) grants you a copyright license for
-the software to do everything you might do with the software that would
-otherwise infringe the licensor's copyright in it for any permitted purpose.
-However, you may only distribute the software according to Distribution
-License and make changes or new works based on the software according to
-Changes and New Works License.
+## Changes and New Works License
 
-================================================================================
-DISTRIBUTION LICENSE
+The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
 
-The licensor grants you an additional copyright license to distribute copies
-of the software. Your license to distribute covers distributing the software
-with changes and new works permitted by Changes and New Works License.
+## Patent License
 
-================================================================================
-NOTICES
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
 
-You must ensure that anyone who gets a copy of any part of the software from
-you also gets a copy of these terms or the URL for them above, as well as
-copies of any plain-text lines beginning with "Required Notice:" that the
-licensor provided with the software. For example:
+## Noncompete
 
-  Required Notice: Copyright Ten Trillion Triangles LLC (https://www.tentrilliontriangles.com/licenses/LICENSE.TPipe-Startup.txt)
+Any purpose is a permitted purpose, except for providing to others any product that competes with the software.
 
-If you modify TPipe, you must replace this notice with your own, but the
-modification does not change the licensor's copyright. Your notice must
-identify Ten Trillion Triangles LLC as the original licensor of TPipe.
+## Competition
 
-================================================================================
-CHANGES AND NEW WORKS LICENSE
+If you use this software to market a product as a substitute for the functionality or value of the software, it competes with the software. A product may compete regardless how it is designed or deployed. For example, a product may compete even if it provides its functionality via any kind of interface (including services, libraries or plug-ins), even if it is ported to a different platform or programming language, and even if it is provided free of charge.
 
-The licensor grants you an additional copyright license to make changes and
-new works based on the software for any permitted purpose.
+## Fair Use
 
-================================================================================
-PATENT LICENSE
+You may have "fair use" rights for the software under the law. These terms do not limit them.
 
-The licensor grants you a patent license for the software that covers patent
-claims the licensor can license, or becomes able to license, that you would
-infringe by using the software.
+## No Other Rights
 
-================================================================================
-NONCOMPETE
+These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
 
-Any purpose is a permitted purpose, except for providing to others any product
-that competes with TPipe.
+## Patent Defense
 
-A product competes with TPipe if it provides LLM orchestration, multi-agent
-pipeline orchestration, or any functionality that overlaps with TPipe's core
-purpose as a general-purpose AI agent orchestration layer — regardless of
-interface (service, library, plugin, API, CLI), platform, deployment model,
-or pricing (free or paid).
+If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
 
-A product competes with TPipe even if:
-  - it is provided through a different interface or programming language
-  - it is ported to a different platform or architecture
-  - it is offered free of charge
-  - it is deployed as a hosted service rather than distributed as software
+## Violations
 
-Using TPipe internally to build or operate your own product is not
-competition. Competition means offering TPipe-like functionality to others
-as a product or service.
+The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice.  Otherwise, all your licenses end immediately.
 
-================================================================================
-FAIR USE
+## No Liability
 
-You may have "fair use" rights for the software under the law. These terms
-do not limit them.
+***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
 
-================================================================================
-NO OTHER RIGHTS
+## Definitions
 
-These terms do not allow you to sublicense or transfer any of your licenses
-to anyone else, or prevent the licensor from granting licenses to anyone
-else. These terms do not imply any other licenses.
+The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
 
-================================================================================
-PATENT DEFENSE
+A **product** can be a good or service, or a combination of them.
 
-If you make any written claim that the software infringes or contributes to
-infringement of any patent, your patent license for the software granted
-under these terms ends immediately. If your company makes such a claim,
-your patent license ends immediately for work on behalf of your company.
+**You** refers to the individual or entity agreeing to these terms.
 
-================================================================================
-VIOLATIONS
+**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
 
-The first time you are notified in writing that you have violated any of these
-terms, or done anything with the software not covered by your licenses, your
-licenses can nonetheless continue if you come into full compliance with these
-terms and take practical steps to correct past violations within 32 days of
-receiving notice. Otherwise, all your licenses end immediately.
+**Your licenses** are all the licenses granted to you for the software under these terms.
 
-================================================================================
-NO LIABILITY
-
-As far as the law allows, the software comes as is, without any warranty or
-condition, and the licensor will not be liable to you for any damages arising
-out of these terms or the use or nature of the software, under any kind of
-legal claim.
-
-================================================================================
-REVENUE CAP
-
-This license is available to any individual or organization with total annual
-revenue (ARR) of $1,000,000 USD or less.
-
-This revenue cap applies to closed-source deployments of TPipe. If your
-organization exceeds $1,000,000 USD in annual revenue, you must within
-30 days either:
-
-  (a) Enter a written Commercial Agreement with Ten Trillion Triangles LLC,
-      or
-
-  (b) Discontinue use of this license and switch to AGPL-3.0 by releasing
-      your TPipe modifications under AGPL terms
-
-Failure to convert within 30 days converts your license to AGPL-3.0
-retroactively, back-dated to the date you exceeded $1,000,000 ARR.
-
-Revenue is self-reported. Ten Trillion Triangles LLC reserves the right to
-request annual revenue attestation. If you overstate your revenue to remain
-under this cap, you owe 2x the applicable Commercial rate for every year of
-non-compliance plus audit costs for an 18-month period following detection.
-
-================================================================================
-FOSS CARVE-OUT
-
-If your project meets ALL of the following conditions, you are exempt from
-the revenue cap above, and may use TPipe under these terms regardless of
-your organization's revenue:
-
-  (a) Your project's complete source code is publicly available under an
-      OSI-approved license. The source code must be genuinely accessible —
-      posting only a binary, a source archive without build instructions,
-      or code behind a contribution agreement does not satisfy this
-      requirement. Your project must be buildable from the publicly
-      available source by a third party.
-
-  (b) TPipe is used as a dependency, not distributed as a standalone
-      product or under a different license name.
-
-  (c) Your project does not itself compete with TPipe (see Noncompete).
-
-Your FOSS project must still comply with the Noncompete clause. A FOSS project
-that provides LLM orchestration or multi-agent pipeline functionality as a
-competing product to others — regardless of whether the code is open — is not
-eligible for this carve-out and must obtain a Commercial Agreement.
-
-================================================================================
-AUTOMATIC COMMERCIAL CONVERSION
-
-If at any fiscal year end your ARR attributable to your TPipe-using product
-or service exceeds $1,000,000 USD, you must transition to a Commercial
-Agreement within 30 days of that date.
-
-Transition options:
-  - Contact Ten Trillion Triangles LLC to negotiate a Commercial Agreement
-  - Discontinue this license and switch to AGPL-3.0
-
-================================================================================
-DEFINITIONS
-
-The "licensor" is Ten Trillion Triangles LLC, and the "software" is TPipe
-as made available under these terms.
-
-"You" refers to the individual or entity agreeing to these terms.
-
-"Your company" is any legal entity, sole proprietorship, or other kind of
-organization that you work for, plus all organizations that have control
-over, are under the control of, or are under common control with that
-organization. "Control" means ownership of substantially all the assets
-of an entity, or the power to direct its management and policies by vote,
-contract, or otherwise. Control can be direct or indirect.
-
-"Your licenses" are all the licenses granted to you for the software under
-these terms.
-
-"Use" means anything you do with the software requiring one of your licenses.
-
-"ARR" means total annual revenue in USD, calculated according to generally
-accepted accounting principles, from all sources attributable to your
-TPipe-using product or service.
-
-"Closed-source" means distributed to others with source code hidden or
-not publicly available.
-
-"OSI-approved license" means a license certified as open source by the
-Open Source Initiative (opensource.org).
-
-================================================================================
-TEN TRILLION TRIANGLES LLC
-TPipe Startup License 1.0
-https://www.tentrilliontriangles.com
+**Use** means anything you do with the software requiring one of your licenses.
