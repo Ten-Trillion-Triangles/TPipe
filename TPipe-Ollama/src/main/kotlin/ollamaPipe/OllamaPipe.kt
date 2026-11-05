@@ -68,6 +68,13 @@ class OllamaPipe : Pipe()
      */
     @kotlinx.serialization.Serializable
     private var think: Boolean = false
+
+    /**
+     * Ollama-specific thinking level ("low"/"medium"/"high"/"max" or a model-defined value).
+     * When set, it is sent in preference to the boolean [think].
+     */
+    @kotlinx.serialization.Serializable
+    private var thinkLevel: String? = null
     
     /**
      * Number of tokens to keep from the initial prompt.
@@ -330,6 +337,49 @@ class OllamaPipe : Pipe()
         this.think = true
         this.useModelReasoning = true
         return this
+    }
+
+    /**
+     * Sets an Ollama thinking level ("low"/"medium"/"high"/"max" or a model-defined value).
+     * Also enables model reasoning so the trace flag reflects it.
+     * @param level The thinking level to send.
+     * @return This pipe instance.
+     */
+    fun setThinkLevel(level: String): OllamaPipe
+    {
+        this.thinkLevel = level
+        this.think = true
+        this.useModelReasoning = true
+        return this
+    }
+
+    /**
+     * Disables thinking: clears the level and both on/off flags.
+     * @return This pipe instance.
+     */
+    fun disableThink(): OllamaPipe
+    {
+        this.think = false
+        this.thinkLevel = null
+        this.useModelReasoning = false
+        return this
+    }
+
+    /**
+     * Computes the wire value for Ollama's top-level `think` field: the level string when
+     * [thinkLevel] is set, otherwise a JSON `true` when thinking is enabled (via [think] or the
+     * base-Pipe [useModelReasoning] flag), otherwise `null` (omitted on the wire).
+     *
+     * @return The `think` [JsonElement] to place on the request, or null when not requested.
+     */
+    internal fun buildThinkWireValue(): JsonElement?
+    {
+        return when
+        {
+            thinkLevel != null -> JsonPrimitive(thinkLevel)
+            think || useModelReasoning -> JsonPrimitive(true)
+            else -> null
+        }
     }
     
     /**
@@ -901,7 +951,8 @@ class OllamaPipe : Pipe()
             stream = streamingEnabled,
             keepAlive = keepAlive,
             format = format,
-            tools = ollamaTools
+            tools = ollamaTools,
+            think = buildThinkWireValue()
         )
 
         return if(streamingEnabled)
@@ -1150,7 +1201,8 @@ class OllamaPipe : Pipe()
             stream = streamingEnabled,
             keepAlive = keepAlive,
             images = base64Images,
-            format = format
+            format = format,
+            think = buildThinkWireValue()
         )
 
         return if(streamingEnabled)
