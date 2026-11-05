@@ -281,7 +281,7 @@ dependencies {
 TPipe is available in three tiers:
 
 *   **Community (AGPL-3.0)**: Free, full source; derivative works must also be open-source.
-*   **Startup (PolyForm Perimeter 1.0.1)**: Free closed-source license at any revenue — the noncompete is the only restriction: you may not provide to others a product that competes with TPipe. Notices and attribution are required when you distribute. See the [PolyForm Perimeter License 1.0.1](https://www.tentrilliontriangles.com/licenses/LICENSE.PolyForm-Perimeter-1.0.1.txt) for the full terms.
-*   **Enterprise**: Custom license terms are negotiable — available when AGPL obligations or the Startup noncompete are not viable for your use case. Includes the TPipe services catalog: compliance, support and SLAs, security assurance, private forks, and dedicated engineering. See [TPipe Pricing](https://tentrilliontriangles.com/pricing).
+*   **Startup (PolyForm Perimeter 1.0.1)**: Free commercial license at any revenue, closed or open source — the noncompete is the only restriction: you may not provide to others a product that competes with TPipe. Notices and attribution are required when you distribute. See the [PolyForm Perimeter License 1.0.1](https://www.tentrilliontriangles.com/licenses/LICENSE.PolyForm-Perimeter-1.0.1.txt) for the full terms.
+*   **Enterprise**: Custom license terms are negotiable — available when AGPL obligations or the Startup noncompete are not viable for your use case. Includes the TPipe services catalog: compliance management, support and SLAs, security assurance and advisory, LTS and continuity, licensing rights, hosting and tenant operations, private fork and engineering — plus GraalVM native image binaries. See [TPipe Pricing](https://tentrilliontriangles.com/pricing).
 
 Contact [contact@tentrilliontriangles.com](mailto:contact@tentrilliontriangles.com) for enterprise inquiries.
