@@ -89,6 +89,9 @@ data class OpenRouterChatRequest(
     val plugins: List<Plugin>? = null,
     val provider: ProviderPreferences? = null,
     val reasoning: ReasoningConfig? = null,
+    /** Flat top-level reasoning effort (current spec; separate from the `reasoning` object). */
+    @SerialName("reasoning_effort")
+    val reasoningEffort: String? = null,
     @SerialName("cache_control")
     val cacheControl: CacheControl? = null,
     @SerialName("service_tier")
@@ -242,10 +245,16 @@ data class MaxPrice(
  */
 @Serializable
 data class ReasoningConfig(
+    /** Reasoning effort: "xhigh"/"high"/"medium"/"low"/"minimal"/"none" (or "auto"). */
     val effort: String? = null,
+    /** Reasoning summary verbosity (current spec): "auto"/"detailed"/"none". */
+    val summary: String? = null,
+    @Deprecated("Superseded by the flat request-level reasoning_effort field.")
     @SerialName("max_tokens")
     val maxTokens: Int? = null,
+    @Deprecated("No longer part of the current OpenRouter reasoning shape.")
     val exclude: Boolean? = null,
+    @Deprecated("The current spec gates reasoning via reasoning_effort / reasoning.effort, not an enabled flag.")
     val enabled: Boolean? = null
 )
 

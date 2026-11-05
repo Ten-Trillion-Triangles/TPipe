@@ -221,6 +221,12 @@ class OpenRouterPipe : Pipe()
     @kotlinx.serialization.Transient
     private var reasoningConfig: env.ReasoningConfig? = null
 
+    /**
+     * Flat top-level `reasoning_effort` request field (separate from the `reasoning` object).
+     */
+    @kotlinx.serialization.Transient
+    private var flatReasoningEffort: String? = null
+
 //=========================================Builder Methods=============================================================
 
     /**
@@ -384,6 +390,18 @@ class OpenRouterPipe : Pipe()
     fun setReasoningEffort(effort: String): OpenRouterPipe
     {
         this.reasoningConfig = env.ReasoningConfig(effort = effort)
+        return this
+    }
+
+    /**
+     * Sets the flat top-level `reasoning_effort` request field (distinct from the `reasoning`
+     * object). The current OpenRouter spec exposes a standalone `reasoning_effort` string.
+     * @param effort The reasoning effort value (e.g. "high", "low", "medium").
+     * @return This pipe instance for fluent chaining
+     */
+    fun setFlatReasoningEffort(effort: String): OpenRouterPipe
+    {
+        this.flatReasoningEffort = effort
         return this
     }
 
@@ -739,6 +757,7 @@ class OpenRouterPipe : Pipe()
             responseFormat = responseFormat,
             structuredOutputs = structuredOutputs,
             reasoning = reasoningConfig,
+            reasoningEffort = flatReasoningEffort,
             provider = providerPreferences,
             cacheControl = cacheControl,
             plugins = plugins,
