@@ -1099,6 +1099,77 @@ class OpenRouterPipe : Pipe()
         }
     }
 
+    /**
+     * OR-J: fetches the OpenRouter model catalog (`GET /models`), giving per-model
+     * context_length + supported_parameters + pricing for auto-calibration.
+     * @return The list of models, or null on failure.
+     */
+    suspend fun fetchModelCatalog(): List<env.OpenRouterModel>?
+    {
+        val client = httpClient ?: throw IllegalStateException("OpenRouterPipe not initialized. Call init() first.")
+        return try
+        {
+            val text = withContext(Dispatchers.IO)
+            {
+                client.get("$baseUrl/models")
+                {
+                    header("Authorization", "Bearer $apiKey")
+                    if(httpReferer.isNotEmpty()) header("HTTP-Referer", httpReferer)
+                    if(openRouterTitle.isNotEmpty()) header("X-OpenRouter-Title", openRouterTitle)
+                }.bodyAsText()
+            }
+            deserialize<env.OpenRouterModelsResponse>(text)?.data
+        }
+        catch(e: Exception)
+        {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e,
+                  metadata = mapOf("endpoint" to "GET /models", "errorType" to (e::class.simpleName ?: "Unknown")))
+            null
+        }
+    }
+
+    /**
+     * OR-J: fetches a single model's metadata (`GET /models/{modelId}`) for context-window
+     * and supported-parameter calibration.
+     * @param modelId The OpenRouter model slug (e.g. "anthropic/claude-3-5-sonnet").
+     * @return The model entry, or null on failure.
+     */
+    suspend fun fetchModelInfo(modelId: String): env.OpenRouterModel?
+    {
+        val client = httpClient ?: throw IllegalStateException("OpenRouterPipe not initialized. Call init() first.")
+        return try
+        {
+            val text = withContext(Dispatchers.IO)
+            {
+                client.get("$baseUrl/models/${modelId.replace("/", "%2F")}")
+                {
+                    header("Authorization", "Bearer $apiKey")
+                    if(httpReferer.isNotEmpty()) header("HTTP-Referer", httpReferer)
+                    if(openRouterTitle.isNotEmpty()) header("X-OpenRouter-Title", openRouterTitle)
+                }.bodyAsText()
+            }
+            deserialize<env.OpenRouterModelResponse>(text)?.data
+        }
+        catch(e: Exception)
+        {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e,
+                  metadata = mapOf("endpoint" to "GET /models/$modelId", "errorType" to (e::class.simpleName ?: "Unknown")))
+            null
+        }
+    }
+
+    /**
+     * OR-J: calibrates this pipe's context window from a catalog-fetched [contextLength],
+     * replacing the hardcoded family heuristic for that model.
+     * @param contextLength The model's context window in tokens (from [fetchModelInfo]).
+     * @return This pipe instance.
+     */
+    fun setContextLengthFromCatalog(contextLength: Int): OpenRouterPipe
+    {
+        setContextWindowSize(contextLength)
+        return this
+    }
+
 //=========================================Context Management==========================================================
 
     /**
