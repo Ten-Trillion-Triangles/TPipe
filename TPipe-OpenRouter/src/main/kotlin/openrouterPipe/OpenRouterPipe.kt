@@ -1134,7 +1134,7 @@ class OpenRouterPipe : Pipe()
     {
         val channel = httpResponse.bodyAsChannel()
         val textBuilder = StringBuilder()
-        val toolCallAccumulator = mutableListOf<env.ChatToolCall>()
+        val toolCallAccumulator = ToolCallStreamAccumulator()
         var streamUsage: env.UsageInfo? = null
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
@@ -1165,7 +1165,7 @@ class OpenRouterPipe : Pipe()
                     }
 
                     val chunk = SseParser.parseChunk(sseLine.content) ?: continue
-                    chunk.choices.firstOrNull()?.delta?.toolCalls?.let { toolCallAccumulator.addAll(it) }
+                    chunk.choices.firstOrNull()?.delta?.toolCalls?.let { calls -> calls.forEach { toolCallAccumulator.add(it) } }
                     chunk.usage?.let { streamUsage = it }
                     handleStreamDataChunk(chunk, textBuilder)
                 }
@@ -1176,9 +1176,11 @@ class OpenRouterPipe : Pipe()
         var resultText = textBuilder.toString()
 
         // OR-B: surface accumulated stream tool_calls through PCP, matching the non-stream path.
-        if(toolCallAccumulator.isNotEmpty())
+        // Tool-call fragments are grouped by `index` + merged into whole calls first.
+        val accumulatedCalls = toolCallAccumulator.result()
+        if(accumulatedCalls.isNotEmpty())
         {
-            val pcpRequests = toolCallAccumulator.map { call -> mapOpenRouterToolCallToPcp(call) }
+            val pcpRequests = accumulatedCalls.map { call -> mapOpenRouterToolCallToPcp(call) }
             val toolCallJson = serialize(pcpRequests)
             resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
         }

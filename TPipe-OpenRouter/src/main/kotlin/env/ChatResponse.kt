@@ -267,12 +267,16 @@ data class DeltaMessage(
  * @property id Provider-assigned call identifier.
  * @property type Call type (currently "function").
  * @property function The function to call.
+ * @property index Streaming fragment index (OpenAI-compat `ChatStreamToolCall`
+ *   uses this to group argument fragments of one call; absent on non-stream
+ *   `message.tool_calls`, where it stays null).
  */
 @Serializable
 data class ChatToolCall(
     val id: String? = null,
     val type: String? = null,
-    val function: ToolCallFunction? = null
+    val function: ToolCallFunction? = null,
+    val index: Int? = null
 )
 
 /**
