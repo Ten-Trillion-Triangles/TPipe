@@ -111,7 +111,12 @@ data class ChatMessage(
     val content: String,
     /** Tool/function calls the assistant emitted (response messages only; null on requests). */
     @SerialName("tool_calls")
-    val toolCalls: List<ChatToolCall>? = null
+    val toolCalls: List<ChatToolCall>? = null,
+    /** Plain-text model reasoning (reasoning models stream it ahead of visible content). */
+    val reasoning: String? = null,
+    /** Structured reasoning entries (text / summary / signature). */
+    @SerialName("reasoning_details")
+    val reasoningDetails: List<ReasoningDetail>? = null
 )
 
 /**
