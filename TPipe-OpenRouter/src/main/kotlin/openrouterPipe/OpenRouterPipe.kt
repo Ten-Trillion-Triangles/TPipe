@@ -766,6 +766,8 @@ class OpenRouterPipe : Pipe()
                           "inputTokens" to inputTokens,
                           "outputTokens" to outputTokens,
                           "totalTokens" to totalTokens,
+                          "cost" to (usage?.cost ?: 0.0),
+                          "isByok" to (usage?.isByok ?: false),
                           "responseLength" to resultText.length,
                           "model" to response.model,
                           "success" to true,

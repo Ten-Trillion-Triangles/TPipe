@@ -70,7 +70,68 @@ data class UsageInfo(
     @SerialName("prompt_tokens_details")
     val promptTokensDetails: PromptTokensDetails? = null,
     @SerialName("completion_tokens_details")
-    val completionTokensDetails: CompletionTokensDetails? = null
+    val completionTokensDetails: CompletionTokensDetails? = null,
+    /** Total request cost in USD (OpenRouter extension; null on :free models). */
+    val cost: Double? = null,
+    /** OpenRouter per-component cost breakdown. */
+    @SerialName("cost_details")
+    val costDetails: CostDetails? = null,
+    /** True when the request was served by a bring-your-own-key endpoint. */
+    @SerialName("is_byok")
+    val isByok: Boolean? = null,
+    /** Token accounting for deferred tool-search calls. */
+    @SerialName("deferred_tools_details")
+    val deferredToolsDetails: DeferredToolsDetails? = null,
+    /** Usage attributed to server-executed tools (web search, etc.). */
+    @SerialName("server_tool_use_details")
+    val serverToolUseDetails: ServerToolUseDetails? = null
+)
+
+/**
+ * OpenRouter `cost_details` — USD cost attributed to each upstream component.
+ *
+ * @property upstreamInferenceCost Total upstream inference cost.
+ * @property upstreamInferencePromptCost Upstream prompt cost.
+ * @property upstreamInferenceCompletionsCost Upstream completion cost.
+ * @property serverToolCost Cost of server-side tool execution.
+ */
+@Serializable
+data class CostDetails(
+    @SerialName("upstream_inference_cost")
+    val upstreamInferenceCost: Double? = null,
+    @SerialName("upstream_inference_prompt_cost")
+    val upstreamInferencePromptCost: Double? = null,
+    @SerialName("upstream_inference_completions_cost")
+    val upstreamInferenceCompletionsCost: Double? = null,
+    @SerialName("server_tool_cost")
+    val serverToolCost: Double? = null
+)
+
+/**
+ * Token accounting for deferred tool-search calls.
+ */
+@Serializable
+data class DeferredToolsDetails(
+    @SerialName("prompt_tokens")
+    val promptTokens: Int? = null,
+    @SerialName("completion_tokens")
+    val completionTokens: Int? = null,
+    @SerialName("total_tokens")
+    val totalTokens: Int? = null,
+    val turns: Int? = null
+)
+
+/**
+ * Usage attributed to server-executed tools.
+ */
+@Serializable
+data class ServerToolUseDetails(
+    @SerialName("tool_calls_executed")
+    val toolCallsExecuted: Int? = null,
+    @SerialName("tool_calls_requested")
+    val toolCallsRequested: Int? = null,
+    @SerialName("web_search_requests")
+    val webSearchRequests: Int? = null
 )
 
 /**
