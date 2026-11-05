@@ -257,6 +257,13 @@ class OpenRouterPipe : Pipe()
     @kotlinx.serialization.Transient
     private var fallbackModels: List<String>? = null
 
+    /**
+     * OR-L: when true, [generateContent] routes to the OpenRouter `/responses`
+     * (Responses API) path instead of the chat-completions path. Defaults to
+     * false so the existing chat-completions behavior is byte-identical.
+     */
+    private var responsesMode: Boolean = false
+
     /** OR-K: conditions for stopping server-side tool loops. */
     @kotlinx.serialization.Transient
     private var stopServerToolsWhen: JsonObject? = null
@@ -827,6 +834,20 @@ class OpenRouterPipe : Pipe()
      */
     private fun buildChatRequestJson(promptInjector: String): String
     {
+        return serialize(buildChatRequestObject(promptInjector, streamingEnabled), encodedefault = false)
+    }
+
+    /**
+     * Builds the in-process [OpenRouterChatRequest] from the pipe's configured
+     * parameters. Extracted so the chat-completions path and the responses path
+     * share one request construction (the responses mode converts this object
+     * to the Responses wire spec).
+     * @param promptInjector The user prompt to append as the final message.
+     * @param stream Whether the request is streaming.
+     * @return The constructed request object.
+     */
+    private fun buildChatRequestObject(promptInjector: String, stream: Boolean): OpenRouterChatRequest
+    {
         val messages = mutableListOf<ChatMessage>()
 
         if(systemPrompt.isNotEmpty())
@@ -836,7 +857,7 @@ class OpenRouterPipe : Pipe()
 
         messages.add(ChatMessage(role = "user", content = promptInjector))
 
-        val request = OpenRouterChatRequest(
+        return OpenRouterChatRequest(
             model = model,
             messages = messages,
             temperature = if(temperature > 0.0) temperature else null,
@@ -875,8 +896,6 @@ class OpenRouterPipe : Pipe()
             models = fallbackModels,
             stopServerToolsWhen = stopServerToolsWhen
         )
-
-        return serialize(request, encodedefault = false)
     }
 
     /**
@@ -984,6 +1003,11 @@ class OpenRouterPipe : Pipe()
      */
     override suspend fun generateContent(content: MultimodalContent): MultimodalContent
     {
+        if(responsesMode)
+        {
+            return generateResponses(content)
+        }
+
         if(streamingEnabled)
         {
             val text = generateText(content.text)
@@ -992,6 +1016,113 @@ class OpenRouterPipe : Pipe()
         val jsonRequest = buildChatRequestJson(content.text)
         val (resultText, reasoning) = executeNonStreamResult(jsonRequest)
         return MultimodalContent(text = resultText, modelReasoning = reasoning)
+    }
+
+    /**
+     * OR-L: executes a non-streaming OpenRouter Responses API call (`/responses`)
+     * and projects the result onto the P2P surface: the visible answer (+ PCP
+     * tool-call JSON), and the flattened reasoning onto
+     * [MultimodalContent.modelReasoning]. This is an isolated path — it is only
+     * entered via [setResponsesMode] and does not touch the chat-completions
+     * flow.
+     * @param content The in-process request content.
+     * @return The populated multimodal result.
+     */
+    private suspend fun generateResponses(content: MultimodalContent): MultimodalContent
+    {
+        val client = httpClient ?: throw IllegalStateException("OpenRouterPipe not initialized. Call init() first.")
+        val serializer = OpenRouterResponsesRequestSerializer()
+        val jsonRequest = serializer.serialize(buildChatRequestObject(content.text, stream = false), stream = false)
+
+        val responseText = withContext(Dispatchers.IO)
+        {
+            client.post("$baseUrl/responses")
+            {
+                contentType(ContentType.Application.Json)
+                header("Authorization", "Bearer $apiKey")
+                if(httpReferer.isNotEmpty())
+                {
+                    header("HTTP-Referer", httpReferer)
+                }
+                if(openRouterTitle.isNotEmpty())
+                {
+                    header("X-OpenRouter-Title", openRouterTitle)
+                }
+                setBody(jsonRequest)
+            }.bodyAsText()
+        }
+
+        val parser = OpenRouterResponsesResponseParser()
+        val responsesResponse = parser.parse(responseText)
+        val flattened = parser.flatten(responsesResponse)
+
+        var resultText = flattened.text
+        if(flattened.functionCalls.isNotEmpty())
+        {
+            val pcpRequests = flattened.functionCalls.map { call -> mapResponsesFunctionCallToPcp(call) }
+            val toolCallJson = serialize(pcpRequests)
+            resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+        }
+
+        val usage = flattened.usage
+        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "inputTokens" to (usage?.inputTokens ?: 0),
+                  "outputTokens" to (usage?.outputTokens ?: 0),
+                  "totalTokens" to (usage?.totalTokens ?: 0),
+                  "reasoningLength" to flattened.reasoning.length,
+                  "functionCallCount" to flattened.functionCalls.size,
+                  "responseLength" to resultText.length,
+                  "model" to responsesResponse.model,
+                  "success" to true,
+                  "apiType" to "ResponsesAPI"
+              ))
+
+        return MultimodalContent(text = resultText, modelReasoning = flattened.reasoning)
+    }
+
+    /**
+     * OR-L: maps a Responses `function_call` item onto a [PcPRequest], mirroring
+     * the chat-completions tool-call mapping ([mapOpenRouterToolCallToPcp]).
+     * @param call The function-call output item.
+     * @return The PCP request describing the tool call.
+     */
+    private fun mapResponsesFunctionCallToPcp(call: env.OpenRouterResponsesOutputItem.FunctionCall): PcPRequest
+    {
+        val request = PcPRequest()
+        val functionName = call.name
+        if(functionName.isNullOrBlank()) return request
+
+        val argsObj = call.arguments?.let { raw -> runCatching { orJson.parseToJsonElement(raw) }.getOrNull() as? JsonObject }
+            ?: buildJsonObject { }
+
+        if(functionName.startsWith("call_agent_"))
+        {
+            val agentName = functionName.removePrefix("call_agent_")
+            val prompt = argsObj["prompt"]?.jsonPrimitive?.content ?: ""
+            request.argumentsOrFunctionParams = listOf(agentName, prompt)
+        }
+        else
+        {
+            request.tPipeContextOptions.functionName = functionName
+            request.argumentsOrFunctionParams = argsObj.values.map { value ->
+                if(value is JsonPrimitive) value.content else value.toString()
+            }
+        }
+
+        return request
+    }
+
+    /**
+     * OR-L: selects the OpenRouter Responses API mode. When enabled,
+     * [generateContent] routes to `/responses` instead of `/chat/completions`.
+     * @param enabled True to use the Responses API; false (default) uses chat-completions.
+     * @return This pipe instance.
+     */
+    fun setResponsesMode(enabled: Boolean): OpenRouterPipe
+    {
+        this.responsesMode = enabled
+        return this
     }
 
     /**
