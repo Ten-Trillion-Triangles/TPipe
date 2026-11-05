@@ -33,7 +33,6 @@ import kotlinx.serialization.json.JsonObject
  * @property toolChoice Tool selection mode
  * @property parallelToolCalls Enable parallel function calling
  * @property responseFormat Response format constraint (text, json_object, json_schema)
- * @property structuredOutputs Enable structured outputs via json_schema
  * @property modalities Output modalities (text, image, audio)
  * @property plugins OpenRouter plugins (web search, file parsing, etc.)
  * @property provider Routing preferences for provider selection
@@ -42,7 +41,6 @@ import kotlinx.serialization.json.JsonObject
  * @property serviceTier Service tier (auto, default, flex, priority, scale)
  * @property sessionId Request grouping for observability
  * @property user End-user identifier for abuse detection
- * @property verbosity Response detail level (low, medium, high, max)
  * @property trace Observability metadata
  */
 @Serializable
@@ -83,8 +81,6 @@ data class OpenRouterChatRequest(
     val parallelToolCalls: Boolean? = null,
     @SerialName("response_format")
     val responseFormat: ResponseFormat? = null,
-    @SerialName("structured_outputs")
-    val structuredOutputs: Boolean? = null,
     val modalities: List<String>? = null,
     val plugins: List<Plugin>? = null,
     val provider: ProviderPreferences? = null,
@@ -99,7 +95,6 @@ data class OpenRouterChatRequest(
     @SerialName("session_id")
     val sessionId: String? = null,
     val user: String? = null,
-    val verbosity: String? = null,
     val trace: TraceConfig? = null
 )
 

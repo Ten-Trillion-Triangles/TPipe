@@ -567,6 +567,7 @@ class OpenRouterPipe : Pipe()
      * @param enabled True to enable structured outputs
      * @return This pipe instance for fluent chaining
      */
+    @Deprecated("structured_outputs was removed from the current OpenRouter request; use response_format json_schema instead. No-op on the wire.")
     fun setStructuredOutputs(enabled: Boolean): OpenRouterPipe
     {
         this.structuredOutputs = enabled
@@ -578,6 +579,7 @@ class OpenRouterPipe : Pipe()
      * @param level Verbosity: "low", "medium", "high", "max"
      * @return This pipe instance for fluent chaining
      */
+    @Deprecated("verbosity was removed from the current OpenRouter request. No-op on the wire.")
     fun setVerbosity(level: String): OpenRouterPipe
     {
         this.verbosity = level
@@ -755,7 +757,6 @@ class OpenRouterPipe : Pipe()
             toolChoice = toolChoice,
             parallelToolCalls = parallelToolCalls,
             responseFormat = responseFormat,
-            structuredOutputs = structuredOutputs,
             reasoning = reasoningConfig,
             reasoningEffort = flatReasoningEffort,
             provider = providerPreferences,
@@ -768,7 +769,6 @@ class OpenRouterPipe : Pipe()
             topA = topA,
             serviceTier = serviceTier,
             user = openRouterUser,
-            verbosity = verbosity,
             sessionId = sessionId,
             stream = streamingEnabled
         )
