@@ -98,7 +98,20 @@ data class OpenRouterChatRequest(
     @SerialName("session_id")
     val sessionId: String? = null,
     val user: String? = null,
-    val trace: TraceConfig? = null
+    val trace: TraceConfig? = null,
+    @SerialName("image_config")
+    val imageConfig: JsonObject? = null,
+    @SerialName("prediction")
+    val prediction: JsonObject? = null,
+    @SerialName("prompt_cache_key")
+    val promptCacheKey: String? = null,
+    @SerialName("prompt_cache_options")
+    val promptCacheOptions: JsonObject? = null,
+    val metadata: JsonObject? = null,
+    /** Fallback model slugs tried in order when the primary is unavailable. */
+    val models: List<String>? = null,
+    @SerialName("stop_server_tools_when")
+    val stopServerToolsWhen: JsonObject? = null
 )
 
 /**

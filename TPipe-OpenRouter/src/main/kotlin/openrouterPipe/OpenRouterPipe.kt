@@ -233,6 +233,34 @@ class OpenRouterPipe : Pipe()
     @kotlinx.serialization.Transient
     private var streamOptions: env.StreamOptions? = null
 
+    /** OR-K: image generation configuration. */
+    @kotlinx.serialization.Transient
+    private var openRouterImageConfig: JsonObject? = null
+
+    /** OR-K: the model's predicted response (for prefill-style requests). */
+    @kotlinx.serialization.Transient
+    private var openRouterPrediction: JsonObject? = null
+
+    /** OR-K: key to cache the prompt under. */
+    @kotlinx.serialization.Transient
+    private var promptCacheKey: String? = null
+
+    /** OR-K: prompt-cache tuning options. */
+    @kotlinx.serialization.Transient
+    private var promptCacheOptions: JsonObject? = null
+
+    /** OR-K: request metadata (observability). */
+    @kotlinx.serialization.Transient
+    private var openRouterMetadata: JsonObject? = null
+
+    /** OR-K: fallback model slugs tried in order. */
+    @kotlinx.serialization.Transient
+    private var fallbackModels: List<String>? = null
+
+    /** OR-K: conditions for stopping server-side tool loops. */
+    @kotlinx.serialization.Transient
+    private var stopServerToolsWhen: JsonObject? = null
+
 //=========================================Builder Methods=============================================================
 
     /**
@@ -420,6 +448,55 @@ class OpenRouterPipe : Pipe()
     fun setStreamOptions(includeUsage: Boolean): OpenRouterPipe
     {
         this.streamOptions = env.StreamOptions(includeUsage = includeUsage)
+        return this
+    }
+
+    /** OR-K: sets the image generation configuration. */
+    fun setImageConfig(config: JsonObject): OpenRouterPipe
+    {
+        this.openRouterImageConfig = config
+        return this
+    }
+
+    /** OR-K: sets the predicted response payload (prefill-style requests). */
+    fun setPrediction(prediction: JsonObject): OpenRouterPipe
+    {
+        this.openRouterPrediction = prediction
+        return this
+    }
+
+    /** OR-K: sets the prompt-cache key. */
+    fun setPromptCacheKey(key: String): OpenRouterPipe
+    {
+        this.promptCacheKey = key
+        return this
+    }
+
+    /** OR-K: sets the prompt-cache tuning options. */
+    fun setPromptCacheOptions(options: JsonObject): OpenRouterPipe
+    {
+        this.promptCacheOptions = options
+        return this
+    }
+
+    /** OR-K: sets request metadata for observability. */
+    fun setMetadata(metadata: JsonObject): OpenRouterPipe
+    {
+        this.openRouterMetadata = metadata
+        return this
+    }
+
+    /** OR-K: sets the fallback model slugs (tried in order when the primary is unavailable). */
+    fun setFallbackModels(models: List<String>): OpenRouterPipe
+    {
+        this.fallbackModels = models
+        return this
+    }
+
+    /** OR-K: sets the stop-server-tools-when conditions. */
+    fun setStopServerToolsWhen(conditions: JsonObject): OpenRouterPipe
+    {
+        this.stopServerToolsWhen = conditions
         return this
     }
 
@@ -789,7 +866,14 @@ class OpenRouterPipe : Pipe()
             user = openRouterUser,
             sessionId = sessionId,
             stream = streamingEnabled,
-            streamOptions = streamOptions
+            streamOptions = streamOptions,
+            imageConfig = openRouterImageConfig,
+            prediction = openRouterPrediction,
+            promptCacheKey = promptCacheKey,
+            promptCacheOptions = promptCacheOptions,
+            metadata = openRouterMetadata,
+            models = fallbackModels,
+            stopServerToolsWhen = stopServerToolsWhen
         )
 
         return serialize(request, encodedefault = false)
