@@ -25,6 +25,8 @@ import kotlinx.serialization.json.JsonElement
 data class GeneratedRequest(
     val model: String,
     val prompt: String,
+    /** Text that appears after the user prompt and before the model response (fill-in-the-middle). */
+    val suffix: String? = null,
     val system: String? = null,
     val template: String? = null,
     val context: List<Int>? = null,
