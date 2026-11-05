@@ -807,18 +807,9 @@ class OpenRouterPipe : Pipe()
 
         // Check for error responses BEFORE deserializing as success
         val errorResponse = try { deserialize<OpenRouterErrorResponse>(responseText) } catch(e: Exception) { null }
-        if(errorResponse != null && (errorResponse.error.type != null || errorResponse.error.code != null))
+        if(errorResponse != null)
         {
-            val errorType = errorResponse.error.type
-            val errorCode = errorResponse.error.code
-
-            val p2pError = when {
-                errorType == "auth_error" || errorCode == "401" -> P2PError.auth
-                errorType == "rate_limit_error" || errorCode == "429" -> P2PError.transport
-                errorType == "invalid_request_error" || errorType == "invalid_api_key" || errorCode == "400" -> P2PError.prompt
-                errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
-                else -> P2PError.transport
-            }
+            val p2pError = mapOpenRouterError(errorResponse.error)
             throw P2PException(p2pError, "OpenRouter error: ${errorResponse.error.message}", Exception(errorResponse.error.message))
         }
 
@@ -932,16 +923,9 @@ class OpenRouterPipe : Pipe()
                 {
                     // Check for SSE error events before attempting StreamingChunk deserialization
                     val sseError = try { deserialize<OpenRouterErrorResponse>(sseLine.content) } catch(e: Exception) { null }
-                    if(sseError != null && sseError.error.type != null)
+                    if(sseError != null)
                     {
-                        val p2pError = when(sseError.error.type)
-                        {
-                            "auth_error" -> P2PError.auth
-                            "rate_limit_error" -> P2PError.transport
-                            "invalid_request_error", "invalid_api_key" -> P2PError.prompt
-                            "api_error", "server_error" -> P2PError.transport
-                            else -> P2PError.transport
-                        }
+                        val p2pError = mapOpenRouterError(sseError.error)
                         throw P2PException(p2pError, "OpenRouter streaming error: ${sseError.error.message}", Exception(sseError.error.message))
                     }
 
@@ -1062,6 +1046,32 @@ class OpenRouterPipe : Pipe()
     {
         val parsed = runCatching { orJson.parseToJsonElement(raw) }.getOrNull()
         return parsed as? JsonObject ?: buildJsonObject { }
+    }
+
+    /**
+     * OR-G: maps an [env.OpenRouterError] to a [P2PError]. Keys off the current-spec fields
+     * (integer-or-string `code` + `metadata`) while retaining the legacy `type` branches for
+     * older error payloads. Rate-limit (429 / limit_source) -> transport; 402 (payment/billing)
+     * -> configuration; 401/400 class -> auth/prompt; 5xx -> transport.
+     * @param error The OpenRouter error envelope.
+     * @return The mapped P2P error classification.
+     */
+    private fun mapOpenRouterError(error: env.OpenRouterError): P2PError
+    {
+        @Suppress("DEPRECATION")
+        val errorType = error.type
+        val errorCode = error.code?.let { (it as? JsonPrimitive)?.content }
+        val limitSource = error.metadata?.get("limit_source")?.let { (it as? JsonPrimitive)?.content }
+        val rateLimit = errorType == "rate_limit_error" || errorCode == "429" || limitSource == "rate_limit"
+
+        return when {
+            errorType == "auth_error" || errorCode == "401" -> P2PError.auth
+            rateLimit -> P2PError.transport
+            errorType == "invalid_request_error" || errorType == "invalid_api_key" || errorCode == "400" -> P2PError.prompt
+            errorCode == "402" || errorType == "payment_required" -> P2PError.configuration
+            errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
+            else -> P2PError.transport
+        }
     }
 
 //=========================================Context Management==========================================================

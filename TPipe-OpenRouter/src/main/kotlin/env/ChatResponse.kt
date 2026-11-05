@@ -2,6 +2,8 @@ package env
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Response from OpenRouter's /v1/chat/completions endpoint.
@@ -328,11 +330,21 @@ data class OpenRouterErrorResponse(
 @Serializable
 data class OpenRouterError(
     val message: String,
-    val code: String? = null,
+    /** Error code — the current spec uses an integer HTTP code, but OpenRouter has also
+     *   returned string codes; [JsonElement] accepts both. */
+    val code: JsonElement? = null,
+    /** Provider / limit-source metadata (e.g. retry_after_seconds, provider_name, limit_source). */
+    val metadata: JsonObject? = null,
+    /** Legacy OpenAI-era error type (deprecated; current errors key off code/metadata). */
+    @Deprecated("Superseded by code + metadata; retained for back-compat with older error payloads.")
     val type: String? = null,
+    @Deprecated("Superseded; retained for back-compat.")
     @SerialName("code_body")
     val codeBody: String? = null,
+    @Deprecated("Superseded; retained for back-compat.")
     val url: String? = null,
+    @Deprecated("Superseded; retained for back-compat.")
     val param: String? = null,
+    @Deprecated("Superseded; retained for back-compat.")
     val provider: String? = null
 )
