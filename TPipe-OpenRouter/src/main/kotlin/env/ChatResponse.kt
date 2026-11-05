@@ -247,7 +247,36 @@ data class DeltaMessage(
     val content: String? = null,
     val reasoning: String? = null,
     @SerialName("reasoning_details")
-    val reasoningDetails: List<ReasoningDetail>? = null
+    val reasoningDetails: List<ReasoningDetail>? = null,
+    /** Tool-call deltas emitted when the model invokes functions. */
+    @SerialName("tool_calls")
+    val toolCalls: List<ChatToolCall>? = null
+)
+
+/**
+ * A tool/function call emitted by the model (response `tool_calls` entry).
+ *
+ * @property id Provider-assigned call identifier.
+ * @property type Call type (currently "function").
+ * @property function The function to call.
+ */
+@Serializable
+data class ChatToolCall(
+    val id: String? = null,
+    val type: String? = null,
+    val function: ToolCallFunction? = null
+)
+
+/**
+ * The function payload of a [ChatToolCall].
+ *
+ * @property name The function name.
+ * @property arguments JSON-encoded argument string (may be a partial fragment in streaming deltas).
+ */
+@Serializable
+data class ToolCallFunction(
+    val name: String? = null,
+    val arguments: String? = null
 )
 
 /**

@@ -108,7 +108,10 @@ data class OpenRouterChatRequest(
 @Serializable
 data class ChatMessage(
     val role: String,
-    val content: String
+    val content: String,
+    /** Tool/function calls the assistant emitted (response messages only; null on requests). */
+    @SerialName("tool_calls")
+    val toolCalls: List<ChatToolCall>? = null
 )
 
 /**

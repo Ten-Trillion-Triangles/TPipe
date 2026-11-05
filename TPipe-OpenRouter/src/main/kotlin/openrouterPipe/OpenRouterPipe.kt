@@ -16,6 +16,12 @@ import env.OpenRouterEnv
 import env.OpenRouterChatResponse
 import env.OpenRouterErrorResponse
 import env.StreamingChunk
+import com.TTT.PipeContextProtocol.PcPRequest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -36,6 +42,9 @@ import kotlinx.coroutines.Dispatchers
  *
  * @see <a href="https://openrouter.ai/docs">OpenRouter Documentation</a>
  */
+/** Shared lenient JSON parser for OpenRouter wire payloads (created once, not per call). */
+private val orJson: Json = Json { isLenient = true }
+
 @kotlinx.serialization.Serializable
 class OpenRouterPipe : Pipe()
 {
@@ -753,7 +762,16 @@ class OpenRouterPipe : Pipe()
                 val response: OpenRouterChatResponse = deserialize(responseText)
                     ?: throw P2PException(P2PError.json, "Failed to deserialize OpenRouter chat response: $responseText", Exception("Deserialization failed"))
 
-                val resultText = response.choices.firstOrNull()?.message?.content ?: ""
+                var resultText = response.choices.firstOrNull()?.message?.content ?: ""
+
+                // OR-B: surface tool_calls (function calls) through PCP, matching the Ollama pattern.
+                val responseToolCalls = response.choices.firstOrNull()?.message?.toolCalls
+                if(!responseToolCalls.isNullOrEmpty())
+                {
+                    val pcpRequests = responseToolCalls.map { call -> mapOpenRouterToolCallToPcp(call) }
+                    val toolCallJson = serialize(pcpRequests)
+                    resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+                }
 
                 // Extract token usage for tracing
                 val usage = response.usage
@@ -806,6 +824,7 @@ class OpenRouterPipe : Pipe()
     {
         val channel = httpResponse.bodyAsChannel()
         val textBuilder = StringBuilder()
+        val toolCallAccumulator = mutableListOf<env.ChatToolCall>()
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf(
@@ -842,13 +861,22 @@ class OpenRouterPipe : Pipe()
                     }
 
                     val chunk = SseParser.parseChunk(sseLine.content) ?: continue
+                    chunk.choices.firstOrNull()?.delta?.toolCalls?.let { toolCallAccumulator.addAll(it) }
                     handleStreamDataChunk(chunk, textBuilder)
                 }
                 is SseParser.SseLine.Invalid -> continue
             }
         }
 
-        val resultText = textBuilder.toString()
+        var resultText = textBuilder.toString()
+
+        // OR-B: surface accumulated stream tool_calls through PCP, matching the non-stream path.
+        if(toolCallAccumulator.isNotEmpty())
+        {
+            val pcpRequests = toolCallAccumulator.map { call -> mapOpenRouterToolCallToPcp(call) }
+            val toolCallJson = serialize(pcpRequests)
+            resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+        }
 
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
               metadata = mapOf(
@@ -906,6 +934,49 @@ class OpenRouterPipe : Pipe()
             visibleText.append(contentDelta)
             emitStreamingChunk(contentDelta)
         }
+    }
+
+    /**
+     * Maps an OpenRouter [ChatToolCall] to a PCP [PcPRequest], mirroring the Ollama
+     * tool-call mapping. OpenAI-compatible `function.arguments` is a JSON-encoded
+     * string (unlike Ollama's object), so it is parsed to a [JsonObject] before the
+     * parameter values are flattened. The `call_agent_` prefix routes to a TPipe
+     * agent invocation, matching the Ollama convention.
+     * @param call The tool call to map.
+     * @return The PCP request describing the function call.
+     */
+    private fun mapOpenRouterToolCallToPcp(call: env.ChatToolCall): com.TTT.PipeContextProtocol.PcPRequest
+    {
+        val request = com.TTT.PipeContextProtocol.PcPRequest()
+        val fn = call.function ?: return request
+        val functionName = fn.name
+        if(functionName.isNullOrBlank()) return request
+
+        val argsObj = fn.arguments?.let { raw -> runCatching { parseJsonOrEmpty(raw) }.getOrNull() }
+            ?: buildJsonObject { }
+
+        if(functionName.startsWith("call_agent_"))
+        {
+            val agentName = functionName.removePrefix("call_agent_")
+            val prompt = argsObj["prompt"]?.jsonPrimitive?.content ?: ""
+            request.argumentsOrFunctionParams = listOf(agentName, prompt)
+        }
+        else
+        {
+            request.tPipeContextOptions.functionName = functionName
+            request.argumentsOrFunctionParams = argsObj.values.map { value ->
+                if(value is JsonPrimitive) value.content else value.toString()
+            }
+        }
+
+        return request
+    }
+
+    /** Parses a JSON string into a [JsonObject]; returns an empty object on any failure. */
+    private fun parseJsonOrEmpty(raw: String): JsonObject
+    {
+        val parsed = runCatching { orJson.parseToJsonElement(raw) }.getOrNull()
+        return parsed as? JsonObject ?: buildJsonObject { }
     }
 
 //=========================================Context Management==========================================================
