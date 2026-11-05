@@ -143,5 +143,12 @@ data class OllamaOptions(
 
     /** Number of threads to use for generation */
     @SerialName("num_thread")
-    var numThread: Int? = null
+    var numThread: Int? = null,
+
+    /**
+     * Maximum number of speculative draft tokens to predict per step when a draft model is
+     * available (Ollama speculative decoding). 0 disables.
+     */
+    @SerialName("draft_num_predict")
+    var draftNumPredict: Int? = null
 )

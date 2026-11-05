@@ -191,6 +191,12 @@ class OllamaPipe : Pipe()
     private var numThread: Int? = null
 
     /**
+     * Maximum speculative draft tokens per step (Ollama draft_num_predict); 0 disables.
+     */
+    @kotlinx.serialization.Serializable
+    private var draftNumPredict: Int? = null
+
+    /**
      * Test seam: when non-null, [executeChatStream] feeds these NDJSON lines
      * to the chunk loop instead of opening a real /api/chat connection.
      * Per-instance so each test builds a fresh pipe.
@@ -473,6 +479,17 @@ class OllamaPipe : Pipe()
     fun setNumThread(numThread: Int): OllamaPipe
     {
         this.numThread = numThread
+        return this
+    }
+
+    /**
+     * Sets the number of speculative draft tokens to predict per step.
+     * @param draftNumPredict Number of draft tokens (0 disables speculative drafting).
+     * @return This pipe instance.
+     */
+    fun setDraftNumPredict(draftNumPredict: Int): OllamaPipe
+    {
+        this.draftNumPredict = draftNumPredict
         return this
     }
     
@@ -807,7 +824,8 @@ class OllamaPipe : Pipe()
             vocabOnly = vocabOnly,
             useMmap = useMmap,
             useMlock = useMlock,
-            numThread = numThread
+            numThread = numThread,
+            draftNumPredict = draftNumPredict
         )
     }
 
