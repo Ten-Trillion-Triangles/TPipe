@@ -254,7 +254,11 @@ data class DeltaMessage(
     val reasoningDetails: List<ReasoningDetail>? = null,
     /** Tool-call deltas emitted when the model invokes functions. */
     @SerialName("tool_calls")
-    val toolCalls: List<ChatToolCall>? = null
+    val toolCalls: List<ChatToolCall>? = null,
+    /** Present when the model refused to complete the request. */
+    val refusal: String? = null,
+    /** Audio output delta (audio-capable models). */
+    val audio: AudioOutput? = null
 )
 
 /**
@@ -281,6 +285,23 @@ data class ChatToolCall(
 data class ToolCallFunction(
     val name: String? = null,
     val arguments: String? = null
+)
+
+/**
+ * Audio output payload (OpenRouter `audio` on messages / deltas).
+ *
+ * @property data Base64-encoded audio content.
+ * @property expiresAt Expiration timestamp for the audio blob.
+ * @property id Audio identifier.
+ * @property transcript Transcript of the audio.
+ */
+@Serializable
+data class AudioOutput(
+    val data: String? = null,
+    @SerialName("expires_at")
+    val expiresAt: Long? = null,
+    val id: String? = null,
+    val transcript: String? = null
 )
 
 /**

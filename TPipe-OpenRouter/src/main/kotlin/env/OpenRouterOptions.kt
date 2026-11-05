@@ -118,7 +118,13 @@ data class ChatMessage(
     val reasoning: String? = null,
     /** Structured reasoning entries (text / summary / signature). */
     @SerialName("reasoning_details")
-    val reasoningDetails: List<ReasoningDetail>? = null
+    val reasoningDetails: List<ReasoningDetail>? = null,
+    /** Present when the model refused to complete the request. */
+    val refusal: String? = null,
+    /** Audio output (audio-capable models). */
+    val audio: AudioOutput? = null,
+    /** Image outputs (free-form; image-generation models). */
+    val images: JsonObject? = null
 )
 
 /**
