@@ -2,6 +2,7 @@ package env
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -176,7 +177,17 @@ data class Plugin(
  * @property order Provider ordering hint
  * @property allowFallbacks Allow fallback to alternative providers
  * @property dataCollection Data collection setting
- * @property preferSuffix Preferred provider suffix
+ * @property enforceDistillableText Only route to providers that return distillable (unredacted) text
+ * @property ignore Providers to always skip
+ * @property only Providers to always use (no fallback outside this set)
+ * @property quantizations Allowed quantizations (e.g. "fp8", "q4")
+ * @property requireParameters Route only to endpoints that accept the requested parameters
+ * @property maxPrice Per-request maximum USD price caps
+ * @property options Per-provider option overrides (free-form provider keys)
+ * @property preferredMaxLatency Percentile latency cutoffs (p50/p75/p90/p99)
+ * @property preferredMinThroughput Percentile throughput floor cutoffs (p50/p75/p90/p99)
+ * @property sort Sort criterion: a string ("price"/"throughput"/"latency"/"exacto") or a {by,partition} config
+ * @property zdr Zero-data-retention routing
  */
 @Serializable
 data class ProviderPreferences(
@@ -185,8 +196,40 @@ data class ProviderPreferences(
     val allowFallbacks: Boolean? = null,
     @SerialName("data_collection")
     val dataCollection: String? = null,
-    @SerialName("prefer_suffix")
-    val preferSuffix: String? = null
+    @SerialName("enforce_distillable_text")
+    val enforceDistillableText: Boolean? = null,
+    val ignore: List<String>? = null,
+    val only: List<String>? = null,
+    val quantizations: List<String>? = null,
+    @SerialName("require_parameters")
+    val requireParameters: Boolean? = null,
+    @SerialName("max_price")
+    val maxPrice: MaxPrice? = null,
+    val options: JsonObject? = null,
+    @SerialName("preferred_max_latency")
+    val preferredMaxLatency: JsonObject? = null,
+    @SerialName("preferred_min_throughput")
+    val preferredMinThroughput: JsonObject? = null,
+    val sort: JsonElement? = null,
+    val zdr: Boolean? = null
+)
+
+/**
+ * Per-request maximum USD price caps for OpenRouter provider routing.
+ *
+ * @property audio Max USD per audio unit
+ * @property completion Max USD per million completion tokens
+ * @property image Max USD per image
+ * @property prompt Max USD per million prompt tokens
+ * @property request Max USD per request
+ */
+@Serializable
+data class MaxPrice(
+    val audio: String? = null,
+    val completion: String? = null,
+    val image: String? = null,
+    val prompt: String? = null,
+    val request: String? = null
 )
 
 /**
