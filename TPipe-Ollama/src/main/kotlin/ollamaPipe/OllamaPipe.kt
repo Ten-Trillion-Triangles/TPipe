@@ -417,6 +417,7 @@ class OllamaPipe : Pipe()
      * @param tau Target entropy.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes Mirostat sampling (removed); no-op on the wire.")
     fun setMirostat(mode: Int, eta: Float? = null, tau: Float? = null): OllamaPipe
     {
         this.mirostat = mode
@@ -509,6 +510,7 @@ class OllamaPipe : Pipe()
      * @param useNuma Whether to enable NUMA.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes numa (removed); no-op on the wire.")
     fun setNuma(useNuma: Boolean): OllamaPipe
     {
         this.numa = useNuma
@@ -531,6 +533,7 @@ class OllamaPipe : Pipe()
      * @param lowVram Whether to enable low VRAM.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes low_vram (removed); no-op on the wire.")
     fun setLowVram(lowVram: Boolean): OllamaPipe
     {
         this.lowVram = lowVram
@@ -542,6 +545,7 @@ class OllamaPipe : Pipe()
      * @param vocabOnly Whether to enable vocab only.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes vocab_only (removed); no-op on the wire.")
     fun setVocabOnly(vocabOnly: Boolean): OllamaPipe
     {
         this.vocabOnly = vocabOnly
@@ -564,6 +568,7 @@ class OllamaPipe : Pipe()
      * @param useMlock Whether to use mlock.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes use_mlock (removed); no-op on the wire.")
     fun setUseMlock(useMlock: Boolean): OllamaPipe
     {
         this.useMlock = useMlock
@@ -575,6 +580,7 @@ class OllamaPipe : Pipe()
      * @param penalize Whether to penalize newlines.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes penalize_newline (removed); no-op on the wire.")
     fun setPenalizeNewline(penalize: Boolean): OllamaPipe
     {
         this.penalizeNewline = penalize

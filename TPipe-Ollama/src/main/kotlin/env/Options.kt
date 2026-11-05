@@ -14,9 +14,7 @@ import kotlinx.serialization.Serializable
  * @property topK Limits the next token selection to the K most probable tokens
  * @property topP Limits the next token selection to the smallest set whose cumulative probability exceeds P
  * @property minP Sets a minimum base probability threshold for token selection
- * @property typicalP Controls the cumulative probability of the sampled tokens
- * @property tfsZ Tail free sampling parameter (1.0 = disabled, lower values = more conservative sampling)
- * @property mirostat Enables Mirostat sampling (0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0)
+ * @property typicalP Controls the cumulative probability of the sampled tokens * @property mirostat Enables Mirostat sampling (0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0)
  * @property mirostatEta Learning rate for Mirostat
  * @property mirostatTau Controls the balance between coherence and diversity for Mirostat
  * @property repeatLastN Number of tokens to consider for the repeat penalty
@@ -61,7 +59,7 @@ data class OllamaOptions(
     @SerialName("min_p")
     var minP: Float? = null,
 
-    /** Typical probability for sampling */
+    /** Typical probability for sampling. OLLAMA: deprecated since v0.34.1 — still accepted per-request but logged with a warning. */
     @SerialName("typical_p")
     var typicalP: Float? = null,
 
@@ -86,19 +84,23 @@ data class OllamaOptions(
     var frequencyPenalty: Float? = null,
 
     /** Controls the algorithm used for text generation (0=disabled, 1=Mirostat, 2=Mirostat 2.0) */
-    @SerialName("mirostat")
+    @Deprecated("Ollama no longer exposes this option (removed in the llama-server migration); it is sent but ignored on the wire.")
+@SerialName("mirostat")
     var mirostat: Int? = null,
 
     /** Target entropy for Mirostat algorithm */
-    @SerialName("mirostat_tau")
+    @Deprecated("Ollama no longer exposes this option (removed in the llama-server migration); it is sent but ignored on the wire.")
+@SerialName("mirostat_tau")
     var mirostatTau: Float? = null,
 
-    /** Learning rate for Mirostat algorithm */
-    @SerialName("mirostat_eta")
+
+    @Deprecated("Ollama no longer exposes this option (removed in the llama-server migration); it is sent but ignored on the wire.")
+@SerialName("mirostat_eta")
     var mirostatEta: Float? = null,
 
     /** Whether to penalize newline tokens */
-    @SerialName("penalize_newline")
+    @Deprecated("Ollama no longer exposes this option (removed in the llama-server migration); it is sent but ignored on the wire.")
+@SerialName("penalize_newline")
     var penalizeNewline: Boolean? = null,
 
     /** List of strings that will stop the generation */
@@ -106,7 +108,8 @@ data class OllamaOptions(
     var stop: List<String>? = null,
 
     /** Whether to use NUMA optimization */
-    @SerialName("numa")
+    @Deprecated("Ollama no longer exposes this option (removed in the llama-server migration); it is sent but ignored on the wire.")
+@SerialName("numa")
     var numa: Boolean? = null,
 
     /** Context window size in tokens */
@@ -126,11 +129,13 @@ data class OllamaOptions(
     var mainGpu: Int? = null,
 
     /** Whether to use low VRAM mode */
-    @SerialName("low_vram")
+    @Deprecated("Ollama no longer exposes this option (removed in the llama-server migration); it is sent but ignored on the wire.")
+@SerialName("low_vram")
     var lowVram: Boolean? = null,
 
     /** Whether to only load the vocabulary (no weights) */
-    @SerialName("vocab_only")
+    @Deprecated("Ollama no longer exposes this option (removed in the llama-server migration); it is sent but ignored on the wire.")
+@SerialName("vocab_only")
     var vocabOnly: Boolean? = null,
 
     /** Whether to use memory-mapped files */
@@ -138,7 +143,8 @@ data class OllamaOptions(
     var useMmap: Boolean? = null,
 
     /** Whether to lock the model in memory */
-    @SerialName("use_mlock")
+    @Deprecated("Ollama no longer exposes this option (removed in the llama-server migration); it is sent but ignored on the wire.")
+@SerialName("use_mlock")
     var useMlock: Boolean? = null,
 
     /** Number of threads to use for generation */
