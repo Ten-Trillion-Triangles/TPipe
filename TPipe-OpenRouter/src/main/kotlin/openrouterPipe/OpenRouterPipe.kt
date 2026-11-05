@@ -227,6 +227,12 @@ class OpenRouterPipe : Pipe()
     @kotlinx.serialization.Transient
     private var flatReasoningEffort: String? = null
 
+    /**
+     * Streaming options (e.g. include_usage to emit a final usage chunk).
+     */
+    @kotlinx.serialization.Transient
+    private var streamOptions: env.StreamOptions? = null
+
 //=========================================Builder Methods=============================================================
 
     /**
@@ -402,6 +408,18 @@ class OpenRouterPipe : Pipe()
     fun setFlatReasoningEffort(effort: String): OpenRouterPipe
     {
         this.flatReasoningEffort = effort
+        return this
+    }
+
+    /**
+     * Sets streaming options. When [includeUsage] is true, the stream ends with a final
+     * chunk carrying the [env.UsageInfo] usage object (cost, tokens).
+     * @param includeUsage Whether to request the final usage chunk.
+     * @return This pipe instance for fluent chaining
+     */
+    fun setStreamOptions(includeUsage: Boolean): OpenRouterPipe
+    {
+        this.streamOptions = env.StreamOptions(includeUsage = includeUsage)
         return this
     }
 
@@ -770,7 +788,8 @@ class OpenRouterPipe : Pipe()
             serviceTier = serviceTier,
             user = openRouterUser,
             sessionId = sessionId,
-            stream = streamingEnabled
+            stream = streamingEnabled,
+            streamOptions = streamOptions
         )
 
         return serialize(request, encodedefault = false)
@@ -901,6 +920,7 @@ class OpenRouterPipe : Pipe()
         val channel = httpResponse.bodyAsChannel()
         val textBuilder = StringBuilder()
         val toolCallAccumulator = mutableListOf<env.ChatToolCall>()
+        var streamUsage: env.UsageInfo? = null
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf(
@@ -931,6 +951,7 @@ class OpenRouterPipe : Pipe()
 
                     val chunk = SseParser.parseChunk(sseLine.content) ?: continue
                     chunk.choices.firstOrNull()?.delta?.toolCalls?.let { toolCallAccumulator.addAll(it) }
+                    chunk.usage?.let { streamUsage = it }
                     handleStreamDataChunk(chunk, textBuilder)
                 }
                 is SseParser.SseLine.Invalid -> continue
@@ -952,6 +973,10 @@ class OpenRouterPipe : Pipe()
                   "responseLength" to resultText.length,
                   "model" to model,  // Already known before request
                   "streaming" to true,
+                  "inputTokens" to (streamUsage?.promptTokens ?: 0),
+                  "outputTokens" to (streamUsage?.completionTokens ?: 0),
+                  "totalTokens" to (streamUsage?.totalTokens ?: 0),
+                  "cost" to (streamUsage?.cost ?: 0.0),
                   "success" to true,
                   "apiType" to "ChatAPI"
               ))

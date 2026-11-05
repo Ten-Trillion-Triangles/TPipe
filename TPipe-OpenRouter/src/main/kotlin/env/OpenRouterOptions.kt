@@ -57,6 +57,9 @@ data class OpenRouterChatRequest(
     @SerialName("max_completion_tokens")
     val maxCompletionTokens: Int? = null,
     val stream: Boolean = false,
+    /** Streaming options (e.g. include_usage to emit a final usage chunk). */
+    @SerialName("stream_options")
+    val streamOptions: StreamOptions? = null,
     val stop: List<String>? = null,
     @SerialName("presence_penalty")
     val presencePenalty: Double? = null,
@@ -228,6 +231,18 @@ data class MaxPrice(
     val image: String? = null,
     val prompt: String? = null,
     val request: String? = null
+)
+
+/**
+ * Streaming options for the OpenRouter chat-completions request.
+ *
+ * @property includeUsage When true, the stream ends with a final chunk carrying the
+ *   [UsageInfo] usage object (cost, tokens, etc.).
+ */
+@Serializable
+data class StreamOptions(
+    @SerialName("include_usage")
+    val includeUsage: Boolean? = null
 )
 
 /**

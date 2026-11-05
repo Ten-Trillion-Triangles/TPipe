@@ -214,7 +214,9 @@ data class StreamingChunk(
     val objectType: String = "chat.completion.chunk",
     val created: Long,
     val model: String,
-    val choices: List<StreamingChoice>
+    val choices: List<StreamingChoice>,
+    /** Present on the final chunk when `stream_options.include_usage` is set. */
+    val usage: UsageInfo? = null
 )
 
 /**
