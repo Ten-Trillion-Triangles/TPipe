@@ -38,7 +38,12 @@ data class GeneratedRequest(
     @SerialName("keep_alive")
     val keepAlive: String? = "5m",
     /** Thinking control for thinking models: a JSON boolean or a level string. */
-    val think: JsonElement? = null
+    val think: JsonElement? = null,
+    /** Request log probabilities. */
+    val logprobs: Boolean? = null,
+    /** Number of top log probabilities to return per token. */
+    @SerialName("top_logprobs")
+    val topLogprobs: Int? = null
 )
 
 /**
@@ -103,7 +108,12 @@ data class ChatRequest(
     @SerialName("keep_alive")
     val keepAlive: String? = "5m",
     /** Thinking control for thinking models: a JSON boolean or a level string. */
-    val think: JsonElement? = null
+    val think: JsonElement? = null,
+    /** Request log probabilities. */
+    val logprobs: Boolean? = null,
+    /** Number of top log probabilities to return per token. */
+    @SerialName("top_logprobs")
+    val topLogprobs: Int? = null
 )
 
 /**

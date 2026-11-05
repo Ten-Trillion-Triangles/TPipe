@@ -197,6 +197,18 @@ class OllamaPipe : Pipe()
     private var draftNumPredict: Int? = null
 
     /**
+     * Request log probabilities from Ollama.
+     */
+    @kotlinx.serialization.Serializable
+    private var logprobs: Boolean? = null
+
+    /**
+     * Number of top log probabilities to request per token.
+     */
+    @kotlinx.serialization.Serializable
+    private var topLogprobs: Int? = null
+
+    /**
      * Test seam: when non-null, [executeChatStream] feeds these NDJSON lines
      * to the chunk loop instead of opening a real /api/chat connection.
      * Per-instance so each test builds a fresh pipe.
@@ -491,6 +503,28 @@ class OllamaPipe : Pipe()
     fun setDraftNumPredict(draftNumPredict: Int): OllamaPipe
     {
         this.draftNumPredict = draftNumPredict
+        return this
+    }
+
+    /**
+     * Requests log probabilities from Ollama.
+     * @param enabled Whether to return log probabilities.
+     * @return This pipe instance.
+     */
+    fun setLogprobs(enabled: Boolean): OllamaPipe
+    {
+        this.logprobs = enabled
+        return this
+    }
+
+    /**
+     * Sets how many top log probabilities to return per token.
+     * @param count The number of top log probabilities (0-20).
+     * @return This pipe instance.
+     */
+    fun setTopLogprobs(count: Int): OllamaPipe
+    {
+        this.topLogprobs = count
         return this
     }
     
@@ -976,7 +1010,9 @@ class OllamaPipe : Pipe()
             keepAlive = keepAlive,
             format = format,
             tools = ollamaTools,
-            think = buildThinkWireValue()
+            think = buildThinkWireValue(),
+            logprobs = logprobs,
+            topLogprobs = topLogprobs
         )
 
         return if(streamingEnabled)
@@ -1226,7 +1262,9 @@ class OllamaPipe : Pipe()
             keepAlive = keepAlive,
             images = base64Images,
             format = format,
-            think = buildThinkWireValue()
+            think = buildThinkWireValue(),
+            logprobs = logprobs,
+            topLogprobs = topLogprobs
         )
 
         return if(streamingEnabled)
@@ -1633,6 +1671,50 @@ class OllamaPipe : Pipe()
     {
         val response = httpGet(Endpoints.listEndpoint)
         return deserialize<JsonElement>(response)
+    }
+
+    /**
+     * Generates embeddings for [input] using the current `/api/embed` endpoint.
+     * @param input The text to embed (a JSON string/array/multimodal payload).
+     * @param dimensions Optional embedding dimensionality.
+     * @return The deserialized [EmbedResponse], or null on failure.
+     */
+    suspend fun embeddings(input: String?, dimensions: Int? = null): EmbedResponse?
+    {
+        val request = EmbedRequest(
+            model = model,
+            input = JsonPrimitive(input ?: ""),
+            dimensions = dimensions
+        )
+        val client = HttpClient(CIO)
+        {
+            install(HttpTimeout)
+            {
+                requestTimeoutMillis = 600000
+                connectTimeoutMillis = 30000
+            }
+        }
+        return try
+        {
+            val responseText = try
+            {
+                val response: HttpResponse = client.post(Endpoints.embedEndpoint)
+                {
+                    contentType(ContentType.Application.Json)
+                    setBody(serialize(request))
+                }
+                response.bodyAsText()
+            }
+            finally
+            {
+                client.close()
+            }
+            deserialize<EmbedResponse>(responseText)
+        }
+        catch(e: Exception)
+        {
+            null
+        }
     }
 
     /**
