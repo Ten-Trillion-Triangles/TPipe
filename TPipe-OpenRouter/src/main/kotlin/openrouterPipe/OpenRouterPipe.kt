@@ -16,6 +16,12 @@ import env.OpenRouterEnv
 import env.OpenRouterChatResponse
 import env.OpenRouterErrorResponse
 import env.StreamingChunk
+import com.TTT.PipeContextProtocol.PcPRequest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -36,6 +42,9 @@ import kotlinx.coroutines.Dispatchers
  *
  * @see <a href="https://openrouter.ai/docs">OpenRouter Documentation</a>
  */
+/** Shared lenient JSON parser for OpenRouter wire payloads (created once, not per call). */
+private val orJson: Json = Json { isLenient = true }
+
 @kotlinx.serialization.Serializable
 class OpenRouterPipe : Pipe()
 {
@@ -212,6 +221,53 @@ class OpenRouterPipe : Pipe()
     @kotlinx.serialization.Transient
     private var reasoningConfig: env.ReasoningConfig? = null
 
+    /**
+     * Flat top-level `reasoning_effort` request field (separate from the `reasoning` object).
+     */
+    @kotlinx.serialization.Transient
+    private var flatReasoningEffort: String? = null
+
+    /**
+     * Streaming options (e.g. include_usage to emit a final usage chunk).
+     */
+    @kotlinx.serialization.Transient
+    private var streamOptions: env.StreamOptions? = null
+
+    /** OR-K: image generation configuration. */
+    @kotlinx.serialization.Transient
+    private var openRouterImageConfig: JsonObject? = null
+
+    /** OR-K: the model's predicted response (for prefill-style requests). */
+    @kotlinx.serialization.Transient
+    private var openRouterPrediction: JsonObject? = null
+
+    /** OR-K: key to cache the prompt under. */
+    @kotlinx.serialization.Transient
+    private var promptCacheKey: String? = null
+
+    /** OR-K: prompt-cache tuning options. */
+    @kotlinx.serialization.Transient
+    private var promptCacheOptions: JsonObject? = null
+
+    /** OR-K: request metadata (observability). */
+    @kotlinx.serialization.Transient
+    private var openRouterMetadata: JsonObject? = null
+
+    /** OR-K: fallback model slugs tried in order. */
+    @kotlinx.serialization.Transient
+    private var fallbackModels: List<String>? = null
+
+    /**
+     * OR-L: when true, [generateContent] routes to the OpenRouter `/responses`
+     * (Responses API) path instead of the chat-completions path. Defaults to
+     * false so the existing chat-completions behavior is byte-identical.
+     */
+    private var responsesMode: Boolean = false
+
+    /** OR-K: conditions for stopping server-side tool loops. */
+    @kotlinx.serialization.Transient
+    private var stopServerToolsWhen: JsonObject? = null
+
 //=========================================Builder Methods=============================================================
 
     /**
@@ -379,6 +435,79 @@ class OpenRouterPipe : Pipe()
     }
 
     /**
+     * Sets the flat top-level `reasoning_effort` request field (distinct from the `reasoning`
+     * object). The current OpenRouter spec exposes a standalone `reasoning_effort` string.
+     * @param effort The reasoning effort value (e.g. "high", "low", "medium").
+     * @return This pipe instance for fluent chaining
+     */
+    fun setFlatReasoningEffort(effort: String): OpenRouterPipe
+    {
+        this.flatReasoningEffort = effort
+        return this
+    }
+
+    /**
+     * Sets streaming options. When [includeUsage] is true, the stream ends with a final
+     * chunk carrying the [env.UsageInfo] usage object (cost, tokens).
+     * @param includeUsage Whether to request the final usage chunk.
+     * @return This pipe instance for fluent chaining
+     */
+    fun setStreamOptions(includeUsage: Boolean): OpenRouterPipe
+    {
+        this.streamOptions = env.StreamOptions(includeUsage = includeUsage)
+        return this
+    }
+
+    /** OR-K: sets the image generation configuration. */
+    fun setImageConfig(config: JsonObject): OpenRouterPipe
+    {
+        this.openRouterImageConfig = config
+        return this
+    }
+
+    /** OR-K: sets the predicted response payload (prefill-style requests). */
+    fun setPrediction(prediction: JsonObject): OpenRouterPipe
+    {
+        this.openRouterPrediction = prediction
+        return this
+    }
+
+    /** OR-K: sets the prompt-cache key. */
+    fun setPromptCacheKey(key: String): OpenRouterPipe
+    {
+        this.promptCacheKey = key
+        return this
+    }
+
+    /** OR-K: sets the prompt-cache tuning options. */
+    fun setPromptCacheOptions(options: JsonObject): OpenRouterPipe
+    {
+        this.promptCacheOptions = options
+        return this
+    }
+
+    /** OR-K: sets request metadata for observability. */
+    fun setMetadata(metadata: JsonObject): OpenRouterPipe
+    {
+        this.openRouterMetadata = metadata
+        return this
+    }
+
+    /** OR-K: sets the fallback model slugs (tried in order when the primary is unavailable). */
+    fun setFallbackModels(models: List<String>): OpenRouterPipe
+    {
+        this.fallbackModels = models
+        return this
+    }
+
+    /** OR-K: sets the stop-server-tools-when conditions. */
+    fun setStopServerToolsWhen(conditions: JsonObject): OpenRouterPipe
+    {
+        this.stopServerToolsWhen = conditions
+        return this
+    }
+
+    /**
      * Sets provider routing preferences.
      * @param prefs Provider preferences configuration
      * @return This pipe instance for fluent chaining
@@ -540,6 +669,7 @@ class OpenRouterPipe : Pipe()
      * @param enabled True to enable structured outputs
      * @return This pipe instance for fluent chaining
      */
+    @Deprecated("structured_outputs was removed from the current OpenRouter request; use response_format json_schema instead. No-op on the wire.")
     fun setStructuredOutputs(enabled: Boolean): OpenRouterPipe
     {
         this.structuredOutputs = enabled
@@ -551,6 +681,7 @@ class OpenRouterPipe : Pipe()
      * @param level Verbosity: "low", "medium", "high", "max"
      * @return This pipe instance for fluent chaining
      */
+    @Deprecated("verbosity was removed from the current OpenRouter request. No-op on the wire.")
     fun setVerbosity(level: String): OpenRouterPipe
     {
         this.verbosity = level
@@ -643,49 +774,7 @@ class OpenRouterPipe : Pipe()
 
         return try
         {
-            val messages = mutableListOf<ChatMessage>()
-
-            if(systemPrompt.isNotEmpty())
-            {
-                messages.add(ChatMessage(role = "system", content = systemPrompt))
-            }
-
-            messages.add(ChatMessage(role = "user", content = promptInjector))
-
-            val request = OpenRouterChatRequest(
-                model = model,
-                messages = messages,
-                temperature = if(temperature > 0.0) temperature else null,
-                topP = if(topP > 0.0) topP else null,
-                topK = openRouterTopK,
-                maxTokens = if(maxTokens > 0) maxTokens else null,
-                presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
-                frequencyPenalty = frequencyPenalty,
-                repetitionPenalty = openRouterRepetitionPenalty,
-                seed = seed,
-                stop = stopSequences.takeIf { it.isNotEmpty() },
-                tools = tools,
-                toolChoice = toolChoice,
-                parallelToolCalls = parallelToolCalls,
-                responseFormat = responseFormat,
-                structuredOutputs = structuredOutputs,
-                reasoning = reasoningConfig,
-                provider = providerPreferences,
-                cacheControl = cacheControl,
-                plugins = plugins,
-                logitBias = logitBias.takeIf { it.isNotEmpty() },
-                logprobs = logprobs,
-                topLogprobs = topLogprobs,
-                minP = minP,
-                topA = topA,
-                serviceTier = serviceTier,
-                user = openRouterUser,
-                verbosity = verbosity,
-                sessionId = sessionId,
-                stream = streamingEnabled
-            )
-
-            val jsonRequest = serialize(request, encodedefault = false)
+            val jsonRequest = buildChatRequestJson(promptInjector)
 
             if(streamingEnabled)
             {
@@ -713,65 +802,7 @@ class OpenRouterPipe : Pipe()
             }
             else
             {
-                val responseText = withContext(Dispatchers.IO)
-                {
-                    client.post("$baseUrl/chat/completions")
-                    {
-                        contentType(ContentType.Application.Json)
-                        header("Authorization", "Bearer $apiKey")
-
-                        if(httpReferer.isNotEmpty())
-                        {
-                            header("HTTP-Referer", httpReferer)
-                        }
-                        if(openRouterTitle.isNotEmpty())
-                        {
-                            header("X-OpenRouter-Title", openRouterTitle)
-                        }
-
-                        setBody(jsonRequest)
-                    }.bodyAsText()
-                }
-
-                // Check for error responses BEFORE deserializing as success
-                val errorResponse = try { deserialize<OpenRouterErrorResponse>(responseText) } catch(e: Exception) { null }
-                if(errorResponse != null && (errorResponse.error.type != null || errorResponse.error.code != null))
-                {
-                    val errorType = errorResponse.error.type
-                    val errorCode = errorResponse.error.code
-
-                    val p2pError = when {
-                        errorType == "auth_error" || errorCode == "401" -> P2PError.auth
-                        errorType == "rate_limit_error" || errorCode == "429" -> P2PError.transport
-                        errorType == "invalid_request_error" || errorType == "invalid_api_key" || errorCode == "400" -> P2PError.prompt
-                        errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
-                        else -> P2PError.transport
-                    }
-                    throw P2PException(p2pError, "OpenRouter error: ${errorResponse.error.message}", Exception(errorResponse.error.message))
-                }
-
-                val response: OpenRouterChatResponse = deserialize(responseText)
-                    ?: throw P2PException(P2PError.json, "Failed to deserialize OpenRouter chat response: $responseText", Exception("Deserialization failed"))
-
-                val resultText = response.choices.firstOrNull()?.message?.content ?: ""
-
-                // Extract token usage for tracing
-                val usage = response.usage
-                val inputTokens = usage?.promptTokens ?: 0
-                val outputTokens = usage?.completionTokens ?: 0
-                val totalTokens = usage?.totalTokens ?: 0
-
-                trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
-                      metadata = mapOf(
-                          "inputTokens" to inputTokens,
-                          "outputTokens" to outputTokens,
-                          "totalTokens" to totalTokens,
-                          "responseLength" to resultText.length,
-                          "model" to response.model,
-                          "success" to true,
-                          "apiType" to "ChatAPI"
-                      ))
-
+                val (resultText, _) = executeNonStreamResult(jsonRequest)
                 return resultText
             }
         }
@@ -796,6 +827,305 @@ class OpenRouterPipe : Pipe()
     }
 
     /**
+     * Builds the OpenRouter chat-completions request JSON for [promptInjector] using the
+     * pipe's current configuration (system prompt, sampling, tools, reasoning, provider, etc.).
+     * @param promptInjector The user-turn text to send.
+     * @return The serialized request body.
+     */
+    private fun buildChatRequestJson(promptInjector: String): String
+    {
+        return serialize(buildChatRequestObject(promptInjector, streamingEnabled), encodedefault = false)
+    }
+
+    /**
+     * Builds the in-process [OpenRouterChatRequest] from the pipe's configured
+     * parameters. Extracted so the chat-completions path and the responses path
+     * share one request construction (the responses mode converts this object
+     * to the Responses wire spec).
+     * @param promptInjector The user prompt to append as the final message.
+     * @param stream Whether the request is streaming.
+     * @return The constructed request object.
+     */
+    private fun buildChatRequestObject(promptInjector: String, stream: Boolean): OpenRouterChatRequest
+    {
+        val messages = mutableListOf<ChatMessage>()
+
+        if(systemPrompt.isNotEmpty())
+        {
+            messages.add(ChatMessage(role = "system", content = systemPrompt))
+        }
+
+        messages.add(ChatMessage(role = "user", content = promptInjector))
+
+        return OpenRouterChatRequest(
+            model = model,
+            messages = messages,
+            temperature = if(temperature > 0.0) temperature else null,
+            topP = if(topP > 0.0) topP else null,
+            topK = openRouterTopK,
+            maxTokens = if(maxTokens > 0) maxTokens else null,
+            presencePenalty = if(presencePenalty != 0.0) presencePenalty else null,
+            frequencyPenalty = frequencyPenalty,
+            repetitionPenalty = openRouterRepetitionPenalty,
+            seed = seed,
+            stop = stopSequences.takeIf { it.isNotEmpty() },
+            tools = tools,
+            toolChoice = toolChoice,
+            parallelToolCalls = parallelToolCalls,
+            responseFormat = responseFormat,
+            reasoning = reasoningConfig,
+            reasoningEffort = flatReasoningEffort,
+            provider = providerPreferences,
+            cacheControl = cacheControl,
+            plugins = plugins,
+            logitBias = logitBias.takeIf { it.isNotEmpty() },
+            logprobs = logprobs,
+            topLogprobs = topLogprobs,
+            minP = minP,
+            topA = topA,
+            serviceTier = serviceTier,
+            user = openRouterUser,
+            sessionId = sessionId,
+            stream = streamingEnabled,
+            streamOptions = streamOptions,
+            imageConfig = openRouterImageConfig,
+            prediction = openRouterPrediction,
+            promptCacheKey = promptCacheKey,
+            promptCacheOptions = promptCacheOptions,
+            metadata = openRouterMetadata,
+            models = fallbackModels,
+            stopServerToolsWhen = stopServerToolsWhen
+        )
+    }
+
+    /**
+     * Executes a non-streaming chat-completions request.
+     * @param jsonRequest The serialized request body.
+     * @return A pair of (resultText, reasoning): the surfaced response text (content + PCP
+     *   tool-call JSON) and the flattened model reasoning (empty string when none).
+     */
+    private suspend fun executeNonStreamResult(jsonRequest: String): Pair<String, String>
+    {
+        val client = httpClient ?: throw IllegalStateException("OpenRouterPipe not initialized. Call init() first.")
+        val responseText = withContext(Dispatchers.IO)
+        {
+            client.post("$baseUrl/chat/completions")
+            {
+                contentType(ContentType.Application.Json)
+                header("Authorization", "Bearer $apiKey")
+
+                if(httpReferer.isNotEmpty())
+                {
+                    header("HTTP-Referer", httpReferer)
+                }
+                if(openRouterTitle.isNotEmpty())
+                {
+                    header("X-OpenRouter-Title", openRouterTitle)
+                }
+
+                setBody(jsonRequest)
+            }.bodyAsText()
+        }
+
+        // Check for error responses BEFORE deserializing as success
+        val errorResponse = try { deserialize<OpenRouterErrorResponse>(responseText) } catch(e: Exception) { null }
+        if(errorResponse != null)
+        {
+            val p2pError = mapOpenRouterError(errorResponse.error)
+            throw P2PException(p2pError, "OpenRouter error: ${errorResponse.error.message}", Exception(errorResponse.error.message))
+        }
+
+        val response: OpenRouterChatResponse = deserialize(responseText)
+            ?: throw P2PException(P2PError.json, "Failed to deserialize OpenRouter chat response: $responseText", Exception("Deserialization failed"))
+
+        var resultText = response.choices.firstOrNull()?.message?.content ?: ""
+
+        // OR-B: surface tool_calls (function calls) through PCP, matching the Ollama pattern.
+        val responseToolCalls = response.choices.firstOrNull()?.message?.toolCalls
+        if(!responseToolCalls.isNullOrEmpty())
+        {
+            val pcpRequests = responseToolCalls.map { call -> mapOpenRouterToolCallToPcp(call) }
+            val toolCallJson = serialize(pcpRequests)
+            resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+        }
+
+        // OR-C: flatten model reasoning from the non-stream message.
+        val reasoning = response.choices.firstOrNull()?.message?.let { flattenOpenRouterReasoning(it) } ?: ""
+
+        // Extract token usage for tracing
+        val usage = response.usage
+        val inputTokens = usage?.promptTokens ?: 0
+        val outputTokens = usage?.completionTokens ?: 0
+        val totalTokens = usage?.totalTokens ?: 0
+
+        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "inputTokens" to inputTokens,
+                  "outputTokens" to outputTokens,
+                  "totalTokens" to totalTokens,
+                  "cost" to (usage?.cost ?: 0.0),
+                  "isByok" to (usage?.isByok ?: false),
+                  "responseLength" to resultText.length,
+                  "reasoningLength" to reasoning.length,
+                  "model" to response.model,
+                  "success" to true,
+                  "apiType" to "ChatAPI"
+              ))
+
+        return Pair(resultText, reasoning)
+    }
+
+    /**
+     * OR-C: flattens the model reasoning of a non-stream response [message] into a single
+     * string, mirroring the streaming precedence (plain reasoning first, else the concatenated
+     * [env.ReasoningDetail] text/summary). Mirrors Bedrock's non-stream reasoning-flatten.
+     * @param message The response message.
+     * @return The flattened reasoning, or an empty string when none.
+     */
+    private fun flattenOpenRouterReasoning(message: ChatMessage): String
+    {
+        val plain = message.reasoning?.takeIf { it.isNotEmpty() }
+        if(!plain.isNullOrEmpty()) return plain
+
+        val details = message.reasoningDetails
+            ?.map { it.text?.takeIf { t -> t.isNotEmpty() } ?: it.summary?.takeIf { s -> s.isNotEmpty() } }
+            ?.filterNotNull()
+            ?.joinToString("")
+        return details ?: ""
+    }
+
+    /**
+     * OR-C: override the base multimodal generation so the non-stream path surfaces model
+     * reasoning into [MultimodalContent.modelReasoning] (the base default drops it). Streaming
+     * reasoning is already delivered through the base reasoning hooks, so that path delegates.
+     * @param content The multimodal request content.
+     * @return The result with text + flattened reasoning.
+     */
+    override suspend fun generateContent(content: MultimodalContent): MultimodalContent
+    {
+        if(responsesMode)
+        {
+            return generateResponses(content)
+        }
+
+        if(streamingEnabled)
+        {
+            val text = generateText(content.text)
+            return MultimodalContent(text = text)
+        }
+        val jsonRequest = buildChatRequestJson(content.text)
+        val (resultText, reasoning) = executeNonStreamResult(jsonRequest)
+        return MultimodalContent(text = resultText, modelReasoning = reasoning)
+    }
+
+    /**
+     * OR-L: executes a non-streaming OpenRouter Responses API call (`/responses`)
+     * and projects the result onto the P2P surface: the visible answer (+ PCP
+     * tool-call JSON), and the flattened reasoning onto
+     * [MultimodalContent.modelReasoning]. This is an isolated path — it is only
+     * entered via [setResponsesMode] and does not touch the chat-completions
+     * flow.
+     * @param content The in-process request content.
+     * @return The populated multimodal result.
+     */
+    private suspend fun generateResponses(content: MultimodalContent): MultimodalContent
+    {
+        val client = httpClient ?: throw IllegalStateException("OpenRouterPipe not initialized. Call init() first.")
+        val serializer = OpenRouterResponsesRequestSerializer()
+        val jsonRequest = serializer.serialize(buildChatRequestObject(content.text, stream = false), stream = false)
+
+        val responseText = withContext(Dispatchers.IO)
+        {
+            client.post("$baseUrl/responses")
+            {
+                contentType(ContentType.Application.Json)
+                header("Authorization", "Bearer $apiKey")
+                if(httpReferer.isNotEmpty())
+                {
+                    header("HTTP-Referer", httpReferer)
+                }
+                if(openRouterTitle.isNotEmpty())
+                {
+                    header("X-OpenRouter-Title", openRouterTitle)
+                }
+                setBody(jsonRequest)
+            }.bodyAsText()
+        }
+
+        val parser = OpenRouterResponsesResponseParser()
+        val responsesResponse = parser.parse(responseText)
+        val flattened = parser.flatten(responsesResponse)
+
+        var resultText = flattened.text
+        if(flattened.functionCalls.isNotEmpty())
+        {
+            val pcpRequests = flattened.functionCalls.map { call -> mapResponsesFunctionCallToPcp(call) }
+            val toolCallJson = serialize(pcpRequests)
+            resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+        }
+
+        val usage = flattened.usage
+        trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
+              metadata = mapOf(
+                  "inputTokens" to (usage?.inputTokens ?: 0),
+                  "outputTokens" to (usage?.outputTokens ?: 0),
+                  "totalTokens" to (usage?.totalTokens ?: 0),
+                  "reasoningLength" to flattened.reasoning.length,
+                  "functionCallCount" to flattened.functionCalls.size,
+                  "responseLength" to resultText.length,
+                  "model" to responsesResponse.model,
+                  "success" to true,
+                  "apiType" to "ResponsesAPI"
+              ))
+
+        return MultimodalContent(text = resultText, modelReasoning = flattened.reasoning)
+    }
+
+    /**
+     * OR-L: maps a Responses `function_call` item onto a [PcPRequest], mirroring
+     * the chat-completions tool-call mapping ([mapOpenRouterToolCallToPcp]).
+     * @param call The function-call output item.
+     * @return The PCP request describing the tool call.
+     */
+    private fun mapResponsesFunctionCallToPcp(call: env.OpenRouterResponsesOutputItem.FunctionCall): PcPRequest
+    {
+        val request = PcPRequest()
+        val functionName = call.name
+        if(functionName.isNullOrBlank()) return request
+
+        val argsObj = call.arguments?.let { raw -> runCatching { orJson.parseToJsonElement(raw) }.getOrNull() as? JsonObject }
+            ?: buildJsonObject { }
+
+        if(functionName.startsWith("call_agent_"))
+        {
+            val agentName = functionName.removePrefix("call_agent_")
+            val prompt = argsObj["prompt"]?.jsonPrimitive?.content ?: ""
+            request.argumentsOrFunctionParams = listOf(agentName, prompt)
+        }
+        else
+        {
+            request.tPipeContextOptions.functionName = functionName
+            request.argumentsOrFunctionParams = argsObj.values.map { value ->
+                if(value is JsonPrimitive) value.content else value.toString()
+            }
+        }
+
+        return request
+    }
+
+    /**
+     * OR-L: selects the OpenRouter Responses API mode. When enabled,
+     * [generateContent] routes to `/responses` instead of `/chat/completions`.
+     * @param enabled True to use the Responses API; false (default) uses chat-completions.
+     * @return This pipe instance.
+     */
+    fun setResponsesMode(enabled: Boolean): OpenRouterPipe
+    {
+        this.responsesMode = enabled
+        return this
+    }
+
+    /**
      * Executes a streaming request and accumulates the response.
      * @param httpResponse The HTTP response from the streaming endpoint
      * @return Accumulated response text
@@ -804,6 +1134,8 @@ class OpenRouterPipe : Pipe()
     {
         val channel = httpResponse.bodyAsChannel()
         val textBuilder = StringBuilder()
+        val toolCallAccumulator = ToolCallStreamAccumulator()
+        var streamUsage: env.UsageInfo? = null
 
         trace(TraceEventType.API_CALL_START, TracePhase.EXECUTION,
               metadata = mapOf(
@@ -826,33 +1158,42 @@ class OpenRouterPipe : Pipe()
                 {
                     // Check for SSE error events before attempting StreamingChunk deserialization
                     val sseError = try { deserialize<OpenRouterErrorResponse>(sseLine.content) } catch(e: Exception) { null }
-                    if(sseError != null && sseError.error.type != null)
+                    if(sseError != null)
                     {
-                        val p2pError = when(sseError.error.type)
-                        {
-                            "auth_error" -> P2PError.auth
-                            "rate_limit_error" -> P2PError.transport
-                            "invalid_request_error", "invalid_api_key" -> P2PError.prompt
-                            "api_error", "server_error" -> P2PError.transport
-                            else -> P2PError.transport
-                        }
+                        val p2pError = mapOpenRouterError(sseError.error)
                         throw P2PException(p2pError, "OpenRouter streaming error: ${sseError.error.message}", Exception(sseError.error.message))
                     }
 
                     val chunk = SseParser.parseChunk(sseLine.content) ?: continue
+                    chunk.choices.firstOrNull()?.delta?.toolCalls?.let { calls -> calls.forEach { toolCallAccumulator.add(it) } }
+                    chunk.usage?.let { streamUsage = it }
                     handleStreamDataChunk(chunk, textBuilder)
                 }
                 is SseParser.SseLine.Invalid -> continue
             }
         }
 
-        val resultText = textBuilder.toString()
+        var resultText = textBuilder.toString()
+
+        // OR-B: surface accumulated stream tool_calls through PCP, matching the non-stream path.
+        // Tool-call fragments are grouped by `index` + merged into whole calls first.
+        val accumulatedCalls = toolCallAccumulator.result()
+        if(accumulatedCalls.isNotEmpty())
+        {
+            val pcpRequests = accumulatedCalls.map { call -> mapOpenRouterToolCallToPcp(call) }
+            val toolCallJson = serialize(pcpRequests)
+            resultText = if(resultText.isEmpty()) toolCallJson else "$resultText\n\n$toolCallJson"
+        }
 
         trace(TraceEventType.API_CALL_SUCCESS, TracePhase.EXECUTION,
               metadata = mapOf(
                   "responseLength" to resultText.length,
                   "model" to model,  // Already known before request
                   "streaming" to true,
+                  "inputTokens" to (streamUsage?.promptTokens ?: 0),
+                  "outputTokens" to (streamUsage?.completionTokens ?: 0),
+                  "totalTokens" to (streamUsage?.totalTokens ?: 0),
+                  "cost" to (streamUsage?.cost ?: 0.0),
                   "success" to true,
                   "apiType" to "ChatAPI"
               ))
@@ -904,6 +1245,146 @@ class OpenRouterPipe : Pipe()
             visibleText.append(contentDelta)
             emitStreamingChunk(contentDelta)
         }
+    }
+
+    /**
+     * Maps an OpenRouter [ChatToolCall] to a PCP [PcPRequest], mirroring the Ollama
+     * tool-call mapping. OpenAI-compatible `function.arguments` is a JSON-encoded
+     * string (unlike Ollama's object), so it is parsed to a [JsonObject] before the
+     * parameter values are flattened. The `call_agent_` prefix routes to a TPipe
+     * agent invocation, matching the Ollama convention.
+     * @param call The tool call to map.
+     * @return The PCP request describing the function call.
+     */
+    private fun mapOpenRouterToolCallToPcp(call: env.ChatToolCall): com.TTT.PipeContextProtocol.PcPRequest
+    {
+        val request = com.TTT.PipeContextProtocol.PcPRequest()
+        val fn = call.function ?: return request
+        val functionName = fn.name
+        if(functionName.isNullOrBlank()) return request
+
+        val argsObj = fn.arguments?.let { raw -> runCatching { parseJsonOrEmpty(raw) }.getOrNull() }
+            ?: buildJsonObject { }
+
+        if(functionName.startsWith("call_agent_"))
+        {
+            val agentName = functionName.removePrefix("call_agent_")
+            val prompt = argsObj["prompt"]?.jsonPrimitive?.content ?: ""
+            request.argumentsOrFunctionParams = listOf(agentName, prompt)
+        }
+        else
+        {
+            request.tPipeContextOptions.functionName = functionName
+            request.argumentsOrFunctionParams = argsObj.values.map { value ->
+                if(value is JsonPrimitive) value.content else value.toString()
+            }
+        }
+
+        return request
+    }
+
+    /** Parses a JSON string into a [JsonObject]; returns an empty object on any failure. */
+    private fun parseJsonOrEmpty(raw: String): JsonObject
+    {
+        val parsed = runCatching { orJson.parseToJsonElement(raw) }.getOrNull()
+        return parsed as? JsonObject ?: buildJsonObject { }
+    }
+
+    /**
+     * OR-G: maps an [env.OpenRouterError] to a [P2PError]. Keys off the current-spec fields
+     * (integer-or-string `code` + `metadata`) while retaining the legacy `type` branches for
+     * older error payloads. Rate-limit (429 / limit_source) -> transport; 402 (payment/billing)
+     * -> configuration; 401/400 class -> auth/prompt; 5xx -> transport.
+     * @param error The OpenRouter error envelope.
+     * @return The mapped P2P error classification.
+     */
+    private fun mapOpenRouterError(error: env.OpenRouterError): P2PError
+    {
+        @Suppress("DEPRECATION")
+        val errorType = error.type
+        val errorCode = error.code?.let { (it as? JsonPrimitive)?.content }
+        val limitSource = error.metadata?.get("limit_source")?.let { (it as? JsonPrimitive)?.content }
+        val rateLimit = errorType == "rate_limit_error" || errorCode == "429" || limitSource == "rate_limit"
+
+        return when {
+            errorType == "auth_error" || errorCode == "401" -> P2PError.auth
+            rateLimit -> P2PError.transport
+            errorType == "invalid_request_error" || errorType == "invalid_api_key" || errorCode == "400" -> P2PError.prompt
+            errorCode == "402" || errorType == "payment_required" -> P2PError.configuration
+            errorType == "api_error" || errorType == "server_error" || errorCode?.startsWith("5") == true -> P2PError.transport
+            else -> P2PError.transport
+        }
+    }
+
+    /**
+     * OR-J: fetches the OpenRouter model catalog (`GET /models`), giving per-model
+     * context_length + supported_parameters + pricing for auto-calibration.
+     * @return The list of models, or null on failure.
+     */
+    suspend fun fetchModelCatalog(): List<env.OpenRouterModel>?
+    {
+        val client = httpClient ?: throw IllegalStateException("OpenRouterPipe not initialized. Call init() first.")
+        return try
+        {
+            val text = withContext(Dispatchers.IO)
+            {
+                client.get("$baseUrl/models")
+                {
+                    header("Authorization", "Bearer $apiKey")
+                    if(httpReferer.isNotEmpty()) header("HTTP-Referer", httpReferer)
+                    if(openRouterTitle.isNotEmpty()) header("X-OpenRouter-Title", openRouterTitle)
+                }.bodyAsText()
+            }
+            deserialize<env.OpenRouterModelsResponse>(text)?.data
+        }
+        catch(e: Exception)
+        {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e,
+                  metadata = mapOf("endpoint" to "GET /models", "errorType" to (e::class.simpleName ?: "Unknown")))
+            null
+        }
+    }
+
+    /**
+     * OR-J: fetches a single model's metadata (`GET /models/{modelId}`) for context-window
+     * and supported-parameter calibration.
+     * @param modelId The OpenRouter model slug (e.g. "anthropic/claude-3-5-sonnet").
+     * @return The model entry, or null on failure.
+     */
+    suspend fun fetchModelInfo(modelId: String): env.OpenRouterModel?
+    {
+        val client = httpClient ?: throw IllegalStateException("OpenRouterPipe not initialized. Call init() first.")
+        return try
+        {
+            val text = withContext(Dispatchers.IO)
+            {
+                client.get("$baseUrl/models/${modelId.replace("/", "%2F")}")
+                {
+                    header("Authorization", "Bearer $apiKey")
+                    if(httpReferer.isNotEmpty()) header("HTTP-Referer", httpReferer)
+                    if(openRouterTitle.isNotEmpty()) header("X-OpenRouter-Title", openRouterTitle)
+                }.bodyAsText()
+            }
+            deserialize<env.OpenRouterModelResponse>(text)?.data
+        }
+        catch(e: Exception)
+        {
+            trace(TraceEventType.API_CALL_FAILURE, TracePhase.EXECUTION, error = e,
+                  metadata = mapOf("endpoint" to "GET /models/$modelId", "errorType" to (e::class.simpleName ?: "Unknown")))
+            null
+        }
+    }
+
+    /**
+     * OR-J: calibrates this pipe's context window from a catalog-fetched [contextLength],
+     * replacing the hardcoded family heuristic for that model.
+     * @param contextLength The model's context window in tokens (from [fetchModelInfo]).
+     * @return This pipe instance.
+     */
+    fun setContextLengthFromCatalog(contextLength: Int): OpenRouterPipe
+    {
+        setContextWindowSize(contextLength)
+        return this
     }
 
 //=========================================Context Management==========================================================

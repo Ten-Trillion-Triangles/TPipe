@@ -2,6 +2,7 @@ package env
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -32,7 +33,6 @@ import kotlinx.serialization.json.JsonObject
  * @property toolChoice Tool selection mode
  * @property parallelToolCalls Enable parallel function calling
  * @property responseFormat Response format constraint (text, json_object, json_schema)
- * @property structuredOutputs Enable structured outputs via json_schema
  * @property modalities Output modalities (text, image, audio)
  * @property plugins OpenRouter plugins (web search, file parsing, etc.)
  * @property provider Routing preferences for provider selection
@@ -41,7 +41,6 @@ import kotlinx.serialization.json.JsonObject
  * @property serviceTier Service tier (auto, default, flex, priority, scale)
  * @property sessionId Request grouping for observability
  * @property user End-user identifier for abuse detection
- * @property verbosity Response detail level (low, medium, high, max)
  * @property trace Observability metadata
  */
 @Serializable
@@ -58,6 +57,9 @@ data class OpenRouterChatRequest(
     @SerialName("max_completion_tokens")
     val maxCompletionTokens: Int? = null,
     val stream: Boolean = false,
+    /** Streaming options (e.g. include_usage to emit a final usage chunk). */
+    @SerialName("stream_options")
+    val streamOptions: StreamOptions? = null,
     val stop: List<String>? = null,
     @SerialName("presence_penalty")
     val presencePenalty: Double? = null,
@@ -82,12 +84,13 @@ data class OpenRouterChatRequest(
     val parallelToolCalls: Boolean? = null,
     @SerialName("response_format")
     val responseFormat: ResponseFormat? = null,
-    @SerialName("structured_outputs")
-    val structuredOutputs: Boolean? = null,
     val modalities: List<String>? = null,
     val plugins: List<Plugin>? = null,
     val provider: ProviderPreferences? = null,
     val reasoning: ReasoningConfig? = null,
+    /** Flat top-level reasoning effort (current spec; separate from the `reasoning` object). */
+    @SerialName("reasoning_effort")
+    val reasoningEffort: String? = null,
     @SerialName("cache_control")
     val cacheControl: CacheControl? = null,
     @SerialName("service_tier")
@@ -95,8 +98,20 @@ data class OpenRouterChatRequest(
     @SerialName("session_id")
     val sessionId: String? = null,
     val user: String? = null,
-    val verbosity: String? = null,
-    val trace: TraceConfig? = null
+    val trace: TraceConfig? = null,
+    @SerialName("image_config")
+    val imageConfig: JsonObject? = null,
+    @SerialName("prediction")
+    val prediction: JsonObject? = null,
+    @SerialName("prompt_cache_key")
+    val promptCacheKey: String? = null,
+    @SerialName("prompt_cache_options")
+    val promptCacheOptions: JsonObject? = null,
+    val metadata: JsonObject? = null,
+    /** Fallback model slugs tried in order when the primary is unavailable. */
+    val models: List<String>? = null,
+    @SerialName("stop_server_tools_when")
+    val stopServerToolsWhen: JsonObject? = null
 )
 
 /**
@@ -108,7 +123,21 @@ data class OpenRouterChatRequest(
 @Serializable
 data class ChatMessage(
     val role: String,
-    val content: String
+    val content: String,
+    /** Tool/function calls the assistant emitted (response messages only; null on requests). */
+    @SerialName("tool_calls")
+    val toolCalls: List<ChatToolCall>? = null,
+    /** Plain-text model reasoning (reasoning models stream it ahead of visible content). */
+    val reasoning: String? = null,
+    /** Structured reasoning entries (text / summary / signature). */
+    @SerialName("reasoning_details")
+    val reasoningDetails: List<ReasoningDetail>? = null,
+    /** Present when the model refused to complete the request. */
+    val refusal: String? = null,
+    /** Audio output (audio-capable models). */
+    val audio: AudioOutput? = null,
+    /** Image outputs (free-form; image-generation models). */
+    val images: JsonObject? = null
 )
 
 /**
@@ -168,7 +197,17 @@ data class Plugin(
  * @property order Provider ordering hint
  * @property allowFallbacks Allow fallback to alternative providers
  * @property dataCollection Data collection setting
- * @property preferSuffix Preferred provider suffix
+ * @property enforceDistillableText Only route to providers that return distillable (unredacted) text
+ * @property ignore Providers to always skip
+ * @property only Providers to always use (no fallback outside this set)
+ * @property quantizations Allowed quantizations (e.g. "fp8", "q4")
+ * @property requireParameters Route only to endpoints that accept the requested parameters
+ * @property maxPrice Per-request maximum USD price caps
+ * @property options Per-provider option overrides (free-form provider keys)
+ * @property preferredMaxLatency Percentile latency cutoffs (p50/p75/p90/p99)
+ * @property preferredMinThroughput Percentile throughput floor cutoffs (p50/p75/p90/p99)
+ * @property sort Sort criterion: a string ("price"/"throughput"/"latency"/"exacto") or a {by,partition} config
+ * @property zdr Zero-data-retention routing
  */
 @Serializable
 data class ProviderPreferences(
@@ -177,8 +216,52 @@ data class ProviderPreferences(
     val allowFallbacks: Boolean? = null,
     @SerialName("data_collection")
     val dataCollection: String? = null,
-    @SerialName("prefer_suffix")
-    val preferSuffix: String? = null
+    @SerialName("enforce_distillable_text")
+    val enforceDistillableText: Boolean? = null,
+    val ignore: List<String>? = null,
+    val only: List<String>? = null,
+    val quantizations: List<String>? = null,
+    @SerialName("require_parameters")
+    val requireParameters: Boolean? = null,
+    @SerialName("max_price")
+    val maxPrice: MaxPrice? = null,
+    val options: JsonObject? = null,
+    @SerialName("preferred_max_latency")
+    val preferredMaxLatency: JsonObject? = null,
+    @SerialName("preferred_min_throughput")
+    val preferredMinThroughput: JsonObject? = null,
+    val sort: JsonElement? = null,
+    val zdr: Boolean? = null
+)
+
+/**
+ * Per-request maximum USD price caps for OpenRouter provider routing.
+ *
+ * @property audio Max USD per audio unit
+ * @property completion Max USD per million completion tokens
+ * @property image Max USD per image
+ * @property prompt Max USD per million prompt tokens
+ * @property request Max USD per request
+ */
+@Serializable
+data class MaxPrice(
+    val audio: String? = null,
+    val completion: String? = null,
+    val image: String? = null,
+    val prompt: String? = null,
+    val request: String? = null
+)
+
+/**
+ * Streaming options for the OpenRouter chat-completions request.
+ *
+ * @property includeUsage When true, the stream ends with a final chunk carrying the
+ *   [UsageInfo] usage object (cost, tokens, etc.).
+ */
+@Serializable
+data class StreamOptions(
+    @SerialName("include_usage")
+    val includeUsage: Boolean? = null
 )
 
 /**
@@ -191,10 +274,16 @@ data class ProviderPreferences(
  */
 @Serializable
 data class ReasoningConfig(
+    /** Reasoning effort: "xhigh"/"high"/"medium"/"low"/"minimal"/"none" (or "auto"). */
     val effort: String? = null,
+    /** Reasoning summary verbosity (current spec): "auto"/"detailed"/"none". */
+    val summary: String? = null,
+    @Deprecated("Superseded by the flat request-level reasoning_effort field.")
     @SerialName("max_tokens")
     val maxTokens: Int? = null,
+    @Deprecated("No longer part of the current OpenRouter reasoning shape.")
     val exclude: Boolean? = null,
+    @Deprecated("The current spec gates reasoning via reasoning_effort / reasoning.effort, not an enabled flag.")
     val enabled: Boolean? = null
 )
 

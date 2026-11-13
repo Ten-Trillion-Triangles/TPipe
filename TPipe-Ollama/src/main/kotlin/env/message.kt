@@ -20,7 +20,13 @@ data class OllamaMessage(
     val images: List<String>? = null,
     @SerialName("tool_calls")
     val toolCalls: List<OllamaToolCall>? = null,
-    val thinking: String? = null
+    val thinking: String? = null,
+    /** Name of the tool that produced this (tool-role) result message. */
+    @SerialName("tool_name")
+    val toolName: String? = null,
+    /** Ollama tool-call identifier this result responds to. */
+    @SerialName("tool_call_id")
+    val toolCallId: String? = null
 )
 
 /**

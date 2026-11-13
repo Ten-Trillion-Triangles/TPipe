@@ -68,6 +68,13 @@ class OllamaPipe : Pipe()
      */
     @kotlinx.serialization.Serializable
     private var think: Boolean = false
+
+    /**
+     * Ollama-specific thinking level ("low"/"medium"/"high"/"max" or a model-defined value).
+     * When set, it is sent in preference to the boolean [think].
+     */
+    @kotlinx.serialization.Serializable
+    private var thinkLevel: String? = null
     
     /**
      * Number of tokens to keep from the initial prompt.
@@ -182,6 +189,24 @@ class OllamaPipe : Pipe()
      */
     @kotlinx.serialization.Serializable
     private var numThread: Int? = null
+
+    /**
+     * Maximum speculative draft tokens per step (Ollama draft_num_predict); 0 disables.
+     */
+    @kotlinx.serialization.Serializable
+    private var draftNumPredict: Int? = null
+
+    /**
+     * Request log probabilities from Ollama.
+     */
+    @kotlinx.serialization.Serializable
+    private var logprobs: Boolean? = null
+
+    /**
+     * Number of top log probabilities to request per token.
+     */
+    @kotlinx.serialization.Serializable
+    private var topLogprobs: Int? = null
 
     /**
      * Test seam: when non-null, [executeChatStream] feeds these NDJSON lines
@@ -331,6 +356,49 @@ class OllamaPipe : Pipe()
         this.useModelReasoning = true
         return this
     }
+
+    /**
+     * Sets an Ollama thinking level ("low"/"medium"/"high"/"max" or a model-defined value).
+     * Also enables model reasoning so the trace flag reflects it.
+     * @param level The thinking level to send.
+     * @return This pipe instance.
+     */
+    fun setThinkLevel(level: String): OllamaPipe
+    {
+        this.thinkLevel = level
+        this.think = true
+        this.useModelReasoning = true
+        return this
+    }
+
+    /**
+     * Disables thinking: clears the level and both on/off flags.
+     * @return This pipe instance.
+     */
+    fun disableThink(): OllamaPipe
+    {
+        this.think = false
+        this.thinkLevel = null
+        this.useModelReasoning = false
+        return this
+    }
+
+    /**
+     * Computes the wire value for Ollama's top-level `think` field: the level string when
+     * [thinkLevel] is set, otherwise a JSON `true` when thinking is enabled (via [think] or the
+     * base-Pipe [useModelReasoning] flag), otherwise `null` (omitted on the wire).
+     *
+     * @return The `think` [JsonElement] to place on the request, or null when not requested.
+     */
+    internal fun buildThinkWireValue(): JsonElement?
+    {
+        return when
+        {
+            thinkLevel != null -> JsonPrimitive(thinkLevel)
+            think || useModelReasoning -> JsonPrimitive(true)
+            else -> null
+        }
+    }
     
     /**
      * Sets the minimum probability for token consideration during sampling.
@@ -361,6 +429,7 @@ class OllamaPipe : Pipe()
      * @param tau Target entropy.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes Mirostat sampling (removed); no-op on the wire.")
     fun setMirostat(mode: Int, eta: Float? = null, tau: Float? = null): OllamaPipe
     {
         this.mirostat = mode
@@ -425,6 +494,39 @@ class OllamaPipe : Pipe()
         this.numThread = numThread
         return this
     }
+
+    /**
+     * Sets the number of speculative draft tokens to predict per step.
+     * @param draftNumPredict Number of draft tokens (0 disables speculative drafting).
+     * @return This pipe instance.
+     */
+    fun setDraftNumPredict(draftNumPredict: Int): OllamaPipe
+    {
+        this.draftNumPredict = draftNumPredict
+        return this
+    }
+
+    /**
+     * Requests log probabilities from Ollama.
+     * @param enabled Whether to return log probabilities.
+     * @return This pipe instance.
+     */
+    fun setLogprobs(enabled: Boolean): OllamaPipe
+    {
+        this.logprobs = enabled
+        return this
+    }
+
+    /**
+     * Sets how many top log probabilities to return per token.
+     * @param count The number of top log probabilities (0-20).
+     * @return This pipe instance.
+     */
+    fun setTopLogprobs(count: Int): OllamaPipe
+    {
+        this.topLogprobs = count
+        return this
+    }
     
     /**
      * Sets the batch size for prompt processing.
@@ -442,6 +544,7 @@ class OllamaPipe : Pipe()
      * @param useNuma Whether to enable NUMA.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes numa (removed); no-op on the wire.")
     fun setNuma(useNuma: Boolean): OllamaPipe
     {
         this.numa = useNuma
@@ -464,6 +567,7 @@ class OllamaPipe : Pipe()
      * @param lowVram Whether to enable low VRAM.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes low_vram (removed); no-op on the wire.")
     fun setLowVram(lowVram: Boolean): OllamaPipe
     {
         this.lowVram = lowVram
@@ -475,6 +579,7 @@ class OllamaPipe : Pipe()
      * @param vocabOnly Whether to enable vocab only.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes vocab_only (removed); no-op on the wire.")
     fun setVocabOnly(vocabOnly: Boolean): OllamaPipe
     {
         this.vocabOnly = vocabOnly
@@ -497,6 +602,7 @@ class OllamaPipe : Pipe()
      * @param useMlock Whether to use mlock.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes use_mlock (removed); no-op on the wire.")
     fun setUseMlock(useMlock: Boolean): OllamaPipe
     {
         this.useMlock = useMlock
@@ -508,6 +614,7 @@ class OllamaPipe : Pipe()
      * @param penalize Whether to penalize newlines.
      * @return This pipe instance.
      */
+    @Deprecated("Ollama no longer exposes penalize_newline (removed); no-op on the wire.")
     fun setPenalizeNewline(penalize: Boolean): OllamaPipe
     {
         this.penalizeNewline = penalize
@@ -757,7 +864,8 @@ class OllamaPipe : Pipe()
             vocabOnly = vocabOnly,
             useMmap = useMmap,
             useMlock = useMlock,
-            numThread = numThread
+            numThread = numThread,
+            draftNumPredict = draftNumPredict
         )
     }
 
@@ -901,7 +1009,10 @@ class OllamaPipe : Pipe()
             stream = streamingEnabled,
             keepAlive = keepAlive,
             format = format,
-            tools = ollamaTools
+            tools = ollamaTools,
+            think = buildThinkWireValue(),
+            logprobs = logprobs,
+            topLogprobs = topLogprobs
         )
 
         return if(streamingEnabled)
@@ -1150,7 +1261,10 @@ class OllamaPipe : Pipe()
             stream = streamingEnabled,
             keepAlive = keepAlive,
             images = base64Images,
-            format = format
+            format = format,
+            think = buildThinkWireValue(),
+            logprobs = logprobs,
+            topLogprobs = topLogprobs
         )
 
         return if(streamingEnabled)
@@ -1557,6 +1671,50 @@ class OllamaPipe : Pipe()
     {
         val response = httpGet(Endpoints.listEndpoint)
         return deserialize<JsonElement>(response)
+    }
+
+    /**
+     * Generates embeddings for [input] using the current `/api/embed` endpoint.
+     * @param input The text to embed (a JSON string/array/multimodal payload).
+     * @param dimensions Optional embedding dimensionality.
+     * @return The deserialized [EmbedResponse], or null on failure.
+     */
+    suspend fun embeddings(input: String?, dimensions: Int? = null): EmbedResponse?
+    {
+        val request = EmbedRequest(
+            model = model,
+            input = JsonPrimitive(input ?: ""),
+            dimensions = dimensions
+        )
+        val client = HttpClient(CIO)
+        {
+            install(HttpTimeout)
+            {
+                requestTimeoutMillis = 600000
+                connectTimeoutMillis = 30000
+            }
+        }
+        return try
+        {
+            val responseText = try
+            {
+                val response: HttpResponse = client.post(Endpoints.embedEndpoint)
+                {
+                    contentType(ContentType.Application.Json)
+                    setBody(serialize(request))
+                }
+                response.bodyAsText()
+            }
+            finally
+            {
+                client.close()
+            }
+            deserialize<EmbedResponse>(responseText)
+        }
+        catch(e: Exception)
+        {
+            null
+        }
     }
 
     /**

@@ -20,6 +20,8 @@ object Endpoints
     val runningEndpoint get() = "http://$ip:$port/api/ps"
     val showEndpoint get() = "http://$ip:$port/api/show"
     val embeddingsEndpoint get() = "http://$ip:$port/api/embeddings"
+    /** Current embeddings endpoint (introduced v0.3.4; uses `input`). */
+    val embedEndpoint get() = "http://$ip:$port/api/embed"
     val versionEndpoint get() = "http://$ip:$port/api/version"
 
     /**

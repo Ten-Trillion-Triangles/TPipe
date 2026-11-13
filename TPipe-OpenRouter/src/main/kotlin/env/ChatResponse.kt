@@ -2,6 +2,8 @@ package env
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Response from OpenRouter's /v1/chat/completions endpoint.
@@ -70,7 +72,68 @@ data class UsageInfo(
     @SerialName("prompt_tokens_details")
     val promptTokensDetails: PromptTokensDetails? = null,
     @SerialName("completion_tokens_details")
-    val completionTokensDetails: CompletionTokensDetails? = null
+    val completionTokensDetails: CompletionTokensDetails? = null,
+    /** Total request cost in USD (OpenRouter extension; null on :free models). */
+    val cost: Double? = null,
+    /** OpenRouter per-component cost breakdown. */
+    @SerialName("cost_details")
+    val costDetails: CostDetails? = null,
+    /** True when the request was served by a bring-your-own-key endpoint. */
+    @SerialName("is_byok")
+    val isByok: Boolean? = null,
+    /** Token accounting for deferred tool-search calls. */
+    @SerialName("deferred_tools_details")
+    val deferredToolsDetails: DeferredToolsDetails? = null,
+    /** Usage attributed to server-executed tools (web search, etc.). */
+    @SerialName("server_tool_use_details")
+    val serverToolUseDetails: ServerToolUseDetails? = null
+)
+
+/**
+ * OpenRouter `cost_details` — USD cost attributed to each upstream component.
+ *
+ * @property upstreamInferenceCost Total upstream inference cost.
+ * @property upstreamInferencePromptCost Upstream prompt cost.
+ * @property upstreamInferenceCompletionsCost Upstream completion cost.
+ * @property serverToolCost Cost of server-side tool execution.
+ */
+@Serializable
+data class CostDetails(
+    @SerialName("upstream_inference_cost")
+    val upstreamInferenceCost: Double? = null,
+    @SerialName("upstream_inference_prompt_cost")
+    val upstreamInferencePromptCost: Double? = null,
+    @SerialName("upstream_inference_completions_cost")
+    val upstreamInferenceCompletionsCost: Double? = null,
+    @SerialName("server_tool_cost")
+    val serverToolCost: Double? = null
+)
+
+/**
+ * Token accounting for deferred tool-search calls.
+ */
+@Serializable
+data class DeferredToolsDetails(
+    @SerialName("prompt_tokens")
+    val promptTokens: Int? = null,
+    @SerialName("completion_tokens")
+    val completionTokens: Int? = null,
+    @SerialName("total_tokens")
+    val totalTokens: Int? = null,
+    val turns: Int? = null
+)
+
+/**
+ * Usage attributed to server-executed tools.
+ */
+@Serializable
+data class ServerToolUseDetails(
+    @SerialName("tool_calls_executed")
+    val toolCallsExecuted: Int? = null,
+    @SerialName("tool_calls_requested")
+    val toolCallsRequested: Int? = null,
+    @SerialName("web_search_requests")
+    val webSearchRequests: Int? = null
 )
 
 /**
@@ -151,7 +214,9 @@ data class StreamingChunk(
     val objectType: String = "chat.completion.chunk",
     val created: Long,
     val model: String,
-    val choices: List<StreamingChoice>
+    val choices: List<StreamingChoice>,
+    /** Present on the final chunk when `stream_options.include_usage` is set. */
+    val usage: UsageInfo? = null
 )
 
 /**
@@ -186,7 +251,61 @@ data class DeltaMessage(
     val content: String? = null,
     val reasoning: String? = null,
     @SerialName("reasoning_details")
-    val reasoningDetails: List<ReasoningDetail>? = null
+    val reasoningDetails: List<ReasoningDetail>? = null,
+    /** Tool-call deltas emitted when the model invokes functions. */
+    @SerialName("tool_calls")
+    val toolCalls: List<ChatToolCall>? = null,
+    /** Present when the model refused to complete the request. */
+    val refusal: String? = null,
+    /** Audio output delta (audio-capable models). */
+    val audio: AudioOutput? = null
+)
+
+/**
+ * A tool/function call emitted by the model (response `tool_calls` entry).
+ *
+ * @property id Provider-assigned call identifier.
+ * @property type Call type (currently "function").
+ * @property function The function to call.
+ * @property index Streaming fragment index (OpenAI-compat `ChatStreamToolCall`
+ *   uses this to group argument fragments of one call; absent on non-stream
+ *   `message.tool_calls`, where it stays null).
+ */
+@Serializable
+data class ChatToolCall(
+    val id: String? = null,
+    val type: String? = null,
+    val function: ToolCallFunction? = null,
+    val index: Int? = null
+)
+
+/**
+ * The function payload of a [ChatToolCall].
+ *
+ * @property name The function name.
+ * @property arguments JSON-encoded argument string (may be a partial fragment in streaming deltas).
+ */
+@Serializable
+data class ToolCallFunction(
+    val name: String? = null,
+    val arguments: String? = null
+)
+
+/**
+ * Audio output payload (OpenRouter `audio` on messages / deltas).
+ *
+ * @property data Base64-encoded audio content.
+ * @property expiresAt Expiration timestamp for the audio blob.
+ * @property id Audio identifier.
+ * @property transcript Transcript of the audio.
+ */
+@Serializable
+data class AudioOutput(
+    val data: String? = null,
+    @SerialName("expires_at")
+    val expiresAt: Long? = null,
+    val id: String? = null,
+    val transcript: String? = null
 )
 
 /**
@@ -238,11 +357,21 @@ data class OpenRouterErrorResponse(
 @Serializable
 data class OpenRouterError(
     val message: String,
-    val code: String? = null,
+    /** Error code — the current spec uses an integer HTTP code, but OpenRouter has also
+     *   returned string codes; [JsonElement] accepts both. */
+    val code: JsonElement? = null,
+    /** Provider / limit-source metadata (e.g. retry_after_seconds, provider_name, limit_source). */
+    val metadata: JsonObject? = null,
+    /** Legacy OpenAI-era error type (deprecated; current errors key off code/metadata). */
+    @Deprecated("Superseded by code + metadata; retained for back-compat with older error payloads.")
     val type: String? = null,
+    @Deprecated("Superseded; retained for back-compat.")
     @SerialName("code_body")
     val codeBody: String? = null,
+    @Deprecated("Superseded; retained for back-compat.")
     val url: String? = null,
+    @Deprecated("Superseded; retained for back-compat.")
     val param: String? = null,
+    @Deprecated("Superseded; retained for back-compat.")
     val provider: String? = null
 )

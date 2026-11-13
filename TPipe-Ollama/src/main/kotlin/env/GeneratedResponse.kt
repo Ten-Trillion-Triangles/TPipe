@@ -17,11 +17,16 @@ import kotlinx.serialization.json.JsonElement
  * @property images List of base64 images.
  * @property options Inference options.
  * @property keepAlive Keep-alive duration.
+ * @property think For thinking models, whether the model should think before responding.
+ *   Ollama accepts a boolean OR a model-defined level string ("low"/"medium"/"high"/"max").
+ *   Omitted when null (see [JsonElement] + explicitNulls=false).
  */
 @Serializable
 data class GeneratedRequest(
     val model: String,
     val prompt: String,
+    /** Text that appears after the user prompt and before the model response (fill-in-the-middle). */
+    val suffix: String? = null,
     val system: String? = null,
     val template: String? = null,
     val context: List<Int>? = null,
@@ -31,7 +36,14 @@ data class GeneratedRequest(
     val images: List<String>? = null,
     val options: OllamaOptions? = null,
     @SerialName("keep_alive")
-    val keepAlive: String? = "5m"
+    val keepAlive: String? = "5m",
+    /** Thinking control for thinking models: a JSON boolean or a level string. */
+    val think: JsonElement? = null,
+    /** Request log probabilities. */
+    val logprobs: Boolean? = null,
+    /** Number of top log probabilities to return per token. */
+    @SerialName("top_logprobs")
+    val topLogprobs: Int? = null
 )
 
 /**
@@ -82,6 +94,8 @@ data class GeneratedResponse(
  * @property stream Whether to stream.
  * @property options Inference options.
  * @property keepAlive Keep-alive duration.
+ * @property think For thinking models, whether the model should think before responding
+ *   (JSON boolean OR model-defined level string). Omitted when null.
  */
 @Serializable
 data class ChatRequest(
@@ -92,7 +106,14 @@ data class ChatRequest(
     val stream: Boolean = false,
     val options: OllamaOptions? = null,
     @SerialName("keep_alive")
-    val keepAlive: String? = "5m"
+    val keepAlive: String? = "5m",
+    /** Thinking control for thinking models: a JSON boolean or a level string. */
+    val think: JsonElement? = null,
+    /** Request log probabilities. */
+    val logprobs: Boolean? = null,
+    /** Number of top log probabilities to return per token. */
+    @SerialName("top_logprobs")
+    val topLogprobs: Int? = null
 )
 
 /**

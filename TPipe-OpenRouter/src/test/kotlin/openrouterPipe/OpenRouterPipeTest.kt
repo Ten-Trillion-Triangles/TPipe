@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package openrouterPipe
 
 import com.TTT.Pipe.Pipe
@@ -220,7 +222,7 @@ class OpenRouterPipeTest
 
         assertNotNull(errorResponse)
         assertEquals("Invalid API key", errorResponse.error.message)
-        assertEquals("invalid_api_key", errorResponse.error.code)
+        assertEquals(JsonPrimitive("invalid_api_key"), errorResponse.error.code)
         assertEquals("auth_error", errorResponse.error.type)
     }
 
