@@ -6,6 +6,7 @@ import com.TTT.Context.ContextAccessScope
 import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseRole
 import com.TTT.Context.LoreBook
+import com.TTT.Enums.MemoryWriteKind
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.KillSwitchException
@@ -2345,6 +2346,86 @@ internal fun PumpStation.handOffToTruncation(): CompactionResult.HandedOffToTrun
 }
 
 /**
+ * Whether a pre-memory hook is bound on this station.
+ *
+ * The evaluation event is only published when a hook is bound, so an unbound station produces no
+ * extra event traffic.
+ */
+internal val PumpStation.hasPreMemoryHook: Boolean get() = preMemoryFunctionInternal != null
+
+/**
+ * Run the developer's pre-memory hook over a proposed write.
+ *
+ * Returns the write to apply, or null when the write was rejected. A rejection publishes a
+ * [MemoryWriteEvaluated] event with `approved = false` before returning null.
+ *
+ * A *null hook* means no hook is bound and approves the proposal unchanged, without publishing an
+ * event. A hook that *returns null* rejects the write. These two cases must not be collapsed —
+ * `hook?.invoke(proposal, this) ?: proposal` would silently approve a rejection, so the branch is
+ * explicit.
+ *
+ * Fail-closed: if the hook throws, the write is rejected and the exception is reported on the
+ * emitted event rather than escaping into the background coroutine, where [launchAsyncJob] would
+ * not catch it.
+ *
+ * @param proposal The write the memory agent wants to land.
+ * @return The approved write, or null when the write was rejected.
+ */
+internal suspend fun PumpStation.evaluateMemoryWrite(proposal: MemoryWriteProposal): MemoryWriteProposal?
+{
+    val hook = preMemoryFunctionInternal ?: return proposal
+    return try
+    {
+        val approved = hook(proposal, this)
+        if (approved == null)
+        {
+            emitMemoryWriteEvaluated(proposal, approved = false, reason = "rejected by hook")
+        }
+        approved
+    }
+    catch (e: Exception)
+    {
+        emitMemoryWriteEvaluated(proposal, approved = false, reason = "hook exception: ${e.message}")
+        null
+    }
+}
+
+/**
+ * Publish a [MemoryWriteEvaluated] event describing the outcome of a proposed memory write.
+ *
+ * @param proposal The proposal the developer hook evaluated.
+ * @param approved True when the write was allowed to land.
+ * @param reason Why the write was rejected, when it was.
+ */
+internal fun PumpStation.emitMemoryWriteEvaluated(
+    proposal: MemoryWriteProposal,
+    approved: Boolean,
+    reason: String = ""
+)
+{
+    val kind = when (proposal)
+    {
+        is MemoryWriteProposal.Lorebook -> MemoryWriteKind.LOREBOOK
+        is MemoryWriteProposal.Summary -> MemoryWriteKind.SUMMARY
+    }
+    val updateCount = (proposal as? MemoryWriteProposal.Lorebook)?.updates?.size ?: 0
+    val deletionCount = (proposal as? MemoryWriteProposal.Lorebook)?.deletions?.size ?: 0
+    val summaryLength = (proposal as? MemoryWriteProposal.Summary)?.text?.length ?: 0
+    emitEventInternal(
+        MemoryWriteEvaluated(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            kind = kind,
+            approved = approved,
+            updateCount = updateCount,
+            deletionCount = deletionCount,
+            summaryLength = summaryLength,
+            reason = reason
+        )
+    )
+}
+
+/**
  * Background lorebook update. Locks on [lorebookMutex] so concurrent turns
  * queue their updates in chronological order. v3: tries to parse the agent's
  * response as the typed [LorebookAgentOutput] envelope first; falls back to the
@@ -2353,6 +2434,9 @@ internal fun PumpStation.handOffToTruncation(): CompactionResult.HandedOffToTrun
  * (the work has been subsumed by a later update).
  *
  * The legacy free-form JSON contract is preserved (see [applyLorebookUpdates]).
+ *
+ * Both paths present the proposed write to the developer's pre-memory hook before it lands; see
+ * [evaluateMemoryWrite].
  */
 internal suspend fun PumpStation.updateLorebook()
 {
@@ -2374,12 +2458,49 @@ internal suspend fun PumpStation.updateLorebook()
         val typed = extractJson<LorebookAgentOutput>(response.text)
         if (typed != null)
         {
-            applyTypedLorebookUpdates(typed)
+            // Staleness pre-check stays AHEAD of the hook: a superseded output is a no-op,
+            // not a write the developer needs to adjudicate.
+            if (typed.compactedThroughTurn <= lorebookCursorInternal.lastUpdatedTurnIndex) return
+
+            val proposal = MemoryWriteProposal.Lorebook(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                updates = typed.updates,
+                deletions = typed.deletions,
+                compactedThroughTurn = typed.compactedThroughTurn,
+                legacy = false
+            )
+            val approved = evaluateMemoryWrite(proposal)
+            if (approved == null) return
+            if (approved !is MemoryWriteProposal.Lorebook)
+            {
+                emitMemoryWriteEvaluated(proposal, approved = false, reason = "proposal type mismatch")
+                return
+            }
+            if (hasPreMemoryHook) emitMemoryWriteEvaluated(approved, approved = true)
+            applyTypedLorebookUpdates(approved.toLorebookAgentOutput())
         }
         else
         {
             // Fall back to the legacy free-form JSON path.
-            applyLorebookUpdates(response)
+            val legacyUpdates = parseLegacyLorebookUpdates(response) ?: return
+            val proposal = MemoryWriteProposal.Lorebook(
+                runId = taskState.runId,
+                turnIndex = taskState.turnIndex,
+                updates = legacyUpdates,
+                deletions = emptyList(),
+                compactedThroughTurn = lorebookCursorInternal.lastUpdatedTurnIndex + 1,
+                legacy = true
+            )
+            val approved = evaluateMemoryWrite(proposal)
+            if (approved == null) return
+            if (approved !is MemoryWriteProposal.Lorebook)
+            {
+                emitMemoryWriteEvaluated(proposal, approved = false, reason = "proposal type mismatch")
+                return
+            }
+            if (hasPreMemoryHook) emitMemoryWriteEvaluated(approved, approved = true)
+            applyLorebookEntries(approved.updates, approved.deletions)
         }
     }
 }
@@ -2442,16 +2563,85 @@ internal fun PumpStation.applyTypedLorebookUpdates(output: LorebookAgentOutput)
         return
     }
 
+    applyLorebookEntries(output.updates, output.deletions)
+
+    lorebookCursorWrite = cursor.copy(
+        lastUpdatedTurnIndex = output.compactedThroughTurn,
+        lastUpdateTimestamp = System.currentTimeMillis(),
+        lastUpdateGeneration = compactionCursorInternal.generation
+    )
+}
+
+/**
+ * Parse the legacy free-form lorebook payload into typed updates.
+ *
+ * The legacy contract is a [LoreBook] object or an array of them. Legacy entries are always
+ * merged, which is what the legacy applier has always done.
+ *
+ * @param response The raw lorebook agent response.
+ * @return The parsed updates, or null when the payload did not parse.
+ */
+internal fun parseLegacyLorebookUpdates(response: MultimodalContent): List<LorebookUpdate>?
+{
+    val entries = extractJson<List<LoreBook>>(response.text)
+        ?: extractJson<LoreBook>(response.text)?.let { listOf(it) }
+        ?: return null
+    return entries
+        .filter { it.key.isNotEmpty() }
+        .map { entry ->
+            LorebookUpdate(
+                key = entry.key,
+                value = entry.value,
+                weight = entry.weight,
+                linkedKeys = entry.linkedKeys.toList(),
+                aliasKeys = entry.aliasKeys.toList(),
+                requiredKeys = entry.requiredKeys.toList(),
+                operation = LorebookOperation.Merge
+            )
+        }
+}
+
+/**
+ * Parse the lorebook agent's response and apply each update to
+ * [ContextWindow.loreBookKeys]. The agent is expected to return either a
+ * single [LoreBook] JSON object or a JSON array of [LoreBook] entries.
+ * Silently no-ops on parse failure.
+ *
+ * This is the direct legacy-path applier. The harness itself routes the legacy path through the
+ * developer's pre-memory hook first; see [updateLorebook].
+ *
+ * @param response The raw lorebook agent response.
+ */
+internal fun PumpStation.applyLorebookUpdates(response: MultimodalContent)
+{
+    val updates = parseLegacyLorebookUpdates(response) ?: return
+    applyLorebookEntries(updates)
+}
+
+/**
+ * Apply lorebook updates and deletions to the context window's lorebook map.
+ *
+ * Honors [LorebookOperation.Merge] and [LorebookOperation.Replace]. Does NOT touch the lorebook
+ * cursor — only the typed path advances it.
+ *
+ * @param updates Entries to merge into or replace within the lorebook map.
+ * @param deletions Lorebook keys to remove before applying [updates].
+ */
+internal fun PumpStation.applyLorebookEntries(
+    updates: List<LorebookUpdate>,
+    deletions: List<String> = emptyList()
+)
+{
     val map = contextWindow.loreBookKeys
 
     // Deletions first.
-    for (key in output.deletions)
+    for (key in deletions)
     {
         if (key.isNotEmpty()) map.remove(key)
     }
 
     // Then updates.
-    for (update in output.updates)
+    for (update in updates)
     {
         if (update.key.isEmpty()) continue
         val existing = map[update.key]
@@ -2483,39 +2673,6 @@ internal fun PumpStation.applyTypedLorebookUpdates(output: LorebookAgentOutput)
             }
         }
     }
-
-    lorebookCursorWrite = cursor.copy(
-        lastUpdatedTurnIndex = output.compactedThroughTurn,
-        lastUpdateTimestamp = System.currentTimeMillis(),
-        lastUpdateGeneration = compactionCursorInternal.generation
-    )
-}
-
-/**
- * Parse the lorebook agent's response and apply each update to
- * [ContextWindow.loreBookKeys]. The agent is expected to return either a
- * single [LoreBook] JSON object or a JSON array of [LoreBook] entries.
- * Silently no-ops on parse failure.
- */
-internal fun PumpStation.applyLorebookUpdates(response: MultimodalContent)
-{
-    val updates: List<LoreBook> = extractJson<List<LoreBook>>(response.text)
-        ?: extractJson<LoreBook>(response.text)?.let { listOf(it) }
-        ?: return
-
-    val map = contextWindow.loreBookKeys
-    for (entry in updates)
-{
-        if (entry.key.isEmpty()) continue
-        val existing = map[entry.key]
-        if (existing != null)
-{
-            existing.combineValue(entry)
-        } else
-        {
-            map[entry.key] = entry
-        }
-    }
 }
 
 /**
@@ -2540,7 +2697,20 @@ internal suspend fun PumpStation.updateSummary()
         }
         if (flags.shouldPass) return
 
-        turnSummary = summaryResult.text
+        val proposal = MemoryWriteProposal.Summary(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            text = summaryResult.text
+        )
+        val approved = evaluateMemoryWrite(proposal)
+        if (approved == null) return
+        if (approved !is MemoryWriteProposal.Summary)
+        {
+            emitMemoryWriteEvaluated(proposal, approved = false, reason = "proposal type mismatch")
+            return
+        }
+        if (hasPreMemoryHook) emitMemoryWriteEvaluated(approved, approved = true)
+        turnSummary = approved.text
     }
 }
 

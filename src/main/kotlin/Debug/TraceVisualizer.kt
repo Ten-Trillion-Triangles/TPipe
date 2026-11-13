@@ -161,6 +161,7 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED -> "👥"
                 TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED -> "🧠"
                 TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED -> "🧠"
+                TraceEventType.PUMP_STATION_MEMORY_WRITE_EVALUATED -> "🛡"
                 TraceEventType.PUMP_STATION_COMPACTION_STARTED -> "🗜"
                 TraceEventType.PUMP_STATION_COMPACTION_COMPLETED -> "🗜"
                 TraceEventType.PUMP_STATION_COMPACTION_INFLATED -> "⚠"
@@ -1489,6 +1490,7 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED,
                 TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED,
                 TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED,
+                TraceEventType.PUMP_STATION_MEMORY_WRITE_EVALUATED,
                 TraceEventType.PUMP_STATION_COMPACTION_STARTED,
                 TraceEventType.PUMP_STATION_COMPACTION_COMPLETED,
                 TraceEventType.PUMP_STATION_INTERVENTION_STARTED,
@@ -2518,6 +2520,9 @@ class TraceVisualizer
             TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED,
             TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED ->
                 "mode=${event.metadata["memoryMode"] ?: "?"} fill=${event.metadata["compactionPercent"] ?: "?"}"
+            TraceEventType.PUMP_STATION_MEMORY_WRITE_EVALUATED ->
+                "kind=${event.metadata["kind"] ?: "?"} updates=${event.metadata["updateCount"] ?: "0"} " +
+                    "approved=${event.metadata["approved"] ?: "?"}"
             TraceEventType.PUMP_STATION_GOAL_VALIDATION_COMPLETED ->
                 "passed=${event.metadata["passed"] ?: "?"}"
             TraceEventType.PUMP_STATION_POST_GOAL_COMPLETED ->
@@ -2567,6 +2572,7 @@ class TraceVisualizer
         TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED -> "BG Agent"
         TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED -> "Memory→"
         TraceEventType.PUMP_STATION_MEMORY_UPDATE_COMPLETED -> "Memory✓"
+        TraceEventType.PUMP_STATION_MEMORY_WRITE_EVALUATED -> "MemWrite"
         TraceEventType.PUMP_STATION_COMPACTION_STARTED -> "Compact→"
         TraceEventType.PUMP_STATION_COMPACTION_COMPLETED -> "Compact✓"
         TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED -> "Goal→"

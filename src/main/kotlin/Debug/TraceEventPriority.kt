@@ -187,6 +187,7 @@ object EventPriorityMapper
             TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED,
             TraceEventType.PUMP_STATION_NESTED_P2P_COMPLETED,
             TraceEventType.PUMP_STATION_MEMORY_UPDATE_STARTED,
+            TraceEventType.PUMP_STATION_MEMORY_WRITE_EVALUATED,
             TraceEventType.PUMP_STATION_COMPACTION_STARTED,
             TraceEventType.PUMP_STATION_COMPACTION_COMPLETED,
             TraceEventType.PUMP_STATION_GOAL_VALIDATION_STARTED,

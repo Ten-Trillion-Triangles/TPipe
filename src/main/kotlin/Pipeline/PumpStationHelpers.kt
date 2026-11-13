@@ -418,6 +418,16 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["loreBookActive"] = event.result.loreBookActive
             baseMetadata["summaryActive"] = event.result.summaryActive
         }
+        is MemoryWriteEvaluated ->
+        {
+            eventType = TraceEventType.PUMP_STATION_MEMORY_WRITE_EVALUATED
+            baseMetadata["kind"] = event.kind.name
+            baseMetadata["approved"] = event.approved
+            baseMetadata["updateCount"] = event.updateCount
+            baseMetadata["deletionCount"] = event.deletionCount
+            baseMetadata["summaryLength"] = event.summaryLength
+            if (event.reason.isNotEmpty()) baseMetadata["reason"] = event.reason
+        }
         is StashCreated ->
         {
             eventType = TraceEventType.PUMP_STATION_STASH_CREATED

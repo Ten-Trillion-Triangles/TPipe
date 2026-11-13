@@ -120,6 +120,34 @@ class DitlHookWiringTest
     }
 
     @Test
+    fun testPreMemoryFunctionFiresAtTheMemoryWritePoint()
+    {
+        runBlocking {
+            val station = buildTestStation()
+            station.setLorebookAgent(
+                MockP2PAgent(script = listOf(
+                    MultimodalContent(
+                        text = com.TTT.Util.serialize(
+                            LorebookAgentOutput(
+                                updates = listOf(LorebookUpdate(key = "k", value = "v")),
+                                compactedThroughTurn = 1
+                            ),
+                            false
+                        )
+                    )
+                ))
+            )
+            var hookCalled = false
+            station.setPreMemoryFunction { proposal, _ ->
+                hookCalled = true
+                proposal
+            }
+            station.updateLorebook()
+            assertTrue(hookCalled, "preMemoryFunction should have fired before the lorebook write landed")
+        }
+    }
+
+    @Test
     fun testPostMemoryFunctionReturnReplacesLatestContent()
     {
         runBlocking {

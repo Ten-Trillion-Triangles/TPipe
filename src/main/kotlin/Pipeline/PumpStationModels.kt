@@ -3,6 +3,7 @@ package com.TTT.Pipeline
 import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.Enums.MemoryWriteKind
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.serialization.Contextual
@@ -818,6 +819,33 @@ data class MemoryUpdateCompleted(
     override val phase: PumpStationPhase = PumpStationPhase.MemoryUpdate,
     val memoryMode: PumpStationMemoryManagementMode,
     @Contextual val result: MemoryActionResult
+) : PumpStationEvent
+
+/**
+ * A proposed memory write was evaluated by the developer's pre-memory hook.
+ *
+ * Emitted only when a pre-memory hook is bound, so an unbound station produces no extra
+ * event traffic.
+ *
+ * @property kind Which memory subsystem the proposal targeted.
+ * @property approved True when the write was allowed to land, false when it was rejected.
+ * @property updateCount Number of lorebook entries in the proposal.
+ * @property deletionCount Number of lorebook keys the proposal asked to delete.
+ * @property summaryLength Length of the proposed summary text, for summary proposals.
+ * @property reason Why the write was rejected, when it was.
+ */
+@kotlinx.serialization.Serializable
+data class MemoryWriteEvaluated(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.MemoryUpdate,
+    val kind: MemoryWriteKind,
+    val approved: Boolean,
+    val updateCount: Int = 0,
+    val deletionCount: Int = 0,
+    val summaryLength: Int = 0,
+    val reason: String = ""
 ) : PumpStationEvent
 
 /**

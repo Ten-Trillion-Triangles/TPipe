@@ -784,6 +784,12 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var postMemoryFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
 
     /**
+     * DITL function that fires immediately before a memory agent's output is written to
+     * persistent memory. Return the write to apply (possibly modified) or null to reject it.
+     */
+    var preMemoryFunction: (suspend (proposal: MemoryWriteProposal, PumpStation) -> MemoryWriteProposal?)? = null
+
+    /**
      * DITL function that fires when a memory blowout has been detected.
      * Allows developer intervention before compaction triggers.
      */
@@ -1264,6 +1270,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         pathValidationFunction = source.pathValidationFunction
         pathTransformationFunction = source.pathTransformationFunction
         postMemoryFunction = source.postMemoryFunction
+        preMemoryFunction = source.preMemoryFunction
         preCompactionFunction = source.preCompactionFunction
         postCompactionFunction = source.postCompactionFunction
         onContextTruncated = source.onContextTruncated
@@ -1477,6 +1484,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setPathValidationFunction(pathValidationFunction)
             .setPathTransformationFunction(pathTransformationFunction)
             .setPostMemoryFunction(postMemoryFunction)
+            .setPreMemoryFunction(preMemoryFunction)
             .setPreCompactionFunction(preCompactionFunction)
             .setPostCompactionFunction(postCompactionFunction)
             .setPostJudgeFunction(postJudgeFunction)

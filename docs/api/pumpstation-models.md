@@ -173,6 +173,74 @@ data class LorebookTaskContext(
 )
 ```
 
+### MemoryWriteProposal
+
+`Pipeline/PumpStationMemoryModels.kt:17` — A proposed persistent-memory write, presented to the developer's `preMemoryFunction` DITL hook before it lands.
+
+```kotlin
+@Serializable
+sealed interface MemoryWriteProposal {
+    val runId: String
+    val turnIndex: Int
+
+    @Serializable
+    data class Lorebook(
+        override val runId: String,
+        override val turnIndex: Int,
+        val updates: List<LorebookUpdate> = emptyList(),
+        val deletions: List<String> = emptyList(),
+        val compactedThroughTurn: Int = -1,
+        val legacy: Boolean = false
+    ) : MemoryWriteProposal
+
+    @Serializable
+    data class Summary(
+        override val runId: String,
+        override val turnIndex: Int,
+        val text: String = ""
+    ) : MemoryWriteProposal
+}
+```
+
+`Lorebook` is the proposal for both lorebook write paths. `legacy = false` marks the typed `LorebookAgentOutput` envelope; `legacy = true` marks the legacy free-form JSON path. `compactedThroughTurn` is the cursor advance the typed applier applies; on the legacy path it carries the cursor's next value because the legacy path never advances the cursor. `toLorebookAgentOutput()` converts the proposal back into the typed envelope consumed by the applier.
+
+`Summary` is the proposal for the summary write; `text` replaces `turnSummary` wholesale on approval.
+
+The hook returns the proposal to apply — possibly modified — or `null` to reject it. A rejection on the lorebook path does not advance the lorebook cursor; a rejection on the summary path leaves the previous `turnSummary` in place.
+
+### MemoryWriteKind
+
+`Enums/MemoryWriteKind.kt:8` — Which memory subsystem a proposal targeted.
+
+```kotlin
+enum class MemoryWriteKind {
+    LOREBOOK,   // A proposed mutation of the harness lorebook map
+    SUMMARY     // A proposed replacement of the harness turn summary
+}
+```
+
+### MemoryWriteEvaluated (event)
+
+`Pipeline/PumpStationModels.kt:838` — Emitted when the `preMemoryFunction` hook evaluates a proposed write. Emitted **only when a hook is bound**, so an unbound station produces no extra event traffic.
+
+```kotlin
+@Serializable
+data class MemoryWriteEvaluated(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.MemoryUpdate,
+    val kind: MemoryWriteKind,
+    val approved: Boolean,
+    val updateCount: Int = 0,
+    val deletionCount: Int = 0,
+    val summaryLength: Int = 0,
+    val reason: String = ""
+) : PumpStationEvent
+```
+
+`kind` discriminates the two write paths. `approved` is false when the hook returned `null`, returned the wrong proposal subtype, or threw — `reason` distinguishes those cases (`"rejected by hook"`, `"proposal type mismatch"`, `"hook exception: <message>"`). `updateCount` and `deletionCount` count the lorebook entries and deletions in the proposal; `summaryLength` is the length of the proposed summary text.
+
 
 ## Health Models
 
@@ -661,6 +729,7 @@ The full event taxonomy is documented below. Each event has a corresponding `Tra
 |-------|------|-------|-------------|
 | `MemoryUpdateStarted` | `memoryMode: PumpStationMemoryManagementMode` | `MemoryUpdate` | Emitted at the start of `runMemoryUpdatePhase`. |
 | `MemoryUpdateCompleted` | `memoryMode: PumpStationMemoryManagementMode`, `result: MemoryActionResult` | `MemoryUpdate` | Emitted at the end of `runMemoryUpdatePhase`. |
+| `MemoryWriteEvaluated` | `kind: MemoryWriteKind`, `approved: Boolean`, `updateCount: Int`, `deletionCount: Int`, `summaryLength: Int`, `reason: String` | `MemoryUpdate` | Emitted when the `preMemoryFunction` hook evaluates a proposed lorebook or summary write. Emitted only when a hook is bound. |
 | `StashCreated` | `stashId: String`, `sourcePath: String?`, `reason: StashReason`, `tokenEstimate: Int?` | `MemoryUpdate` | Emitted when content is stashed. |
 | `CompactionStarted` | `strategy: PumpStationCompactionStrategy`, `memoryMode: PumpStationMemoryManagementMode` | `Compaction` | Emitted at the start of `runCompactionPhase`. |
 | `CompactionCompleted` | `strategy: PumpStationCompactionStrategy`, `memoryMode: PumpStationMemoryManagementMode`, `previousHistorySize: Int`, `newHistorySize: Int`, `result: CompactionResult?` | `Compaction` | Emitted at the end of `runCompactionPhase`. |
@@ -898,6 +967,8 @@ The `revealWhen` predicate on a `PathObject` is typed as this alias. The receive
 | `WarningCode`, `ExitMechanism`, `ReservePathRevealPredicate` | `Pipeline/PumpStationModels.kt` |
 | `ChunkFanoutMode`, `CompactionCursor`, `LorebookCursor`, `CompactionBackup`, `CompactionResult` | `Pipeline/PumpStationV3Models.kt` |
 | `LorebookAgentInput`, `LorebookTaskContext`, `LorebookAgentOutput`, `LorebookUpdate`, `LorebookOperation` | `Pipeline/LorebookAgentModels.kt` |
+| `MemoryWriteProposal` (sealed interface) and its `Lorebook` / `Summary` subtypes | `Pipeline/PumpStationMemoryModels.kt` |
+| `MemoryWriteKind` | `Enums/MemoryWriteKind.kt` |
 | `HealthContext`, `HealthReport` | `Pipeline/PumpStationModels.kt` |
 
 

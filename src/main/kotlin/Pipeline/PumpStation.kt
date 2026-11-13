@@ -2095,9 +2095,8 @@ private fun pathKey(name: String): String = name.lowercase()
      * Mutex held by all async-origin writes to harness state. The [ConverseHistory]
      * data class does not have its own internal lock, so async coroutines
      * ([appendTurnEntryAsync], [appendTurnEntriesAsync]) must acquire this mutex
-     * before touching [turnHistory], [rawTurnHistory], [turnSummary],
-     * [contextWindow], or [taskState]. Foreground code paths retain the existing
-     * single-coroutine funnel and do not need to take this mutex.
+     * before touching [turnHistory] or [rawTurnHistory]. Foreground code paths
+     * retain the existing single-coroutine funnel and do not need to take this mutex.
      */
     private val historyMutex = Mutex()
 
@@ -2490,6 +2489,16 @@ private fun pathKey(name: String): String = name.lowercase()
      * DITL function that executes after memory agents complete a memory update task.
      */
     private var postMemoryFunction: (suspend (content: MultimodalContent, harness: PumpStation) -> MultimodalContent)? = null
+
+    /**
+     * DITL function invoked immediately before a harness memory agent's output is written to
+     * persistent memory. Receives the proposed write; returns the write to apply (possibly
+     * modified) or null to reject it.
+     *
+     * Rejecting a lorebook write leaves the lorebook cursor untouched, so the underlying turns
+     * are re-offered to the lorebook agent on the next memory update.
+     */
+    private var preMemoryFunction: (suspend (proposal: MemoryWriteProposal, harness: PumpStation) -> MemoryWriteProposal?)? = null
 
     /**
      * DITL function that fires when a memory blowout has been detected. Commonly caused by an unmanaged path that did not
@@ -3192,6 +3201,7 @@ private fun pathKey(name: String): String = name.lowercase()
     internal val pathValidationFunctionInternal get() = pathValidationFunction
     internal val pathTransformationFunctionInternal get() = pathTransformationFunction
     internal val postMemoryFunctionInternal get() = postMemoryFunction
+    internal val preMemoryFunctionInternal get() = preMemoryFunction
     internal val preCompactionFunctionInternal get() = preCompactionFunction
     internal val postCompactionFunctionInternal get() = postCompactionFunction
     internal val pathSafetyFunctionInternal get() = pathSafetyFunction
@@ -6300,6 +6310,24 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setPostMemoryFunction(func: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)?): PumpStation
     {
         this.postMemoryFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL function that fires immediately before a harness memory agent's output is
+     * written to persistent memory.
+     *
+     * The hook receives the proposed write and returns the write to apply — possibly modified —
+     * or null to reject it. A rejected lorebook write does not land and does not advance the
+     * lorebook cursor, so the underlying turns are re-offered on the next memory update. A
+     * rejected summary write leaves the previous summary in place.
+     *
+     * @param func The pre-memory function, or null to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setPreMemoryFunction(func: (suspend (MemoryWriteProposal, PumpStation) -> MemoryWriteProposal?)?): PumpStation
+    {
+        this.preMemoryFunction = func
         return this
     }
 

@@ -327,6 +327,7 @@ class PumpStationSetGetTest
                 pathValidationFunction = { _, _ -> true }
                 pathTransformationFunction = { c, _ -> c }
                 postMemoryFunction = { c, _ -> c }
+                preMemoryFunction = { p, _ -> p }
                 preCompactionFunction = { c, _, _, _ -> c }
                 postCompactionFunction = { c, _, _ -> c }
 

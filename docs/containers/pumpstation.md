@@ -27,6 +27,7 @@
 - [Memory Management](#memory-management)
 - [Concurrency Modes](#concurrency-modes)
 - [DITL Hooks](#ditl-hooks)
+  - [Pre-Memory Hook](#pre-memory-hook)
 - [Path Risk Levels](#path-risk-levels)
 - [Loop Guards](#loop-guards)
 - [Reserve Paths](#reserve-paths)
@@ -590,6 +591,8 @@ Each `LorebookUpdate` carries `key`, `value`, `weight`, `linkedKeys`, `aliasKeys
 
 If the agent returns a `LoreBook` JSON object (or an array of them) without the typed envelope, the harness falls back to the legacy free-form path (`applyLorebookUpdates`).
 
+Before either path lands, the proposed write is passed to the `preMemoryFunction` DITL hook — see [Pre-Memory Hook](#pre-memory-hook). A rejected proposal does not land and does not advance the cursor.
+
 The lorebook agent runs under `lorebookMutex` so concurrent turns queue their updates in chronological order.
 
 ### The Summary Agent Contract
@@ -606,6 +609,8 @@ The summary agent produces the `turnSummary` string injected at the top of the j
 **What the summary agent must output:**
 
 A `MultimodalContent` whose `text` becomes the new `turnSummary`. The harness replaces the previous summary wholesale. There is no JSON contract — the agent is expected to produce prose.
+
+Before the summary lands, the proposal is passed to the `preMemoryFunction` DITL hook — see [Pre-Memory Hook](#pre-memory-hook). A rejected proposal leaves the previous `turnSummary` in place.
 
 The summary agent runs under `summaryMutex` so concurrent turns queue their updates in chronological order.
 
@@ -1366,6 +1371,7 @@ PumpStation exposes six Developer-in-the-Loop hooks plus three agent-level funct
 | `postGenerateFunction` | `(suspend (MultimodalContent, PumpStation) -> P2PInterface)?` | After dispatch produces a path request | Dispatch result | Optional `P2PInterface` surfaced in metadata |
 | `pathValidationFunction` | `(suspend (MultimodalContent, PumpStation) -> Boolean)?` | After path executes | Path result | `false` to reject the result; original input flows through |
 | `pathTransformationFunction` | `(suspend (MultimodalContent, PumpStation) -> MultimodalContent)?` | After path validation passes | Path result | Replacement content for `turnHistory` |
+| `preMemoryFunction` | `(suspend (MemoryWriteProposal, PumpStation) -> MemoryWriteProposal?)?` | Before a lorebook/summary write lands | Proposed write | The write to apply (possibly modified), or `null` to reject |
 | `postMemoryFunction` | `(suspend (MultimodalContent, PumpStation) -> MultimodalContent)?` | After lorebook/summary agents | Latest content | Replacement content |
 | `preCompactionFunction` | `(suspend (MultimodalContent, ConverseData, ConverseHistory, PumpStation) -> MultimodalContent)?` | Before compaction | Latest content + overflow turn + history | Replacement content (advisory) |
 | `postCompactionFunction` | `(suspend (MultimodalContent, ConverseHistory, PumpStation) -> MultimodalContent)?` | After compaction | Latest content + new history | Replacement content (advisory) |
@@ -1389,8 +1395,9 @@ The DITL hook order per turn:
 10. `pathTransformationFunction`
 11. result appended to `turnHistory` and `rawTurnHistory`
 12. (foreground phase) blocking harness agent slots
-13. (memory phase) `postMemoryFunction`
-14. (compaction phase) `preCompactionFunction`, then `summaryAgent`, then `postCompactionFunction`
+13. (memory phase) lorebook/summary agents run in the background; each proposed write passes through `preMemoryFunction` before it lands
+14. (memory phase) `postMemoryFunction`
+15. (compaction phase) `preCompactionFunction`, then `summaryAgent`, then `postCompactionFunction`
 
 Setters on `PumpStation`:
 
@@ -1402,6 +1409,7 @@ fun setPreValidationDispatchFunction(fn: (suspend (MultimodalContent, ContextWin
 fun setPostGenerateFunction(fn: (suspend (MultimodalContent, PumpStation) -> P2PInterface)?): PumpStation
 fun setPathValidationFunction(fn: (suspend (MultimodalContent, PumpStation) -> Boolean)?): PumpStation
 fun setPathTransformationFunction(fn: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)?): PumpStation
+fun setPreMemoryFunction(fn: (suspend (MemoryWriteProposal, PumpStation) -> MemoryWriteProposal?)?): PumpStation
 fun setPostMemoryFunction(fn: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)?): PumpStation
 fun setPreCompactionFunction(fn: (suspend (MultimodalContent, ConverseData, ConverseHistory, PumpStation) -> MultimodalContent)?): PumpStation
 fun setPostCompactionFunction(fn: (suspend (MultimodalContent, ConverseHistory, PumpStation) -> MultimodalContent)?): PumpStation
@@ -1413,6 +1421,97 @@ fun setExternalContextProvider(provider: ((PumpStationTaskState) -> MutableMap<S
 ```
 
 All setters return `this` for chaining. The DSL exposes these as `setXyz { ... }` builder setters via the top-level `PumpStationBuilder`.
+
+
+### Pre-Memory Hook
+
+`preMemoryFunction` is the developer-side gate between a harness memory agent producing output and that output landing in persistent memory. It is the dedicated place where a developer can approve, modify, or reject a lorebook write or a summary write. (The lorebook and summary agents also carry their own `terminatePipeline` / `passPipeline` write veto, but that is the agent declining, not the developer adjudicating.)
+
+**Type:**
+
+```kotlin
+(suspend (proposal: MemoryWriteProposal, harness: PumpStation) -> MemoryWriteProposal?)?
+```
+
+**Scope — three write paths are gated:**
+
+| Path | Proposal subtype | What lands on approval |
+|------|------------------|-------------------------|
+| Typed lorebook envelope (`LorebookAgentOutput`) | `MemoryWriteProposal.Lorebook` (`legacy = false`) | The merged/replaced lorebook entries plus the deletions, then the lorebook cursor advances to `compactedThroughTurn` |
+| Legacy free-form lorebook JSON (a `LoreBook` object or array) | `MemoryWriteProposal.Lorebook` (`legacy = true`) | The parsed entries, merged into the lorebook map. The cursor does **not** advance on this path |
+| Summary agent output | `MemoryWriteProposal.Summary` | `turnSummary`, replaced wholesale |
+
+`MemoryWriteProposal` is a `@Serializable sealed interface` in `Pipeline/PumpStationMemoryModels.kt` with two data-class subtypes, `Lorebook` and `Summary`. Both carry `runId` and `turnIndex` so a hook can correlate the proposal with the turn that produced it.
+
+**Approve, modify, or reject:**
+
+The return value carries the decision:
+
+- **Return the proposal unchanged** — the write lands as the agent produced it.
+- **Return a modified proposal** — the *modified* write lands, not the original. This is the case a Boolean gate cannot express: a developer can strip one lorebook entry, rewrite a summary, change a `LorebookOperation.Merge` into a `LorebookOperation.Replace`, or advance `compactedThroughTurn` to a different turn.
+- **Return `null`** — the write is rejected. Nothing lands.
+
+The returned proposal must be the same subtype as the one passed in. A `MemoryWriteProposal.Summary` returned for a lorebook proposal (or vice versa) is treated as a rejection with `reason = "proposal type mismatch"` — the harness does not attempt to coerce between subtypes.
+
+```kotlin
+// Illustrative: ALLOWED_KEYS and MAX_SUMMARY_CHARS are developer-defined.
+station.setPreMemoryFunction { proposal, _ ->
+    when (proposal)
+    {
+        is MemoryWriteProposal.Lorebook ->
+        {
+            // Drop entries the agent invented but the developer does not trust.
+            val trusted = proposal.updates.filter { it.key in ALLOWED_KEYS }
+            proposal.copy(updates = trusted)
+        }
+        is MemoryWriteProposal.Summary ->
+        {
+            if (proposal.text.length > MAX_SUMMARY_CHARS) proposal.copy(text = proposal.text.take(MAX_SUMMARY_CHARS))
+            else proposal
+        }
+    }
+}
+```
+
+The DSL exposes the same hook as a builder property:
+
+```kotlin
+val station = pumpStation("research-station") {
+    // ...
+    preMemoryFunction = { proposal, _ ->
+        if (proposal is MemoryWriteProposal.Lorebook)
+        {
+            proposal.copy(updates = proposal.updates.filter { it.key in ALLOWED_KEYS })
+        }
+        else proposal
+    }
+}
+```
+
+**Rejection semantics:**
+
+- A rejected **lorebook** write does not land and does **not** advance the lorebook cursor. The turns that were folded into the rejected proposal stay "unlearned" and are re-offered to the lorebook agent on the next memory update.
+- A rejected **summary** write leaves the previous `turnSummary` in place. The summary agent's proposal is simply discarded.
+
+**Fail-closed on exception:**
+
+If the hook throws, the write is rejected and the harness continues. The exception message is recorded on the emitted event's `reason` field as `hook exception: <message>`. This matters because the memory update runs inside a background coroutine where an escaping exception would be swallowed and silently kill the job — fail-closed means a broken hook can never silently approve a write.
+
+**Ordering relative to the staleness check:**
+
+On the typed lorebook path, the cursor staleness check runs *before* the hook. An output whose `compactedThroughTurn` is not strictly greater than the current cursor is discarded as a no-op and never reaches the hook — a superseded write is not something the developer needs to adjudicate.
+
+**Background-thread caveat:**
+
+The hook fires inside the memory-update background job, not on the foreground harness loop. It runs under `lorebookMutex` (lorebook) or `summaryMutex` (summary) on the station-scoped `asyncScope` (`Dispatchers.Default`) — or on `GlobalScope` when `asyncJobsScopedToStation` is disabled. A slow hook delays only that memory update; it does not stall the judge/dispatch loop. But it does hold the mutex, so a hook that blocks indefinitely blocks every later lorebook or summary update for the life of the station. Keep the hook fast, and do not call back into the harness's foreground-only surfaces from it.
+
+**Cursor-growth caveat:**
+
+Because a rejected lorebook write leaves the cursor untouched, repeatedly rejecting the same proposal means the lorebook agent is re-fed the same growing slice of turns on every memory update. The agent's input — and its cost — grows without bound. If the intent is to *edit* rather than *block* a write, approve it with a modified proposal (including an advanced `compactedThroughTurn`) instead of rejecting it outright. Reserve rejection for writes that should genuinely not be learned.
+
+**Event:**
+
+Every evaluation publishes a `MemoryWriteEvaluated` event (`Pipeline/PumpStationModels.kt:838`) carrying `kind` (`MemoryWriteKind.LOREBOOK` or `MemoryWriteKind.SUMMARY`), `approved`, `updateCount`, `deletionCount`, `summaryLength`, and `reason`. The event is emitted **only when a hook is bound**, so an unbound station produces no extra event traffic. It surfaces in the trace visualizer under the `🛡` / `MemWrite` label.
 
 
 ## Path Risk Levels
@@ -1564,7 +1663,7 @@ The substrate is anchored by four pieces of state, all declared on `PumpStation`
 |-------|------|---------|
 | `asyncScope` | `CoroutineScope` (`SupervisorJob() + Dispatchers.Default`) | The scope backing every async coroutine launched by the harness. Replaces the pre-substrate `GlobalScope.launch` calls so async work cannot outlive `executeLocal`. |
 | `pendingAsyncResults` | `Channel<PendingTurnEntry>` (`UNLIMITED`) | Queue of async-produced turn entries awaiting foreground drain. Bounded by `maxConcurrentBackgroundAgents` in practice. |
-| `historyMutex` | `Mutex` | Serializes async-origin writes to `turnHistory`, `rawTurnHistory`, `turnSummary`, `contextWindow`, and `taskState`. Foreground code paths keep their single-coroutine funnel and do not need to acquire this mutex. |
+| `historyMutex` | `Mutex` | Serializes async-origin writes to `turnHistory` and `rawTurnHistory`. Foreground code paths keep their single-coroutine funnel and do not need to acquire this mutex. |
 | `asyncSeqCounter` | `AtomicLong` | Monotonic id assigned to every `PendingTurnEntry` at enqueue time. The foreground drain sorts pending entries by `seq` so out-of-order async completions still produce a deterministic merge order from the LLM's perspective. |
 
 `ConverseHistory` is a plain data class with no internal lock, so direct mutation of `turnHistory` from async code is NOT safe. The single thread-safe access point is `appendTurnEntryAsync(entry, source)` (and its batch sibling `appendTurnEntriesAsync`), which acquires `historyMutex`, appends the entry, and emits an `AsyncTurnAppended` event.
@@ -2150,6 +2249,7 @@ Trace events emitted by PumpStation:
 | `PUMP_STATION_FOREGROUND_AGENT_COMPLETED` | `ForegroundAgentCompleted` | agentName, contentPreview, token usage |
 | `PUMP_STATION_MEMORY_UPDATE_STARTED` | `MemoryUpdateStarted` | memoryMode |
 | `PUMP_STATION_MEMORY_UPDATE_COMPLETED` | `MemoryUpdateCompleted` | memoryMode, compactionPercent, loreBookActive, summaryActive |
+| `PUMP_STATION_MEMORY_WRITE_EVALUATED` | `MemoryWriteEvaluated` | kind, approved, updateCount, deletionCount, summaryLength, reason |
 | `PUMP_STATION_STASH_CREATED` | `StashCreated` | stashId, sourcePath, reason, tokenEstimate |
 | `PUMP_STATION_COMPACTION_STARTED` | `CompactionStarted` | strategy, memoryMode |
 | `PUMP_STATION_COMPACTION_COMPLETED` | `CompactionCompleted` and `CompactionAttemptCompleted` | strategy, memoryMode, attempt, fanout, result |

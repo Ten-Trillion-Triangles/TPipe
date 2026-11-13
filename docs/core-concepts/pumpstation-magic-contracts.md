@@ -320,6 +320,27 @@ data class LorebookAgentOutput(
 
 The harness tries the typed envelope first (`applyTypedLorebookUpdates` at `Pipeline/PumpStationLoop.kt:1416`). If that fails, it falls back to the legacy free-form JSON path (`applyLorebookUpdates` at `Pipeline/PumpStationLoop.kt:1479`) which accepts `LoreBook` objects or arrays thereof.
 
+### Pre-Memory Gate
+
+Both lorebook paths present their proposed write to the developer's `preMemoryFunction` DITL hook before anything lands:
+
+```kotlin
+(suspend (proposal: MemoryWriteProposal, harness: PumpStation) -> MemoryWriteProposal?)?
+```
+
+The proposal arrives as `MemoryWriteProposal.Lorebook` (a `@Serializable sealed interface` in `Pipeline/PumpStationMemoryModels.kt`). The hook returns the write to apply — possibly modified — or `null` to reject it. Returning a proposal of the wrong subtype is treated as a rejection.
+
+| Path | `legacy` flag | Cursor behavior on approval |
+|------|---------------|------------------------------|
+| Typed envelope | `false` | The cursor advances to `compactedThroughTurn` |
+| Legacy free-form JSON | `true` | The cursor does **not** advance |
+
+A **rejected** lorebook write does not land and does not advance the cursor, so the turns the agent was folding in are re-offered on the next memory update. A hook that throws is treated as a rejection (fail-closed); the exception message is carried on the emitted `MemoryWriteEvaluated` event's `reason` field.
+
+The typed path's staleness check runs *before* the hook — an output whose `compactedThroughTurn` is not strictly greater than the current cursor is discarded as a no-op and never reaches the hook.
+
+The hook fires inside the background memory-update job, under `lorebookMutex`, on the station-scoped `asyncScope` — not on the foreground harness loop.
+
 ### Cursor Pre-Emption
 
 The lorebook agent runs under `lorebookMutex` to keep updates chronological. The cursor (`LorebookCursor.lastUpdatedTurnIndex`) is advanced on success. Outputs whose `compactedThroughTurn` is not strictly greater than the current cursor are discarded silently — concurrent updates that have already covered the work are dropped without re-running the LLM.
@@ -358,12 +379,33 @@ internal suspend fun PumpStation.updateSummary() {
             return
         }
         if (flags.shouldPass) return
-        turnSummary = summaryResult.text
+        val proposal = MemoryWriteProposal.Summary(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            text = summaryResult.text
+        )
+        val approved = evaluateMemoryWrite(proposal)
+        if (approved == null) return
+        if (approved !is MemoryWriteProposal.Summary) {
+            emitMemoryWriteEvaluated(proposal, approved = false, reason = "proposal type mismatch")
+            return
+        }
+        turnSummary = approved.text
     }
 }
 ```
 
 The summary agent runs under `summaryMutex` for chronological ordering. If the agent signals `terminatePipeline = true`, the harness records `lastError = P2PRequestInvalid` and skips the update. If the agent signals `passPipeline = true`, the harness skips the update without error.
+
+### Pre-Memory Gate
+
+The proposed summary is presented to the developer's `preMemoryFunction` DITL hook before it lands, as `MemoryWriteProposal.Summary`:
+
+```kotlin
+(suspend (proposal: MemoryWriteProposal, harness: PumpStation) -> MemoryWriteProposal?)?
+```
+
+The hook returns the summary to apply — possibly a rewritten `text` — or `null` to reject it. A rejected summary leaves the previous `turnSummary` in place. A hook that throws is treated as a rejection (fail-closed). The hook fires inside the background memory-update job, under `summaryMutex`, on the station-scoped `asyncScope` — not on the foreground harness loop.
 
 
 ## Path Descriptor Contract (Inbound)

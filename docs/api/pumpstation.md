@@ -212,6 +212,7 @@ pumpStation("name") {
     setPostGenerateFunction { content, station -> station }
     setPathValidationFunction { content, station -> true }
     setPathTransformationFunction { content, station -> content }
+    setPreMemoryFunction { proposal, station -> proposal }
     setPostMemoryFunction { content, station -> content }
     setPreCompactionFunction { content, overflow, history, station -> content }
     setPostCompactionFunction { content, history, station -> content }

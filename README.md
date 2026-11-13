@@ -235,6 +235,7 @@ println(result.text)
 - **Retrieval functions** for lazy-loading context from databases and APIs
 - **Context access control** with ContextLock enforcement for secure lorebook and page management
 - **Developer-in-the-loop integration** with code and AI-powered validation
+- **Memory-write gating** in the PumpStation harness — approve, modify, or reject lorebook and summary writes before they land in persistent memory
 - **Chain-of-thought reasoning** with multiple strategies and focus points
 - **Multi-provider AI support** (AWS Bedrock, AWS Bedrock Mantle, Ollama, OpenRouter, extensible architecture)
 - **Kotlin and JavaScript scripting** in PCP alongside Python and native functions

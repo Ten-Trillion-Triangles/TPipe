@@ -2163,6 +2163,14 @@ public final class com/TTT/Enums/SystemContextInjectionPoint : java/lang/Enum {
 	public static fun values ()[Lcom/TTT/Enums/SystemContextInjectionPoint;
 }
 
+public final class com/TTT/Enums/MemoryWriteKind : java/lang/Enum {
+	public static final field LOREBOOK Lcom/TTT/Enums/MemoryWriteKind;
+	public static final field SUMMARY Lcom/TTT/Enums/MemoryWriteKind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Enums/MemoryWriteKind;
+	public static fun values ()[Lcom/TTT/Enums/MemoryWriteKind;
+}
+
 public final class com/TTT/Enums/SystemContextInjectionPoint$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
@@ -12772,6 +12780,133 @@ public final class com/TTT/Pipeline/MemoryUpdateStarted$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
+public final class com/TTT/Pipeline/MemoryWriteEvaluated : com/TTT/Pipeline/PumpStationEvent {
+	public static final field Companion Lcom/TTT/Pipeline/MemoryWriteEvaluated$Companion;
+	public fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Lcom/TTT/Enums/MemoryWriteKind;ZIIILjava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Lcom/TTT/Enums/MemoryWriteKind;ZIIILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()J
+	public final fun component4 ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun component5 ()Lcom/TTT/Enums/MemoryWriteKind;
+	public final fun component6 ()Z
+	public final fun component7 ()I
+	public final fun component8 ()I
+	public final fun component9 ()I
+	public final fun copy (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Lcom/TTT/Enums/MemoryWriteKind;ZIIILjava/lang/String;)Lcom/TTT/Pipeline/MemoryWriteEvaluated;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/MemoryWriteEvaluated;Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Lcom/TTT/Enums/MemoryWriteKind;ZIIILjava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/MemoryWriteEvaluated;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getApproved ()Z
+	public final fun getDeletionCount ()I
+	public final fun getKind ()Lcom/TTT/Enums/MemoryWriteKind;
+	public fun getPhase ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun getReason ()Ljava/lang/String;
+	public fun getRunId ()Ljava/lang/String;
+	public final fun getSummaryLength ()I
+	public fun getTimestamp ()J
+	public fun getTurnIndex ()I
+	public final fun getUpdateCount ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/MemoryWriteEvaluated$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/MemoryWriteEvaluated$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/MemoryWriteEvaluated;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/MemoryWriteEvaluated;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/MemoryWriteEvaluated$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public abstract interface class com/TTT/Pipeline/MemoryWriteProposal {
+	public static final field Companion Lcom/TTT/Pipeline/MemoryWriteProposal$Companion;
+	public abstract fun getRunId ()Ljava/lang/String;
+	public abstract fun getTurnIndex ()I
+}
+
+public final class com/TTT/Pipeline/MemoryWriteProposal$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/MemoryWriteProposal$Lorebook : com/TTT/Pipeline/MemoryWriteProposal {
+	public static final field Companion Lcom/TTT/Pipeline/MemoryWriteProposal$Lorebook$Companion;
+	public fun <init> (Ljava/lang/String;ILjava/util/List;Ljava/util/List;IZ)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/util/List;Ljava/util/List;IZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()I
+	public final fun component6 ()Z
+	public final fun copy (Ljava/lang/String;ILjava/util/List;Ljava/util/List;IZ)Lcom/TTT/Pipeline/MemoryWriteProposal$Lorebook;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/MemoryWriteProposal$Lorebook;Ljava/lang/String;ILjava/util/List;Ljava/util/List;IZILjava/lang/Object;)Lcom/TTT/Pipeline/MemoryWriteProposal$Lorebook;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCompactedThroughTurn ()I
+	public final fun getDeletions ()Ljava/util/List;
+	public final fun getLegacy ()Z
+	public fun getRunId ()Ljava/lang/String;
+	public fun getTurnIndex ()I
+	public final fun getUpdates ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun toLorebookAgentOutput ()Lcom/TTT/Pipeline/LorebookAgentOutput;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/MemoryWriteProposal$Lorebook$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/MemoryWriteProposal$Lorebook$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/MemoryWriteProposal$Lorebook;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/MemoryWriteProposal$Lorebook;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/MemoryWriteProposal$Lorebook$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/MemoryWriteProposal$Summary : com/TTT/Pipeline/MemoryWriteProposal {
+	public static final field Companion Lcom/TTT/Pipeline/MemoryWriteProposal$Summary$Companion;
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;ILjava/lang/String;)Lcom/TTT/Pipeline/MemoryWriteProposal$Summary;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/MemoryWriteProposal$Summary;Ljava/lang/String;ILjava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/MemoryWriteProposal$Summary;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getRunId ()Ljava/lang/String;
+	public final fun getText ()Ljava/lang/String;
+	public fun getTurnIndex ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/MemoryWriteProposal$Summary$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/MemoryWriteProposal$Summary$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/MemoryWriteProposal$Summary;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/MemoryWriteProposal$Summary;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/MemoryWriteProposal$Summary$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
 public final class com/TTT/Pipeline/ModeratorDirective {
 	public static final field Companion Lcom/TTT/Pipeline/ModeratorDirective$Companion;
 	public fun <init> ()V
@@ -14270,6 +14405,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setPreInitAgent (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setPreInitFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setPreInvokeFunction (Lkotlin/jvm/functions/Function4;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setPreMemoryFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setPrePruneTransform (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setPreValidationDispatchFunction (Lkotlin/jvm/functions/Function5;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setPreValidationJudgeFunction (Lkotlin/jvm/functions/Function4;)Lcom/TTT/Pipeline/PumpStation;
@@ -14400,6 +14536,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun getPreInitAgent ()Lcom/TTT/P2P/P2PInterface;
 	public final fun getPreInitFunction ()Lkotlin/jvm/functions/Function3;
 	public final fun getPreInvokeFunction ()Lkotlin/jvm/functions/Function4;
+	public final fun getPreMemoryFunction ()Lkotlin/jvm/functions/Function3;
 	public final fun getPreValidationDispatchFunction ()Lkotlin/jvm/functions/Function5;
 	public final fun getPreValidationJudgeFunction ()Lkotlin/jvm/functions/Function4;
 	public final fun getRequirePathSelectionRationale ()Z
@@ -14515,6 +14652,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun setPreInitAgent (Lcom/TTT/P2P/P2PInterface;)V
 	public final fun setPreInitFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setPreInvokeFunction (Lkotlin/jvm/functions/Function4;)V
+	public final fun setPreMemoryFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setPreValidationDispatchFunction (Lkotlin/jvm/functions/Function5;)V
 	public final fun setPreValidationJudgeFunction (Lkotlin/jvm/functions/Function4;)V
 	public final fun setRequirePathSelectionRationale (Z)V

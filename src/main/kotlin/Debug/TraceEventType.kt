@@ -200,6 +200,7 @@ enum class TraceEventType {
 
     PUMP_STATION_MEMORY_UPDATE_STARTED,
     PUMP_STATION_MEMORY_UPDATE_COMPLETED,
+    PUMP_STATION_MEMORY_WRITE_EVALUATED,
     PUMP_STATION_COMPACTION_STARTED,
     PUMP_STATION_COMPACTION_COMPLETED,
     // v3: per-attempt / failure / handoff events for the new orchestrator. CompactionCompleted

@@ -76,7 +76,7 @@ fun enableTracing(config: TraceConfig = TraceConfig()) {
 - **Manifold**: Manager-worker task coordination
 - **DistributionGrid**: Decentralized remote grid harness with local execution, explicit-peer handoff, trusted registry discovery, runtime hardening, and a Kotlin DSL
 - **Junction**: Democratic discussion, voting, and workflow harness
-- **PumpStation**: Judge / dispatch / path-loop agentic harness with async memory management, DITL hooks, goal validation, v3 compaction, reserve paths, kill switch, and a Kotlin DSL
+- **PumpStation**: Judge / dispatch / path-loop agentic harness with async memory management, DITL hooks, memory-write gating, goal validation, v3 compaction, reserve paths, kill switch, and a Kotlin DSL
 
 ## When to Use Containers
 
