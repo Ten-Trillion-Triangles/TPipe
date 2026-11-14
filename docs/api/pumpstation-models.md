@@ -718,7 +718,7 @@ The full event taxonomy is documented below. Each event has a corresponding `Tra
 | Event | Data | Phase | Description |
 |-------|------|-------|-------------|
 | `ForegroundAgentCompleted` | `agentName: String`, `result: MultimodalContent?`, `inputTokens: Int?`, `outputTokens: Int?`, `totalTokens: Int?` | `ForegroundAgents` | Emitted when a foreground (Blocking) agent finishes. |
-| `BackgroundAgentQueued` | `agentName: String` | `ForegroundAgents` | Emitted when a background (Async) agent is queued. |
+| `BackgroundAgentQueued` | `agentName: String` | `BackgroundAgents` | Emitted when a background (Async) agent is queued. |
 | `AsyncTurnAppended` | `source: String`, `pathName: String?`, `agentName: String?`, `seq: Long`, `content: MultimodalContent?` | `PathExecution` | Emitted when an async path or async harness agent result is merged into `turnHistory` by the foreground drain. Observers can correlate the merge back to the dispatch via `seq` and `pathName` / `agentName`. |
 
 ### Memory and Compaction Events
@@ -772,6 +772,8 @@ Documented under [Path and Loop Guard Events](#path-and-loop-guard-events) above
 | Event | Data | Phase | Description |
 |-------|------|-------|-------------|
 | `NestedP2PCompleted` | `pathName: String?`, `agentName: String`, `response: MultimodalContent?`, `inputTokens: Int?`, `outputTokens: Int?`, `totalTokens: Int?` | `PathExecution` | Emitted when a nested P2P request completes inside a path. |
+| `ForceApplied` | `target: PumpStationForceTarget`, `source: String` | consuming phase | Emitted when a developer-armed force was honoured and the named subsystem ran. The phase is the consuming phase: `Judge`, `HealthCheck`, `MemoryUpdate` (lorebook / summary), `Compaction`, `SafePrune`, `ForegroundAgents` (blocking slots), or `BackgroundAgents` (async slots). See [Force Flag Models](#force-flag-models). |
+| `ForceSkipped` | `target: PumpStationForceTarget`, `reason: String` | consuming phase | Emitted when a developer-armed force was consumed but the named subsystem was not configured. The phase is the consuming phase, as above. See [Force Flag Models](#force-flag-models). |
 
 
 ## Loop Control Models
@@ -872,6 +874,60 @@ data class JudgeVerdict(
 
 `isComplete` and `shouldTerminate` come from the JSON parser. `shouldHalt` and `reason` are set later by `withFlagCheck(content)` based on the source `MultimodalContent`'s flags.
 
+
+## Force Flag Models
+
+### PumpStationForceTarget
+
+`Enums/PumpStationForceTarget.kt` — The harness subsystems a developer can force-activate at runtime.
+
+```kotlin
+enum class PumpStationForceTarget {
+    Judge, HealthCheck, Lorebook, Summary, Compaction, ForegroundAgents, BackgroundAgents, SafePrune
+}
+```
+
+A force overrides the interval / threshold gate of the named subsystem. It never conjures a subsystem that was never configured — an unconfigured target reports `ForceSkipped` instead.
+
+The enum is carried in-process on `MultimodalContent.forceTargets`, which is `@Transient`: a force never crosses a serialization boundary, and the content wire shape is unchanged. Because the field is a constructor property, `MultimodalContent.copy()` carries the request with it.
+
+### ForceApplied (event)
+
+`Pipeline/PumpStationModels.kt:1265` — A developer-armed force was honoured: the named subsystem ran even though its gate would otherwise have skipped it.
+
+```kotlin
+@Serializable
+data class ForceApplied(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Judge,
+    val target: PumpStationForceTarget,
+    val source: String = ""
+) : PumpStationEvent
+```
+
+`source` names the harness site that consumed the force — for example `memory-update`, `health-check`, or `background-agents`.
+
+A forced async harness slot reports `PumpStationPhase.BackgroundAgents` and a forced blocking slot reports `ForegroundAgents`, so the phase alone tells the two slot kinds apart. The `source` field (`background-agents` versus `foreground-agents`) names the exact consuming site.
+
+### ForceSkipped (event)
+
+`Pipeline/PumpStationModels.kt:1282` — A developer-armed force was consumed but could not be honoured because the named subsystem was never configured on this station.
+
+```kotlin
+@Serializable
+data class ForceSkipped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Judge,
+    val target: PumpStationForceTarget,
+    val reason: String = ""
+) : PumpStationEvent
+```
+
+A skipped force is still consumed: the registry never leaves a force armed.
 
 ## Async Substrate Models
 

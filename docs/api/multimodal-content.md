@@ -86,6 +86,14 @@ When true, the reasoning pipe's output is discarded before injection. The parent
 ```
 Signals an interrupt to the pipeline runtime. Used by `PumpStation` to trigger built-in path interventions, interrupt stages, or other harness-level events. Unlike `terminatePipeline`, this does not fail the pipeline — it signals that a specialized handler should activate.
 
+**`forceTargets`**
+```kotlin
+@Transient var forceTargets: MutableList<PumpStationForceTarget>? = null
+```
+The harness subsystems the developer wants force-activated at the next gate evaluation — for example the lorebook agent or the compaction pipeline on a turn where they would otherwise be skipped. `null` means "no force requested" and allocates nothing. Transient: a force is a within-turn scheduling instruction, not durable state, so the serialized wire shape is unchanged. Only developer code can set it (like `interuptPipeline`); the LLM never can.
+
+Declared as a constructor property, so `copy()` carries the request: a path that returns a copied content object does not silently drop the flag.
+
 ### Context Management
 
 **`context`**
@@ -212,6 +220,18 @@ Triggers an interrupt signal picked up by the pipeline runtime.
 ```kotlin
 content.interupt()  // Signal PumpStation to handle this content specially
 ```
+
+#### `force(target: PumpStationForceTarget)`
+Requests that the harness force-activate a subsystem it would otherwise skip this turn.
+
+**Behavior:** Appends `target` to `forceTargets`. When the content flows back through the harness, `PumpStation` arms the matching one-shot force, which the next gate evaluation honours. The available targets are `Judge`, `HealthCheck`, `Lorebook`, `Summary`, `Compaction`, `ForegroundAgents`, `BackgroundAgents`, and `SafePrune`.
+
+**Example:**
+```kotlin
+content.force(PumpStationForceTarget.Compaction)  // compact this turn even below the fill threshold
+```
+
+**See Also:** [Force Flags](../containers/pumpstation.md#force-flags)
 
 #### `terminateAndPassPipeline()`
 Marks content to exit the pipeline early with success status.

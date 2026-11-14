@@ -183,6 +183,8 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED -> "⚠"
                 TraceEventType.PUMP_STATION_STEERING_INJECTED -> "🧭"
                 TraceEventType.PUMP_STATION_INTERRUPT_FIRED -> "⛔"
+                TraceEventType.PUMP_STATION_FORCE_APPLIED -> "🚩"
+                TraceEventType.PUMP_STATION_FORCE_SKIPPED -> "⚠"
 
                 else -> "ℹ️"
             }
@@ -2589,6 +2591,8 @@ class TraceVisualizer
         TraceEventType.PUMP_STATION_LOOP_GUARD_TRIPPED -> "LoopGuard"
         TraceEventType.PUMP_STATION_STEERING_INJECTED -> "Steer"
         TraceEventType.PUMP_STATION_INTERRUPT_FIRED -> "Interrupt"
+        TraceEventType.PUMP_STATION_FORCE_APPLIED -> "Force→"
+        TraceEventType.PUMP_STATION_FORCE_SKIPPED -> "Force⊘"
         TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED -> "SafePrune✂"
         TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED -> "SafePrune(dry)🔍"
         else -> eventType.name.removePrefix("PUMP_STATION_")

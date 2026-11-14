@@ -503,6 +503,54 @@ data class FlagCheckResult(
 )
 ```
 
+## Force Flag Contract (Developer-Triggered)
+
+Not an LLM contract — a developer-control contract, like the Wait / Join contract below. It has **no prompt and no JSON shape**: it is an imperative API over a one-shot registry. It lets developer code activate a harness subsystem whose interval / threshold gate would otherwise skip it on this turn.
+
+### API
+
+```kotlin
+station.force(PumpStationForceTarget.Compaction)        // arm a one-shot force
+station.isForceArmed(PumpStationForceTarget.Compaction) // inspect the registry
+station.clearForces()                                   // disarm every target
+```
+
+The same request can travel on a `MultimodalContent`, which is how a path's execution function asks for a subsystem it cannot reach directly:
+
+```kotlin
+content.force(PumpStationForceTarget.Lorebook)
+```
+
+### Semantics
+
+| Property | Value |
+|----------|-------|
+| Lifetime | One-shot. The force fires at the next gate evaluation, then disarms. Repeated arms queue: N arms produce N future firings. |
+| Scope | The registry lives on the station, outside the serialized task state, so it survives `P2PInit` and is not part of a snapshot or resume. A nested station keeps its own registry. |
+| Overrides | The interval / fill-ratio / size gate of the target only. |
+| Never conjures | A force never enables an unconfigured subsystem. The force is consumed and `ForceSkipped` is emitted instead. |
+| Awaited | A forced memory agent or async harness slot is awaited (bounded by `memoryUpdateTimeoutMs`) so the forced run is deterministic. Unforced background work stays fire-and-forget. |
+| Developer-only | Only developer code can arm a force. The content carrier is a developer channel, exactly like `interuptPipeline` — the LLM cannot set it. |
+
+### Target Matrix
+
+| Target | Gate it overrides | Fires |
+|--------|-------------------|-------|
+| `Judge` | The `FlagTriggered` skip and the first-turn skip | Next turn — the judge phase runs before path execution |
+| `HealthCheck` | `healthAgentTurnInterval`, `healthAgentErrorRatioThreshold` | Next turn — the health phase runs before path execution |
+| `Lorebook` | The shared memory-update interval and context pressure | Same turn — the phase runs after path execution |
+| `Summary` | The shared memory-update interval and context pressure | Same turn — the phase runs after path execution |
+| `Compaction` | The context fill-ratio threshold | Same turn — the phase runs after path execution |
+| `ForegroundAgents` | `foregroundTurnInterval` | Same turn — the phase runs after path execution |
+| `BackgroundAgents` | `backgroundTurnInterval` | Same turn — the phase runs after path execution |
+| `SafePrune` | The history size threshold | Same turn — the phase runs after path execution |
+
+A force armed before the run starts is always live for the first turn; the distinction above only matters for a force armed mid-turn, for example from a path's execution function.
+
+### Where the Flag Is Read
+
+The programmatic API arms the registry directly. The content carrier is read in `PumpStation.invokePath`, right after the path result is produced and before `PathCompleted` is emitted — the single point every path result flows through, so it covers single-path dispatch, MultiPath fan-out, and SuperPath routing alike.
+
 ## Wait / Join Contract (Outbound)
 
 Not an LLM contract — a harness-control contract. It lets a path's `executionFunction`, a DITL hook, or external code suspend the main loop until a condition holds, then resume forward. Unlike the LLM-facing contracts above, this one has **no prompt and no JSON shape**: it is an imperative API. The "magic" is the join-all-paths mode — fanning out a batch of sub-agent paths and blocking the loop until every leg has returned a value.

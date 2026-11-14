@@ -8,6 +8,7 @@ import com.TTT.Config.TPipeConfig
 import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
+import com.TTT.Enums.PumpStationForceTarget
 import com.TTT.Enums.PumpStationGoalHistorySource
 import com.TTT.Enums.PumpStationHistoryTransport
 import com.TTT.Enums.PumpStationLatestContentPosition
@@ -100,6 +101,13 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * setters.
      */
     var waitConfiguration: PumpStationWaitConfiguration? = null
+
+    /**
+     * Force configuration captured from the `forcePolicy { }` DSL block. The declared
+     * targets are armed as one-shot forces on the built station at construction time.
+     * Null when the user did not configure any force flags.
+     */
+    var forceConfiguration: PumpStationForceConfiguration? = null
 
     /** Optional stable implementation guidance for the station control agents. */
     var implementationPlan: String? = null
@@ -1048,6 +1056,33 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     }
 
     /**
+     * Configure force flags. Inside the block, declare the harness subsystems that
+     * must be force-activated when the station starts. Each entry is armed once at
+     * construction time and fires at the first gate that evaluates it, even when the
+     * subsystem's own interval or threshold would otherwise skip it.
+     *
+     * Example:
+     * ```
+     * pumpStation {
+     *     forcePolicy {
+     *         force(PumpStationForceTarget.Compaction)
+     *     }
+     * }
+     * ```
+     */
+    fun forcePolicy(block: PumpStationForcePolicyBuilder.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        require(targetBuilder.forceConfiguration == null) {
+            "forcePolicy { } has already been configured for this PumpStation DSL."
+        }
+        val builder = PumpStationForcePolicyBuilder()
+        builder.block()
+        targetBuilder.forceConfiguration = builder.build()
+        return this
+    }
+
+    /**
      * Configure compaction for the harness. The captured configuration is applied
      * to the built station via [build] so the per-attempt orchestrator picks up
      * the developer-chosen strategy, fan-out mode, retry budget, chunk budget, and
@@ -1172,6 +1207,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         steeringConfiguration = source.steeringConfiguration
         interruptConfiguration = source.interruptConfiguration
         waitConfiguration = source.waitConfiguration
+        forceConfiguration = source.forceConfiguration
         implementationPlan = source.implementationPlan
         judgeAgent = source.judgeAgent
         dispatchAgent = source.dispatchAgent
@@ -1329,6 +1365,12 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         waitConfiguration?.let { cfg ->
             station.setWaitAllPathsOnMultiDispatch(cfg.joinAllPathsOnMultiDispatch)
             station.setWaitDefaultTimeoutMs(cfg.defaultTimeoutMs)
+        }
+
+        // Force flags - armed through the public fluent API so the DSL round-trips
+        // with the public surface.
+        forceConfiguration?.let { cfg ->
+            cfg.initialForces.forEach { station.force(it) }
         }
 
         // Apply all configuration to the station using the public fluent setters.
@@ -2677,6 +2719,56 @@ class WaitPolicyBuilder
             initialWaits = emptyList()
         )
     }
+}
+
+//=========================================Force Policy Block=========================================================
+
+/**
+ * Configuration captured from the `forcePolicy { }` DSL block and applied to a
+ * [PumpStation] at construction. Each declared target is armed as a one-shot force.
+ */
+class PumpStationForceConfiguration(
+    val initialForces: Set<PumpStationForceTarget> = emptySet()
+)
+
+/**
+ * DSL block for declaring force flags via `pumpStation { forcePolicy { ... } }`.
+ *
+ * Mirrors the shape of [WaitPolicyBuilder] and [SteeringPolicyBuilder] for force
+ * flags.
+ *
+ * Usage:
+ * ```
+ * pumpStation {
+ *     forcePolicy {
+ *         force(PumpStationForceTarget.Compaction)
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class PumpStationForcePolicyBuilder
+{
+    /** The targets armed once at construction time. */
+    val initialForces: MutableSet<PumpStationForceTarget> = mutableSetOf()
+
+    /**
+     * Arm [target] at construction time. The subsystem fires at the first gate that
+     * evaluates it, even when its own interval or threshold would skip it.
+     *
+     * @param target The subsystem to force-activate.
+     */
+    fun force(target: PumpStationForceTarget)
+    {
+        initialForces.add(target)
+    }
+
+    /**
+     * Build the [PumpStationForceConfiguration] the [PumpStationBuilder.build] method
+     * applies to the built station.
+     */
+    internal fun build(): PumpStationForceConfiguration =
+        PumpStationForceConfiguration(initialForces.toSet())
 }
 
 //=========================================Interrupt Policy Block====================================================

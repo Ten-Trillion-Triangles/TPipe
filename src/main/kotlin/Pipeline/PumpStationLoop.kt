@@ -7,6 +7,7 @@ import com.TTT.Context.ConverseData
 import com.TTT.Context.ConverseRole
 import com.TTT.Context.LoreBook
 import com.TTT.Enums.MemoryWriteKind
+import com.TTT.Enums.PumpStationForceTarget
 import com.TTT.P2P.KillSwitch
 import com.TTT.P2P.KillSwitchContext
 import com.TTT.P2P.KillSwitchException
@@ -50,6 +51,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 
 private val resumeSignal = Channel<Unit>(Channel.RENDEZVOUS)
+
+/**
+ * Fallback budget for awaiting a forced async subsystem when the station's
+ * memory-update timeout is not a positive value.
+ */
+private const val DEFAULT_FORCED_AWAIT_TIMEOUT_MS = 30_000L
 
 /**
  * Returns the list of path descriptors currently visible to the dispatch agent.
@@ -339,6 +346,53 @@ internal suspend fun <T> withDitlWrap(
 }
 
 /**
+ * Emit a [ForceApplied] event for a force flag that was honoured.
+ *
+ * @param target The subsystem that was force-activated.
+ * @param source The harness phase that consumed the force.
+ */
+internal fun PumpStation.emitForceApplied(target: PumpStationForceTarget, phase: PumpStationPhase, source: String)
+{
+    emitEventInternal(ForceApplied(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        phase = phase,
+        target = target,
+        source = source
+    ))
+}
+
+/**
+ * Emit a [ForceSkipped] event for a force flag that could not be honoured because
+ * the subsystem was never configured.
+ *
+ * @param target The subsystem that could not be force-activated.
+ * @param reason Why the force could not be honoured.
+ */
+internal fun PumpStation.emitForceSkipped(target: PumpStationForceTarget, phase: PumpStationPhase, reason: String)
+{
+    emitEventInternal(ForceSkipped(
+        runId = taskState.runId,
+        turnIndex = taskState.turnIndex,
+        phase = phase,
+        target = target,
+        reason = reason
+    ))
+}
+
+/**
+ * Consume an armed one-shot force for [target], if any.
+ *
+ * A force is claimed by the first subsystem gate that evaluates it, so exactly one
+ * firing results even when several consumers race for the same target.
+ *
+ * @param target The subsystem whose force is being claimed.
+ * @return True when a force was armed and has now been consumed.
+ */
+internal fun PumpStation.consumeForce(target: PumpStationForceTarget): Boolean =
+    forceService.consume(target)
+
+/**
  * Run the agent pipeline and return its result. Falls back to executeLocal
  * for non-Pipeline P2PInterface implementations. This is the standard way
  * the harness invokes judge/dispatch/goal agents.
@@ -377,9 +431,14 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
     // judge phase is skipped (no LLM call, no JudgeStarted/JudgeCompleted) and a JudgeSkipped event
     // is emitted in their place so the trace/visualizer can show what happened. The flag is
     // automatically cleared after the judge consumes it on the next run.
+    // A forced judge run overrides both the FlagTriggered skip and the
+    // first-turn skip. The force is consumed at the top of the phase so an
+    // armed Judge force never lingers into a later turn.
+    val judgeForced = consumeForce(PumpStationForceTarget.Judge)
+
     if (judgeRunModeInternal == PumpStationJudgeRunMode.FlagTriggered)
     {
-        if (!taskState.requestJudgeNextTurn)
+        if (!taskState.requestJudgeNextTurn && !judgeForced)
         {
             emitEventInternal(JudgeSkipped(
                 runId = taskState.runId,
@@ -392,7 +451,7 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
         // Flag is set: clear it (one-shot) and fall through to the normal judge flow.
         taskState.requestJudgeNextTurn = false
     }
-    else if (skipJudgeOnFirstTurnInternal && taskState.turnIndex == 0)
+    else if (skipJudgeOnFirstTurnInternal && taskState.turnIndex == 0 && !judgeForced)
     {
         // First-turn guard: skip the judge on turn 0 to prevent the live-judge failure mode
         // where a judge LLM sees the pre-dispatch state and hallucinates isComplete=true
@@ -411,6 +470,11 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
         return JudgeVerdict.empty()
     }
 
+    if (judgeForced && judgeAgent == null)
+    {
+        emitForceSkipped(PumpStationForceTarget.Judge, PumpStationPhase.Judge, "no judge agent configured")
+    }
+
     emitEventInternal(JudgeStarted(
         runId = taskState.runId,
         turnIndex = taskState.turnIndex
@@ -423,6 +487,14 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
             shouldHalt = true,
             reason = PumpStationExitReason.InterventionTerminated
         )
+    }
+
+    // The force is reported as applied only once the judge was actually allowed to
+    // run: a pre-invoke veto means the judge never executed, so claiming the force
+    // was honoured would be a lie the trace would carry forever.
+    if (judgeForced && judgeAgent != null)
+    {
+        emitForceApplied(PumpStationForceTarget.Judge, PumpStationPhase.Judge, "judge")
     }
 
     // Pre-validation
@@ -1289,9 +1361,22 @@ internal fun PumpStation.defaultPrePruneForCompaction(rawTurns: List<ConverseDat
  */
 internal suspend fun PumpStation.runSafePrunePhase()
 {
-    if (!safePruneEnabledInternal) return
-    if (safePruneEnabledStrategiesInternal.isEmpty()) return
-    if (turnHistory.history.size <= safePruneSizeThresholdInternal) return
+    // A forced run bypasses the history size threshold. It does not enable the
+    // feature: safe prune still requires the developer to have turned it on and
+    // selected at least one strategy.
+    val forced = consumeForce(PumpStationForceTarget.SafePrune)
+    if (!safePruneEnabledInternal)
+    {
+        if (forced) emitForceSkipped(PumpStationForceTarget.SafePrune, PumpStationPhase.SafePrune, "safe prune not enabled")
+        return
+    }
+    if (safePruneEnabledStrategiesInternal.isEmpty())
+    {
+        if (forced) emitForceSkipped(PumpStationForceTarget.SafePrune, PumpStationPhase.SafePrune, "no safe prune strategies enabled")
+        return
+    }
+    if (!forced && turnHistory.history.size <= safePruneSizeThresholdInternal) return
+    if (forced) emitForceApplied(PumpStationForceTarget.SafePrune, PumpStationPhase.SafePrune, "safe-prune")
 
     val originalCount = turnHistory.history.size
     val originalChars = turnHistory.history.sumOf { it.content.text.length }
@@ -1971,12 +2056,20 @@ internal fun PumpStation.applyCompactionResult(
  */
 internal suspend fun PumpStation.runHealthCheckPhase()
 {
-    if (healthAgentInternal == null) return
+    // A forced health check bypasses the interval and error-ratio gates.
+    val forced = consumeForce(PumpStationForceTarget.HealthCheck)
+    if (healthAgentInternal == null)
+    {
+        if (forced) emitForceSkipped(PumpStationForceTarget.HealthCheck, PumpStationPhase.HealthCheck, "no health agent configured")
+        return
+    }
     val turnsSinceLast = taskState.turnIndex - lastHealthCheckTurnInternal
     val errorRatio = computeErrorRatio()
-    val shouldFire = (healthAgentTurnIntervalInternal != null && turnsSinceLast >= healthAgentTurnIntervalInternal!!) ||
+    val shouldFire = forced ||
+                     (healthAgentTurnIntervalInternal != null && turnsSinceLast >= healthAgentTurnIntervalInternal!!) ||
                      (healthAgentErrorRatioThresholdInternal != null && errorRatio >= healthAgentErrorRatioThresholdInternal!!)
     if (!shouldFire) return
+    if (forced) emitForceApplied(PumpStationForceTarget.HealthCheck, PumpStationPhase.HealthCheck, "health-check")
 
     val agent = healthAgentBuilderFunctionInternal?.invoke(this) ?: healthAgentInternal!!
     emitEventInternal(HealthCheckStarted(
@@ -2013,24 +2106,57 @@ internal suspend fun PumpStation.runMemoryUpdatePhase()
         memoryMode = memoryManagementModeInternal
     ))
 
+    val lorebookForced = consumeForce(PumpStationForceTarget.Lorebook)
+    val summaryForced = consumeForce(PumpStationForceTarget.Summary)
     val needsMemory = (lorebookAgentInternal != null || summaryAgentInternal != null)
     val intervalHit = (backgroundTurnIntervalInternal > 0 && taskState.turnIndex % backgroundTurnIntervalInternal == 0)
     val pressure = contextFillRatio() > compactionThresholdInternal
 
-    if (needsMemory && (intervalHit || pressure))
+    // A forced run is independent per agent: the lorebook and summary agents share
+    // the interval / pressure gate, but each is forceable on its own.
+    val lorebookRuns = lorebookAgentInternal != null && (intervalHit || pressure || lorebookForced)
+    val summaryRuns = summaryAgentInternal != null && (intervalHit || pressure || summaryForced)
+
+    // An unconfigured target is reported outside the run gate. The force is consumed
+    // either way, so it must never disappear without a trace - otherwise a forced
+    // target with no agent configured would look exactly like a force that fired.
+    if (lorebookForced && lorebookAgentInternal == null)
     {
-        if (lorebookAgentInternal != null)
+        emitForceSkipped(PumpStationForceTarget.Lorebook, PumpStationPhase.MemoryUpdate, "no lorebook agent configured")
+    }
+    if (summaryForced && summaryAgentInternal == null)
+    {
+        emitForceSkipped(PumpStationForceTarget.Summary, PumpStationPhase.MemoryUpdate, "no summary agent configured")
+    }
+
+    if (needsMemory && (intervalHit || pressure || lorebookForced || summaryForced))
+    {
+        // A forced agent is awaited below (bounded by the memory-update timeout) so the
+        // forced run is deterministic. A background job that finalization cancels before
+        // it is ever dispatched would never reach the agent at all, which would turn a
+        // forced run into a silent no-op.
+        val forcedJobs = mutableListOf<Job>()
+        if (lorebookRuns)
         {
-            backgroundMutex.withLock {
-                backgroundJobs += launchAsyncJob { updateLorebook() }
+            if (lorebookForced) emitForceApplied(PumpStationForceTarget.Lorebook, PumpStationPhase.MemoryUpdate, "memory-update")
+            val lorebookJob = backgroundMutex.withLock {
+                val launched = launchAsyncJob { updateLorebook() }
+                backgroundJobs += launched
+                launched
             }
+            if (lorebookForced) forcedJobs += lorebookJob
         }
-        if (summaryAgentInternal != null)
+        if (summaryRuns)
         {
-            backgroundMutex.withLock {
-                backgroundJobs += launchAsyncJob { updateSummary() }
+            if (summaryForced) emitForceApplied(PumpStationForceTarget.Summary, PumpStationPhase.MemoryUpdate, "memory-update")
+            val summaryJob = backgroundMutex.withLock {
+                val launched = launchAsyncJob { updateSummary() }
+                backgroundJobs += launched
+                launched
             }
+            if (summaryForced) forcedJobs += summaryJob
         }
+        awaitForcedJobs(forcedJobs)
     }
 
     if (pressure)
@@ -2100,18 +2226,23 @@ internal suspend fun PumpStation.runCompactionPhase(): CompactionResult
 {
     val initialStrategy = compactionStrategyInternal
     val initialMemoryMode = memoryManagementModeInternal
+    // A forced compaction bypasses the fill-ratio threshold but still requires a
+    // summary agent to produce the compacted history.
+    val forced = consumeForce(PumpStationForceTarget.Compaction)
 
     // Pre-attempt gate: bail before emitting CompactionStarted so observability does
     // not see a started event for an attempt that was never going to run. Mirrors
     // the pre-v3 behavior: no event when below threshold or no summary agent.
-    if (!shouldAttemptCompaction(initialStrategy))
+    if (!forced && !shouldAttemptCompaction(initialStrategy))
     {
         return CompactionResult.SkippedBelowThreshold
     }
     if (summaryAgentInternal == null)
     {
+        if (forced) emitForceSkipped(PumpStationForceTarget.Compaction, PumpStationPhase.Compaction, "no summary agent configured")
         return CompactionResult.SkippedNoAgent
     }
+    if (forced) emitForceApplied(PumpStationForceTarget.Compaction, PumpStationPhase.Compaction, "compaction")
 
     emitEventInternal(CompactionStarted(
         runId = taskState.runId,
@@ -2138,7 +2269,7 @@ internal suspend fun PumpStation.runCompactionPhase(): CompactionResult
         attemptsUsed += 1
 
         // Pre-attempt gate: bail if the strategy is below its threshold.
-        if (!shouldAttemptCompaction(workingStrategy))
+        if (!forced && !shouldAttemptCompaction(workingStrategy))
         {
             lastResult = CompactionResult.SkippedBelowThreshold
             break
@@ -2762,8 +2893,19 @@ internal fun PumpStation.parseHealthReport(content: MultimodalContent): HealthRe
  */
 internal suspend fun PumpStation.runForegroundAgentsPhase()
 {
-    if (foregroundTurnIntervalInternal == 0) return
-    if (taskState.turnIndex % foregroundTurnIntervalInternal != 0) return
+    // A forced run bypasses the turn-interval gate.
+    val forced = consumeForce(PumpStationForceTarget.ForegroundAgents)
+    val intervalHit = foregroundTurnIntervalInternal > 0 &&
+                      taskState.turnIndex % foregroundTurnIntervalInternal == 0
+    if (!forced && !intervalHit) return
+
+    val blockingSlotCount = additionalHarnessAgentSlotsInternal.count { it.concurrency == PumpStationConcurrencyMode.Blocking }
+    if (blockingSlotCount == 0)
+    {
+        if (forced) emitForceSkipped(PumpStationForceTarget.ForegroundAgents, PumpStationPhase.ForegroundAgents, "no blocking harness agent slots registered")
+        return
+    }
+    if (forced) emitForceApplied(PumpStationForceTarget.ForegroundAgents, PumpStationPhase.ForegroundAgents, "foreground-agents")
 
     for (slot in additionalHarnessAgentSlotsInternal)
 {
@@ -2831,9 +2973,21 @@ private suspend fun <T> withCapturedContextAccessScope(
 
 internal suspend fun PumpStation.runBackgroundAgentsPhase()
 {
-    if (backgroundTurnIntervalInternal == 0) return
-    if (taskState.turnIndex % backgroundTurnIntervalInternal != 0) return
+    // A forced run bypasses the turn-interval gate.
+    val forced = consumeForce(PumpStationForceTarget.BackgroundAgents)
+    val intervalHit = backgroundTurnIntervalInternal > 0 &&
+                      taskState.turnIndex % backgroundTurnIntervalInternal == 0
+    if (!forced && !intervalHit) return
 
+    val asyncSlotCount = additionalHarnessAgentSlotsInternal.count { it.concurrency == PumpStationConcurrencyMode.Async }
+    if (asyncSlotCount == 0)
+    {
+        if (forced) emitForceSkipped(PumpStationForceTarget.BackgroundAgents, PumpStationPhase.BackgroundAgents, "no async harness agent slots registered")
+        return
+    }
+    if (forced) emitForceApplied(PumpStationForceTarget.BackgroundAgents, PumpStationPhase.BackgroundAgents, "background-agents")
+
+    val launchedJobs = mutableListOf<Job>()
     val semaphore = kotlinx.coroutines.sync.Semaphore(
         permits = maxConcurrentBackgroundAgentsInternal.coerceAtLeast(1)
     )
@@ -2852,8 +3006,8 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
             if (asyncJobsScopedToStationInternal) dispatcher
             else kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.GlobalScope.coroutineContext)
 
-        backgroundMutex.withLock {
-            backgroundJobs += launchOn.launch {
+        val slotJob = backgroundMutex.withLock {
+            val launched = launchOn.launch {
                 try
                 {
                     withCapturedContextAccessScope(accessScope)
@@ -2901,7 +3055,36 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
                     // Isolate failures
                 }
             }
+            backgroundJobs += launched
+            launched
         }
+        launchedJobs += slotJob
+    }
+
+    // A forced async slot is awaited (bounded by the same background-work budget the
+    // finalization phase uses to drain background jobs) so the forced run is
+    // deterministic: finalization cancels the station-scoped async scope, and a slot
+    // job that has not been dispatched yet would never reach its agent.
+    if (forced) awaitForcedJobs(launchedJobs)
+}
+
+/**
+ * Await the background jobs of a forced subsystem, bounded by the station's
+ * memory-update timeout.
+ *
+ * A non-positive timeout would make [withTimeoutOrNull] skip the block outright,
+ * which would drop the forced subsystem on the floor - the exact silent no-op a
+ * force must never be. A non-positive value therefore falls back to the default
+ * budget instead of skipping the wait.
+ *
+ * @param jobs The jobs to await. Empty input returns immediately.
+ */
+private suspend fun PumpStation.awaitForcedJobs(jobs: List<Job>)
+{
+    if (jobs.isEmpty()) return
+    val budgetMs = memoryUpdateTimeoutMsInternal.takeIf { it > 0 } ?: DEFAULT_FORCED_AWAIT_TIMEOUT_MS
+    withTimeoutOrNull(budgetMs) {
+        jobs.forEach { it.join() }
     }
 }
 

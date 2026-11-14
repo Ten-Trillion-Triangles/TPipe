@@ -4,6 +4,7 @@ import com.TTT.Context.ConverseHistory
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
 import com.TTT.Enums.MemoryWriteKind
+import com.TTT.Enums.PumpStationForceTarget
 import com.TTT.P2P.P2PInterface
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.serialization.Contextual
@@ -137,6 +138,11 @@ enum class PumpStationStatus
 
 /**
  * The current phase of the harness execution loop.
+ *
+ * The two harness agent slot kinds have distinct phases: [ForegroundAgents] for
+ * Blocking slots and [BackgroundAgents] for Async slots. Both map onto the same
+ * [com.TTT.Debug.TracePhase.AGENT_COMMUNICATION] bucket in the trace funnel, so the
+ * precise harness label travels in the trace metadata.
  */
 enum class PumpStationPhase
 {
@@ -149,6 +155,7 @@ enum class PumpStationPhase
     PathValidation,
     Intervention,
     ForegroundAgents,
+    BackgroundAgents,
     MemoryUpdate,
     Compaction,
     SafePrune,
@@ -1247,8 +1254,44 @@ data class BackgroundAgentQueued(
     override val runId: String,
     override val turnIndex: Int,
     override val timestamp: Long = System.currentTimeMillis(),
-    override val phase: PumpStationPhase = PumpStationPhase.ForegroundAgents,
+    override val phase: PumpStationPhase = PumpStationPhase.BackgroundAgents,
     val agentName: String
+) : PumpStationEvent
+
+//=========================================Force Events==============================================================
+
+/**
+ * A developer-armed force flag was honoured: the named subsystem ran even though its
+ * interval / threshold gate would otherwise have skipped it.
+ *
+ * @property target The subsystem that was force-activated.
+ * @property source The harness phase that consumed the force.
+ */
+@kotlinx.serialization.Serializable
+data class ForceApplied(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Judge,
+    val target: PumpStationForceTarget,
+    val source: String = ""
+) : PumpStationEvent
+
+/**
+ * A developer-armed force flag was consumed but could not be honoured because the
+ * named subsystem was never configured on this station.
+ *
+ * @property target The subsystem that could not be force-activated.
+ * @property reason Why the force could not be honoured.
+ */
+@kotlinx.serialization.Serializable
+data class ForceSkipped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Judge,
+    val target: PumpStationForceTarget,
+    val reason: String = ""
 ) : PumpStationEvent
 
 //=========================================Turn Control============================================================

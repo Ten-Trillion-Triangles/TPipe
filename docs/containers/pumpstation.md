@@ -35,6 +35,7 @@
 - [Async Substrate](#async-substrate)
 - [Wait / Join: Suspending the Main Loop](#wait--join-suspending-the-main-loop)
 - [Stash, Snapshots, and Pause/Resume](#stash-snapshots-and-pauseresume)
+- [Force Flags](#force-flags)
 - [Tracing Support](#tracing-support)
 - [Kill Switch Integration](#kill-switch-integration)
 - [P2P Integration](#p2p-integration)
@@ -812,6 +813,7 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `asyncAgentsAppendToTurnHistory` | `Boolean`                            | `false` | Station-wide default for whether async harness agents append their result to `turnHistory` on completion. Per-slot opt-in via `HarnessAgentSlot.appendsToTurnHistory`. |
 | `asyncJobGracePeriodMs` | `Long?`                                     | `null`  | Optional millisecond grace period given to in-flight async coroutines after finalization before `cancelAsyncJobs` cancels the `asyncScope`. `null` (the default) is unbounded. See [Async Substrate](#async-substrate) below. |
 | `asyncJobsScopedToStation` | `Boolean`                                | `true`  | When `true`, async work runs on the station-scoped `asyncScope`; when `false`, async work runs on `GlobalScope` (the pre-substrate fire-and-forget behavior). |
+| `forcePolicy { }`            | `PumpStationForceConfiguration?`         | `null`  | Arms one-shot force flags at construction. Each declared target fires at the first gate that evaluates it. See [Force Flags](#force-flags). |
 
 ### Agent Setters
 
@@ -909,6 +911,21 @@ pumpStation("name") {
 ```
 
 The harness suspends at the named phase boundaries until `resume()` is called.
+
+### `forcePolicy { }` Block
+
+Arms one-shot force flags at construction time:
+
+```kotlin
+pumpStation("name") {
+    forcePolicy {
+        force(PumpStationForceTarget.Compaction)
+        force(PumpStationForceTarget.Lorebook)
+    }
+}
+```
+
+Each declared target is armed once when the station is built and fires at the first gate that evaluates it, even when that subsystem's own interval or threshold would have skipped it. See [Force Flags](#force-flags).
 
 ### `harnessAgent { }` and `harnessAgentBuilder { }` Blocks
 
@@ -1211,6 +1228,7 @@ The advisory is non-blocking — the harness continues. The `mechanisms` field o
 | `PathValidation`     | After path returns                                    | `pathValidationFunction` |
 | `Intervention`       | After path failure or loop guard trip                 | `interventionAgent` |
 | `ForegroundAgents`   | After path execution (if interval hit)                | Blocking harness agent slots |
+| `BackgroundAgents`   | After foreground (if interval hit, async)             | Async harness agent slots |
 | `MemoryUpdate`       | After foreground (if interval hit or pressure)        | `lorebookAgent`, `summaryAgent` |
 | `Compaction`         | After memory update (if fill ratio hit)               | `summaryAgent` (compaction strategy) |
 | `GoalValidation`     | Inside `runExitFlow`                                  | `goalAgent` |
@@ -2211,6 +2229,81 @@ val watchdogJob = launch {
 }
 ```
 
+## Force Flags
+
+Most PumpStation subsystems are dormant on any given turn: the health agent only fires on its interval or error ratio, the lorebook and summary agents only fire on their interval or on context pressure, compaction only fires past the fill threshold, and the harness agent slots only fire on their turn interval.
+
+A **force flag** is a developer-triggered override of exactly that gate. The subsystem runs at the next point the harness would have evaluated it, then the force is consumed.
+
+### API
+
+```kotlin
+station.force(PumpStationForceTarget.Compaction)         // arm a one-shot force
+station.isForceArmed(PumpStationForceTarget.Compaction)  // inspect the registry
+station.clearForces()                                    // disarm every target
+station.clearForces(PumpStationForceTarget.Lorebook)     // disarm one target
+```
+
+`force` returns the station, so it chains.
+
+The same request can ride on a `MultimodalContent` — useful when a path's execution function wants a subsystem it cannot reach directly:
+
+```kotlin
+path("summarize") {
+    setExecutionFunction { content, station, _, _ ->
+        // Set the flag on the object you return - that is the one the harness reads.
+        MultimodalContent(text = "compaction requested").apply {
+            force(PumpStationForceTarget.Compaction)
+        }
+    }
+}
+```
+
+The content carrier is read in `PumpStation.invokePath`, right after the path result is produced and before `PathCompleted` is emitted. `forceTargets` is a constructor property, so `copy()` carries it - returning `content.copy(text = "...")` keeps the request.
+
+### Targets
+
+| Target | Gate it overrides | Fires |
+|---|---|---|
+| `Judge` | The `FlagTriggered` skip and the first-turn skip | Next turn — the judge phase runs before path execution |
+| `HealthCheck` | `healthAgentTurnInterval`, `healthAgentErrorRatioThreshold` | Next turn — the health phase runs before path execution |
+| `Lorebook` | The shared memory-update interval and context pressure | Same turn — the phase runs after path execution |
+| `Summary` | The shared memory-update interval and context pressure | Same turn — the phase runs after path execution |
+| `Compaction` | The context fill-ratio threshold | Same turn — the phase runs after path execution |
+| `ForegroundAgents` | `foregroundTurnInterval` | Same turn — the phase runs after path execution |
+| `BackgroundAgents` | `backgroundTurnInterval` | Same turn — the phase runs after path execution |
+| `SafePrune` | The history size threshold | Same turn — the phase runs after path execution |
+
+A force armed before the run starts is always live for the first turn; the distinction above only matters for a force armed mid-turn, for example from a path's execution function.
+
+### Semantics
+
+| Property | Behavior |
+|---|---|
+| One-shot | The force fires at the next gate evaluation and then disarms. Repeated `force` calls queue: N arms produce N future firings. |
+| Never conjures configuration | A force overrides a timing gate only. It never enables a subsystem that was never configured — the force is consumed and a `ForceSkipped` event is emitted instead. |
+| Awaited when forced | A forced memory agent or async harness slot is awaited (bounded by `memoryUpdateTimeoutMs`) so the forced run is deterministic. Unforced background work stays fire-and-forget. |
+| Station-scoped | The registry lives on the station, not in the serialized task state, so it survives `P2PInit` and is not part of a snapshot or resume. A nested station keeps its own registry. |
+| Developer-only | Only developer code can arm a force. The LLM cannot — the content carrier is a developer channel, exactly like `interuptPipeline`. |
+
+### Observability
+
+An honoured force emits `ForceApplied`; a force whose subsystem is not configured emits `ForceSkipped`. Both are `PumpStationEvent`s and are mirrored into the trace funnel as the `PUMP_STATION_FORCE_APPLIED` / `PUMP_STATION_FORCE_SKIPPED` trace event types.
+
+The event carries the consuming phase and a `source` string naming the exact site (`memory-update`, `health-check`, `background-agents`, and so on). A forced async harness slot reports `PumpStationPhase.BackgroundAgents` and a forced blocking slot reports `ForegroundAgents`, so the phase alone tells the two slot kinds apart.
+
+### Declaring forces in the DSL
+
+```kotlin
+pumpStation("name") {
+    forcePolicy {
+        force(PumpStationForceTarget.Compaction)
+    }
+}
+```
+
+The `forcePolicy { }` block arms each declared target once at construction.
+
 ## Tracing Support
 
 PumpStation tracing is keyed by `taskState.runId` (e.g. `ps-1718371200000-1234`). Every `PumpStationEvent` is mirrored into the global `PipeTracer` when tracing is enabled. The trace funnel (`Pipeline/PumpStationHelpers.kt:75`) maps each sealed event subtype to a `PUMP_STATION_*` `TraceEventType`.
@@ -2265,6 +2358,8 @@ Trace events emitted by PumpStation:
 | `PUMP_STATION_BACKGROUND_AGENT_QUEUED` | `BackgroundAgentQueued` | agentName |
 | `PUMP_STATION_ASYNC_TURN_APPENDED` | `AsyncTurnAppended` | source, pathName, agentName, seq, contentPreview |
 | `PUMP_STATION_NESTED_P2P_COMPLETED` | `NestedP2PCompleted` | pathName, agentName, contentPreview, token usage |
+| `PUMP_STATION_FORCE_APPLIED` | `ForceApplied` | target, source |
+| `PUMP_STATION_FORCE_SKIPPED` | `ForceSkipped` | target, reason |
 
 Enable tracing:
 

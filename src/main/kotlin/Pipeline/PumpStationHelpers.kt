@@ -540,6 +540,18 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             eventType = TraceEventType.PUMP_STATION_BACKGROUND_AGENT_QUEUED
             baseMetadata["agentName"] = event.agentName
         }
+        is ForceApplied ->
+        {
+            eventType = TraceEventType.PUMP_STATION_FORCE_APPLIED
+            baseMetadata["target"] = event.target.name
+            baseMetadata["source"] = event.source
+        }
+        is ForceSkipped ->
+        {
+            eventType = TraceEventType.PUMP_STATION_FORCE_SKIPPED
+            baseMetadata["target"] = event.target.name
+            baseMetadata["reason"] = event.reason
+        }
         is AsyncTurnAppended ->
         {
             eventType = TraceEventType.PUMP_STATION_ASYNC_TURN_APPENDED
@@ -634,6 +646,7 @@ internal fun mapPumpStationPhaseToTracePhase(phase: PumpStationPhase): TracePhas
     PumpStationPhase.PathValidation -> TracePhase.VALIDATION
     PumpStationPhase.Intervention -> TracePhase.EXECUTION
     PumpStationPhase.ForegroundAgents -> TracePhase.AGENT_COMMUNICATION
+    PumpStationPhase.BackgroundAgents -> TracePhase.AGENT_COMMUNICATION
     PumpStationPhase.MemoryUpdate -> TracePhase.CONTEXT_PREPARATION
     PumpStationPhase.Compaction -> TracePhase.CONTEXT_PREPARATION
     PumpStationPhase.SafePrune -> TracePhase.CONTEXT_PREPARATION

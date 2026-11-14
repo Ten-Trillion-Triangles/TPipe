@@ -9,6 +9,7 @@ import com.TTT.Context.MetadataBank
 import com.TTT.Context.MiniBank
 import com.TTT.Context.TodoList
 import com.TTT.Context.TodoListTask
+import com.TTT.Enums.PumpStationForceTarget
 import com.TTT.Enums.PumpStationGoalHistorySource
 import com.TTT.Enums.PumpStationHistoryTransport
 import com.TTT.Enums.PumpStationLatestContentPosition
@@ -1318,6 +1319,67 @@ fun setInterruptTargetMode(mode: PumpStationControlTargetMode): PumpStation
 
 /** Read the routing mode for momentary interrupt controls. */
 fun getInterruptTargetMode(): PumpStationControlTargetMode = interruptTargetMode
+
+//=====================================Force Flags (Group F)=======================================================
+
+    /**
+     * Thread-safe registry of armed one-shot force flags.
+     *
+     * A force flag activates a harness subsystem that would otherwise be dormant
+     * because its interval / threshold gate did not fire. The registry is owned by
+     * this station: a nested station keeps its own registry, so a force armed on an
+     * outer station does not propagate inward.
+     */
+    val forceService: PumpStationForceService = PumpStationForceService()
+
+    /**
+     * Arm a one-shot force for [target].
+     *
+     * The subsystem runs at the next point the harness would have evaluated it, then
+     * the force is consumed. A force overrides the subsystem's timing gate (interval,
+     * fill ratio, or size threshold) but never conjures a subsystem that was never
+     * configured - an unconfigured target reports a skipped force instead.
+     *
+     * The typical usage pattern is a path whose [PathObject.setExecutionFunction]
+     * requests a subsystem the harness would otherwise skip on this turn:
+     *
+     *     path("summarize") {
+     *         setExecutionFunction { content, station, _, _ ->
+     *             station.force(PumpStationForceTarget.Compaction)
+     *             MultimodalContent(text = "summarized")
+     *         }
+     *     }
+     *
+     * Thread-safe: may be called from any thread or coroutine context.
+     *
+     * @param target The subsystem to force-activate.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun force(target: PumpStationForceTarget): PumpStation
+    {
+        forceService.arm(target)
+        return this
+    }
+
+    /**
+     * Whether a one-shot force is currently armed for [target].
+     *
+     * @param target The subsystem to inspect.
+     * @return True when at least one force is armed for the target.
+     */
+    fun isForceArmed(target: PumpStationForceTarget): Boolean = forceService.isArmed(target)
+
+    /**
+     * Disarm the forces for a single target, or every target when [target] is null.
+     *
+     * @param target The subsystem to disarm, or null to disarm all of them.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun clearForces(target: PumpStationForceTarget? = null): PumpStation
+    {
+        forceService.clear(target)
+        return this
+    }
 
 //======================================Properties======================================================================
 
@@ -4254,6 +4316,12 @@ private fun pathKey(name: String): String = name.lowercase()
             // this path's name as the ambient context.
             taskState.currentPathName = priorPathName
         }
+
+        // A path may request that a dormant harness subsystem be force-activated by
+        // setting the force flag on its result. The flag is read here - the single
+        // place every path result flows through - so it covers single-path dispatch,
+        // MultiPath fan-out, and SuperPath routing alike.
+        result.forceTargets?.forEach { forceService.arm(it) }
 
         // --- Emit PathCompleted event ---
         // Read the path's token usage. The legacy-fields helper is preferred over the

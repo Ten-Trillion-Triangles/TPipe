@@ -2,6 +2,7 @@ package com.TTT.Pipe
 
 import com.TTT.Context.ContextWindow
 import com.TTT.Context.MiniBank
+import com.TTT.Enums.PumpStationForceTarget
 import com.TTT.P2P.P2PTransport
 import com.TTT.PipeContextProtocol.PcPRequest
 import com.TTT.Pipeline.DistributionGridDirective
@@ -124,7 +125,21 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
     @EncodeDefault(mode = EncodeDefault.Mode.NEVER)var tools: PcPRequest = PcPRequest(),
     @kotlinx.serialization.Transient var modelReasoning: String = "",
     var useSnapshot: Boolean = false,
-    @kotlinx.serialization.Transient var pipeError: PipeError? = null
+    @kotlinx.serialization.Transient var pipeError: PipeError? = null,
+    /**
+     * A force flag overrides the interval / threshold gate that normally decides whether a
+     * subsystem runs, so a path can request - for example - that the lorebook agent or the
+     * compaction pipeline runs on a turn where it would otherwise be skipped.
+     *
+     * This is a developer-facing carrier, exactly like [interuptPipeline]: only developer
+     * code can set it, never the LLM. Null means "no force requested" and allocates nothing.
+     * It is transient because a force is a within-turn scheduling instruction, not durable
+     * state.
+     *
+     * Declared as a constructor property so that [copy] carries it: a path that returns a
+     * copied content object would otherwise drop the request without a trace.
+     */
+    @kotlinx.serialization.Transient var forceTargets: MutableList<PumpStationForceTarget>? = null
 ) {
 
 //---------------------------------------Internal vars------------------------------------------------------------------
@@ -229,6 +244,18 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
     fun interupt()
     {
         interuptPipeline = true
+    }
+
+    /**
+     * Request that the harness force-activate [target] at the next point it would
+     * have evaluated it. Mirrors [terminate] and [interupt].
+     *
+     * @param target The subsystem to force-activate.
+     */
+    fun force(target: PumpStationForceTarget)
+    {
+        val list = forceTargets ?: mutableListOf<PumpStationForceTarget>().also { forceTargets = it }
+        list.add(target)
     }
 
     fun repeat()
