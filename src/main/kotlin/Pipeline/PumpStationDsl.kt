@@ -9,6 +9,9 @@ import com.TTT.Debug.TraceConfig
 import com.TTT.Debug.TraceDetailLevel
 import com.TTT.Debug.TraceFormat
 import com.TTT.Enums.PumpStationForceTarget
+import com.TTT.Enums.PumpStationGatewayHistorySource
+import com.TTT.Enums.PumpStationGatewayPromptPlacement
+import com.TTT.Enums.PumpStationGatewaySetting
 import com.TTT.Enums.PumpStationGoalHistorySource
 import com.TTT.Enums.PumpStationHistoryTransport
 import com.TTT.Enums.PumpStationLatestContentPosition
@@ -278,6 +281,17 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * blocks append to this list. Captured here, applied to the station in [build].
      */
     internal val harnessAgentSlots: MutableList<HarnessAgentSlot> = mutableListOf()
+
+    /**
+     * The named gateways registered through [gateway]. Carried forward when a path block
+     * promotes the builder, so a gateway declared before the first path survives.
+     */
+    internal val gatewayConfigs: MutableList<PumpStationGatewayConfig> = mutableListOf()
+
+    /**
+     * The ordered gateway stage sequence registered through [gatewayStage].
+     */
+    internal val gatewayStageDefinitions: MutableList<PumpStationGatewayStage> = mutableListOf()
 
 //=========================================Configuration============================================================
 
@@ -1124,6 +1138,8 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     fun harnessAgent(
         agent: P2PInterface,
         concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Blocking,
+        name: String? = null,
+        enabled: Boolean = true,
         block: (HarnessAgentSlotDsl.() -> Unit) = {}
     ): PumpStationBuilder<S>
     {
@@ -1131,7 +1147,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         val dsl = HarnessAgentSlotDsl()
         dsl.block()
         targetBuilder.harnessAgentSlots.add(
-            HarnessAgentSlot(agent = agent, concurrency = concurrency, builderFunction = null)
+            HarnessAgentSlot(agent = agent, concurrency = concurrency, builderFunction = null, name = name, enabled = enabled)
         )
         return this
     }
@@ -1142,6 +1158,8 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     fun harnessAgentBuilder(
         fn: suspend (PumpStation) -> P2PInterface,
         concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Async,
+        name: String? = null,
+        enabled: Boolean = true,
         block: (HarnessAgentSlotDsl.() -> Unit) = {}
     ): PumpStationBuilder<S>
     {
@@ -1149,8 +1167,47 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         val dsl = HarnessAgentSlotDsl()
         dsl.block()
         targetBuilder.harnessAgentSlots.add(
-            HarnessAgentSlot(agent = null, concurrency = concurrency, builderFunction = fn)
+            HarnessAgentSlot(agent = null, concurrency = concurrency, builderFunction = fn, name = name, enabled = enabled)
         )
+        return this
+    }
+
+    /**
+     * Register a named gateway agent.
+     *
+     * The gateway is a gate that evaluates whether a step of the task has been completed.
+     * It can be invoked by a flag on a content object, a direct signal to the station, or
+     * a magic contract in the dispatch agent's output.
+     *
+     * @param name The gateway name. Stage definitions and request carriers refer to it.
+     * @param block The gateway configuration block.
+     * @return This builder for chaining.
+     */
+    fun gateway(name: String, block: GatewayBlock.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val dsl = GatewayBlock()
+        dsl.block()
+        targetBuilder.gatewayConfigs.add(dsl.toConfig(name))
+        return this
+    }
+
+    /**
+     * Register a stage in the ordered gateway stage sequence.
+     *
+     * A stage becomes active when the previous stage's gate is met. Its reconfiguration
+     * runs at that moment, so the harness is laid out for the work that comes next.
+     *
+     * @param name The stage name. Surfaced in events and traces.
+     * @param block The stage configuration block.
+     * @return This builder for chaining.
+     */
+    fun gatewayStage(name: String, block: GatewayStageBlock.() -> Unit): PumpStationBuilder<S>
+    {
+        val targetBuilder = resolveActiveBuilder()
+        val dsl = GatewayStageBlock()
+        dsl.block()
+        targetBuilder.gatewayStageDefinitions.add(dsl.toStage(name))
         return this
     }
 
@@ -1271,6 +1328,8 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         judgeJsonContractEnabled = source.judgeJsonContractEnabled
         pathSafetyJsonContractEnabled = source.pathSafetyJsonContractEnabled
         reservePaths.putAll(source.reservePaths)
+        gatewayConfigs.addAll(source.gatewayConfigs)
+        gatewayStageDefinitions.addAll(source.gatewayStageDefinitions)
         externalContextProvider = source.externalContextProvider
         pausePhases.addAll(source.pausePhases)
         judgeSystemPrompt = source.judgeSystemPrompt
@@ -1373,6 +1432,11 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             cfg.initialForces.forEach { station.force(it) }
         }
 
+        // Gateway system - applied through the public fluent API so the DSL round-trips
+        // with the public surface.
+        gatewayConfigs.forEach { station.setGateway(it) }
+        station.setGatewayStages(gatewayStageDefinitions.toList())
+
         // Apply all configuration to the station using the public fluent setters.
         station
             .setJudgeAgent(judgeAgent as? Pipeline)
@@ -1431,11 +1495,11 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         {
             if (slot.builderFunction != null)
             {
-                station.addHarnessAgentBuilder(slot.builderFunction!!, slot.concurrency)
+                station.addHarnessAgentBuilder(slot.builderFunction!!, slot.concurrency, slot.name, slot.enabled)
             }
             else if (slot.agent != null)
             {
-                station.addHarnessAgent(slot.agent!!, slot.concurrency)
+                station.addHarnessAgent(slot.agent!!, slot.concurrency, slot.name, slot.enabled)
             }
         }
 
@@ -2418,6 +2482,160 @@ class PauseBlock(private val builder: PumpStationBuilder<*>)
      * Read-only view of the captured phases. Mutate via [add] / [addAll].
      */
     val phases: Set<PumpStationPausePhase> get() = builder.pausePhases
+}
+
+/**
+ * DSL block for declaring a named gateway agent.
+ *
+ * Usage:
+ * ```kotlin
+ * pumpStation {
+ *     gateway("todo-check") {
+ *         agent = todoPipeline
+ *         systemPrompt = "The step is done when the unit test file exists."
+ *         userPrompt = "Focus on task 3."
+ *         userPromptPlacement = PumpStationGatewayPromptPlacement.BeforeHistory
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class GatewayBlock
+{
+    /** The gateway agent. Must be a [Pipeline] so the system prompt can be injected. */
+    var agent: Pipeline? = null
+
+    /** Optional per-turn agent factory, evaluated before each invocation. */
+    var builderFunction: (suspend (PumpStation) -> P2PInterface)? = null
+
+    /**
+     * The saved criteria string. It is appended to the gateway's default contract prompt,
+     * so the verdict contract can never be lost.
+     */
+    var systemPrompt: String? = null
+
+    /** The injectable instruction handed to the gateway on every evaluation. */
+    var userPrompt: String? = null
+
+    /** Where [userPrompt] lands in the assembled prompt. */
+    var userPromptPlacement: PumpStationGatewayPromptPlacement = PumpStationGatewayPromptPlacement.BeforeHistory
+
+    /** Which history the gateway reads: the curated view or the full event log. */
+    var historySource: PumpStationGatewayHistorySource = PumpStationGatewayHistorySource.Summarized
+
+    /** Optional ContextBank page key of a todo list this gateway is bound to. */
+    var todoPageKey: String? = null
+
+    /** Optional todo task number this gateway is bound to. */
+    var todoTaskNumber: Int? = null
+
+    /**
+     * Build the runtime configuration for this gateway.
+     *
+     * @param name The gateway name.
+     * @return The configuration.
+     */
+    internal fun toConfig(name: String): PumpStationGatewayConfig = PumpStationGatewayConfig(
+        name = name,
+        agent = agent,
+        builderFunction = builderFunction,
+        systemPrompt = systemPrompt,
+        userPrompt = userPrompt,
+        userPromptPlacement = userPromptPlacement,
+        historySource = historySource,
+        todoPageKey = todoPageKey,
+        todoTaskNumber = todoTaskNumber
+    )
+}
+
+/**
+ * DSL block for declaring a stage in the ordered gateway stage sequence.
+ *
+ * Usage:
+ * ```kotlin
+ * pumpStation {
+ *     gatewayStage("implementation") {
+ *         gateway = "todo-check"
+ *         setVisiblePaths("write-tests", "run-tests")
+ *         enableHarnessAgent("reviewer")
+ *     }
+ * }
+ * ```
+ */
+@PumpStationDslMarker
+class GatewayStageBlock
+{
+    /** The gateway that gates this stage. */
+    var gateway: String = ""
+
+    /**
+     * When false, a "not complete" verdict still advances the stage. Use this for advisory
+     * gates, and as the escape hatch for a gate that cannot be satisfied.
+     */
+    var gateBlocking: Boolean = true
+
+    internal val actions: MutableList<PumpStationStageAction> = mutableListOf()
+
+    /** Reveal a reserve path when this stage becomes active. */
+    fun revealPath(pathName: String)
+    {
+        actions.add(PumpStationStageAction.RevealPath(pathName))
+    }
+
+    /** Hide a path when this stage becomes active. */
+    fun hidePath(pathName: String)
+    {
+        actions.add(PumpStationStageAction.HidePath(pathName))
+    }
+
+    /** Replace the entire visible path set when this stage becomes active. */
+    fun setVisiblePaths(vararg pathNames: String)
+    {
+        actions.add(PumpStationStageAction.SetVisiblePaths(pathNames.toList()))
+    }
+
+    /** Enable a named harness agent slot when this stage becomes active. */
+    fun enableHarnessAgent(slotName: String)
+    {
+        actions.add(PumpStationStageAction.SetHarnessAgentEnabled(slotName, true))
+    }
+
+    /** Disable a named harness agent slot when this stage becomes active. */
+    fun disableHarnessAgent(slotName: String)
+    {
+        actions.add(PumpStationStageAction.SetHarnessAgentEnabled(slotName, false))
+    }
+
+    /** Replace the entire harness agent roster when this stage becomes active. */
+    fun setHarnessAgents(vararg slots: HarnessAgentSlot)
+    {
+        actions.add(PumpStationStageAction.SetHarnessAgents(slots.toList()))
+    }
+
+    /** Change a station setting when this stage becomes active. */
+    fun setSetting(setting: PumpStationGatewaySetting, value: PumpStationGatewaySettingValue)
+    {
+        actions.add(PumpStationStageAction.SetSetting(setting, value))
+    }
+
+    /** Arbitrary reconfiguration to run when this stage becomes active. */
+    fun onEnter(action: suspend (PumpStation) -> Unit)
+    {
+        actions.add(PumpStationStageAction.Custom(action))
+    }
+
+    /**
+     * Build the runtime stage definition.
+     *
+     * @param name The stage name.
+     * @return The stage.
+     */
+    internal fun toStage(name: String): PumpStationGatewayStage = PumpStationGatewayStage(
+        name = name,
+        gateway = gateway,
+        gateBlocking = gateBlocking,
+        onEnter = actions.toList()
+    )
 }
 
 /**

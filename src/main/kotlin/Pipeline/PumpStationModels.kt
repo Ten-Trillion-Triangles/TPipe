@@ -143,6 +143,9 @@ enum class PumpStationStatus
  * Blocking slots and [BackgroundAgents] for Async slots. Both map onto the same
  * [com.TTT.Debug.TracePhase.AGENT_COMMUNICATION] bucket in the trace funnel, so the
  * precise harness label travels in the trace metadata.
+ *
+ * [Gateway] is the phase of the gateway agent, which evaluates whether a step of the task
+ * has been completed. It runs after path execution and before the harness agent slots.
  */
 enum class PumpStationPhase
 {
@@ -156,6 +159,7 @@ enum class PumpStationPhase
     Intervention,
     ForegroundAgents,
     BackgroundAgents,
+    Gateway,
     MemoryUpdate,
     Compaction,
     SafePrune,
@@ -1294,6 +1298,71 @@ data class ForceSkipped(
     val reason: String = ""
 ) : PumpStationEvent
 
+//=========================================Gateway Events==========================================================
+
+/**
+ * A gateway agent evaluated a step of the task.
+ *
+ * @property gatewayName The gateway that produced the verdict.
+ * @property stageName The stage the gateway was gating, when one was active.
+ * @property complete True when the step is verifiably finished.
+ * @property reason Short explanation of the verdict.
+ * @property instruction The instruction injected into turn history when incomplete.
+ * @property parseFailed True when the gateway output could not be parsed at all.
+ */
+@kotlinx.serialization.Serializable
+data class GatewayEvaluated(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Gateway,
+    val gatewayName: String,
+    val stageName: String? = null,
+    val complete: Boolean = false,
+    val reason: String = "",
+    val instruction: String = "",
+    val parseFailed: Boolean = false,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null
+) : PumpStationEvent
+
+/**
+ * A gateway stage advanced and its reconfiguration was applied.
+ *
+ * @property fromStage The stage that was active before the advance.
+ * @property toStage The stage that is active after the advance.
+ * @property applied Descriptions of the reconfiguration actions that succeeded.
+ * @property failed Descriptions of the reconfiguration actions that did not apply.
+ */
+@kotlinx.serialization.Serializable
+data class GatewayStageAdvanced(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Gateway,
+    val fromStage: String? = null,
+    val toStage: String? = null,
+    val applied: List<String> = emptyList(),
+    val failed: List<String> = emptyList()
+) : PumpStationEvent
+
+/**
+ * A gateway was requested but could not be evaluated.
+ *
+ * @property gatewayName The gateway that was requested.
+ * @property reason Why the gateway could not be evaluated.
+ */
+@kotlinx.serialization.Serializable
+data class GatewaySkipped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Gateway,
+    val gatewayName: String,
+    val reason: String = ""
+) : PumpStationEvent
+
 //=========================================Turn Control============================================================
 
 /**
@@ -1364,7 +1433,18 @@ data class HarnessAgentSlot(
     val agent: P2PInterface?,
     val concurrency: PumpStationConcurrencyMode,
     val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null,
-    val appendsToTurnHistory: Boolean = false
+    val appendsToTurnHistory: Boolean = false,
+    /**
+     * Stable name for this slot. Gateway stage actions target a slot by this name when
+     * they enable, disable or replace part of the harness agent roster. Null means the
+     * slot is unnamed and can only be addressed positionally.
+     */
+    val name: String? = null,
+    /**
+     * When false the slot is skipped by the foreground and background agent phases.
+     * Used by gateway stages to silo off an agent for the duration of a stage.
+     */
+    val enabled: Boolean = true
 )
 
 //=========================================Loop Control Flags======================================================
@@ -1530,7 +1610,15 @@ data class PumpStationTaskState(
     // v3: turn-index cursor for the lorebook pipeline. Lets the lorebook agent detect
     // that an ahead update already covered the work and discard its own output. See
     // [LorebookCursor].
-    var lorebookCursor: LorebookCursor? = null
+    var lorebookCursor: LorebookCursor? = null,
+    // Index into the gateway stage sequence. Zero is the first stage. Durable harness
+    // state: the active stage decides which paths, agents and settings are in play.
+    var gatewayStageIndex: Int = 0,
+    // Name of the active gateway stage. Surfaced in gateway events and traces.
+    var gatewayStageName: String? = null,
+    // Consecutive "not complete" verdicts for the active stage. Diagnostic only; the
+    // harness's own maxTurns is the backstop for a gate that cannot be satisfied.
+    var gatewayFailureCount: Int = 0
 )
 
 /**

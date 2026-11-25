@@ -36,6 +36,7 @@
 - [Wait / Join: Suspending the Main Loop](#wait--join-suspending-the-main-loop)
 - [Stash, Snapshots, and Pause/Resume](#stash-snapshots-and-pauseresume)
 - [Force Flags](#force-flags)
+- [Gateway System](#gateway-system)
 - [Tracing Support](#tracing-support)
 - [Kill Switch Integration](#kill-switch-integration)
 - [P2P Integration](#p2p-integration)
@@ -72,7 +73,7 @@ Use `PumpStation` when:
 
 ## Architecture at a Glance
 
-The runtime has two scopes. The outer loop (`runHarnessLoop`) drives turns via `while (turnIndex < maxTurns)`, calling the inner cycle (`runTurn`) each iteration, then runs finalization once. The inner cycle runs the per-turn phases (health, judge, dispatch, path, foreground agents, background agents, memory update, compaction) and returns `Continue` or `Halt(reason)`. A separate transition phase, `runExitFlow`, runs goal validation when the judge says the task is complete or a path signals pass.
+The runtime has two scopes. The outer loop (`runHarnessLoop`) drives turns via `while (turnIndex < maxTurns)`, calling the inner cycle (`runTurn`) each iteration, then runs finalization once. The inner cycle runs the per-turn phases (health, judge, dispatch, path, gateway, foreground agents, background agents, memory update, compaction) and returns `Continue` or `Halt(reason)`. A separate transition phase, `runExitFlow`, runs goal validation when the judge says the task is complete or a path signals pass.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -81,7 +82,7 @@ The runtime has two scopes. The outer loop (`runHarnessLoop`) drives turns via `
 │  runPreInitPhase(content)                  ← ONCE                      │
 │  while (turnIndex < maxTurns) {                                       │
 │      runTurn()                            ← inner cycle               │
-│          healthCheck → judge → dispatch → path → fg agents             │
+│          healthCheck → judge → dispatch → path → gateway → fg agents    │
 │            → bg agents → memory update → compaction                    │
 │          return TurnResult.Continue | Halt(reason)                     │
 │  }                                                                     │
@@ -120,11 +121,12 @@ Per-turn, the harness (in order):
 16. Records the result in `taskState.lastPathResult` and `taskState.latestContent`
 17. Checks `passPipeline` / `terminatePipeline` flags on the path's result
 18. Prunes turn history if it exceeds `maxTurnHistorySize`
-19. Runs the foreground (Blocking) harness agent slots
-20. Queues background (Async) harness agent slots on the station-scoped `asyncScope` (coroutine scope owned by the harness; cancelled by `cancelAsyncJobs` at finalization)
-21. Runs the memory update phase (queues lorebook + summary if interval hit or fill pressure)
-22. Runs the compaction phase
-23. Returns `Continue`
+19. Runs the gateway phase when a gateway was requested, and applies any stage reconfiguration
+20. Runs the foreground (Blocking) harness agent slots
+21. Queues background (Async) harness agent slots on the station-scoped `asyncScope` (coroutine scope owned by the harness; cancelled by `cancelAsyncJobs` at finalization)
+22. Runs the memory update phase (queues lorebook + summary if interval hit or fill pressure)
+23. Runs the compaction phase
+24. Returns `Continue`
 
 On the next turn, the judge phase starts by calling `drainPendingAsyncResults()`, which merges any `PendingTurnEntry` items produced by async paths or async harness agents during the previous turn into `turnHistory` in monotonic `seq` order, then emits one `AsyncTurnAppended` event per merged entry. The finalization phase performs a second drain immediately before cancelling `asyncScope`.
 
@@ -940,6 +942,32 @@ Register additional agents that fire during the foreground or background phase. 
 
 The blocking slots fire synchronously during the foreground phase. The async slots are queued and launched on the station's `asyncScope`; the result is captured into `turnHistory` when the slot's `appendsToTurnHistory` field is `true` OR the station-wide `asyncAgentsAppendToTurnHistory` is `true`. See [Async Substrate](#async-substrate) below.
 
+Each slot may also carry a stable `name` and an `enabled` flag. Gateway stage actions target a slot by its name, and a disabled slot is skipped by the foreground and background agent phases.
+
+### `gateway { }` and `gatewayStage { }` Blocks
+
+The `gateway { }` block declares a named gateway agent:
+
+| Member | Type | Default | Description |
+|---|---|---|---|
+| `agent` | `Pipeline?` | `null` | The gateway agent. Must be a `Pipeline` so the system prompt can be injected. |
+| `builderFunction` | `(suspend (PumpStation) -> P2PInterface)?` | `null` | Per-turn agent factory, evaluated before each invocation. |
+| `systemPrompt` | `String?` | `null` | Saved criteria. Appended to the default contract prompt. |
+| `userPrompt` | `String?` | `null` | Injectable instruction, placed per `userPromptPlacement`. |
+| `userPromptPlacement` | `PumpStationGatewayPromptPlacement` | `BeforeHistory` | Where the instruction lands. |
+| `historySource` | `PumpStationGatewayHistorySource` | `Summarized` | Which history the gateway reads. |
+| `todoPageKey` | `String?` | `null` | ContextBank page key of a todo list to bind to. |
+| `todoTaskNumber` | `Int?` | `null` | Todo task number to bind to. |
+
+The `gatewayStage { }` block declares one stage in the ordered sequence:
+
+| Member | Type | Default | Description |
+|---|---|---|---|
+| `gateway` | `String` | `""` | The gateway that gates this stage. |
+| `gateBlocking` | `Boolean` | `true` | When false, a "not complete" verdict still advances the stage. |
+
+The stage block also exposes the action helpers `revealPath`, `hidePath`, `setVisiblePaths`, `enableHarnessAgent`, `disableHarnessAgent`, `setHarnessAgents`, `setSetting` and `onEnter`. See [Gateway System](#gateway-system) for the full model.
+
 ### `memory { }` Block
 
 Read/write accessors for memory-management fields. See `compaction { }` — same shape.
@@ -1111,6 +1139,9 @@ internal suspend fun PumpStation.runTurn(): TurnResult {
     }
     pruneTurnHistory()
     pruneRawTurnHistory()
+    runSafePrunePhase()
+
+    runGatewayPhase()
 
     runForegroundAgentsPhase()
     detectAndHandleContextBlowout(PumpStationPhase.ForegroundAgents)
@@ -1227,6 +1258,7 @@ The advisory is non-blocking — the harness continues. The `mechanisms` field o
 | `PathExecution`      | After dispatch + safety                               | `PathObject.execute` |
 | `PathValidation`     | After path returns                                    | `pathValidationFunction` |
 | `Intervention`       | After path failure or loop guard trip                 | `interventionAgent` |
+| `Gateway`            | After path execution, before the harness agent slots | Requested gateway agents |
 | `ForegroundAgents`   | After path execution (if interval hit)                | Blocking harness agent slots |
 | `BackgroundAgents`   | After foreground (if interval hit, async)             | Async harness agent slots |
 | `MemoryUpdate`       | After foreground (if interval hit or pressure)        | `lorebookAgent`, `summaryAgent` |
@@ -2304,6 +2336,115 @@ pumpStation("name") {
 
 The `forcePolicy { }` block arms each declared target once at construction.
 
+## Gateway System
+
+A **gateway** is a named, LLM-driven gate that judges whether one step of the task has been completed. When the gate passes, the harness advances to the next **stage** and reconfigures itself — visible paths, agent roster, settings — for the work that comes next.
+
+The gateway is the one part of the harness that sits outside the normal judge → dispatch → path cycle. It observes the work, and decides whether the next stage is allowed to start.
+
+### Phase Position
+
+The gateway phase runs **after path execution and before the foreground harness agents**:
+
+```
+health → judge → dispatch → path → GATEWAY → foreground agents → background agents → memory → compaction
+```
+
+A gateway judges the work that was *just* performed, so it has to run after the path. It runs before the harness agents so a verdict is available before the next agents fire, and so a stage advance can reconfigure the roster before those agents run.
+
+The phase is a no-op when nothing was requested: the pending-request registry is drained, and an empty drain returns immediately.
+
+### Triggers
+
+There are exactly three typed ways to request an evaluation, and no fuzzy text matching anywhere.
+
+| Trigger | API | Typical caller |
+|---|---|---|
+| Content flag | `content.requestGateway("todo-check")` | A path's execution function, a DITL hook |
+| Direct signal | `station.signalGateway("todo-check")` | External code, a custom harness agent |
+| Dispatch contract | `"gatewayRequest": "todo-check"` in the `PathRequest` JSON | The dispatch LLM |
+
+The content carrier rides on `MultimodalContent.gatewayRequests`, which is `@Transient` — the request never crosses a serialization boundary, and `copy()` carries it forward. The dispatch contract field is advertised automatically, because the dispatch JSON example is generated from `examplePromptFor(PathRequest::class)`.
+
+Requests are collected wherever content enters the loop — the turn's input, path results, judge results, memory-update results and compaction results. The registry is drained by the gateway phase, so each request produces at most one evaluation per turn.
+
+The registry lives on the station, outside the serialized task state, so it survives `P2PInit` and is not part of a snapshot or resume. A nested station keeps its own registry — the same model as the force-flag registry.
+
+### Verdict
+
+The gateway agent answers with a `GatewayVerdict` JSON object:
+
+```json
+{
+  "complete": false,
+  "reason": "The unit test file exists but the test suite was not run.",
+  "instruction": "Run the test suite and paste the result into the report."
+}
+```
+
+Parsing is tolerant: typed JSON first, then the `passPipeline` / `terminatePipeline` flags, then fail closed (`complete = false`, `parseFailed = true`). See [Gateway Contract](../core-concepts/pumpstation-magic-contracts.md#gateway-contract-inbound-verdict) for the full contract.
+
+The gateway agent must be a `Pipeline`: the contract is injected into its decision pipe, so a builder that returns any other `P2PInterface` is reported as a `GatewaySkipped` configuration error rather than run without a contract.
+
+### When the Gate Fails
+
+A "not complete" verdict does **not** end the turn. The harness injects the verdict's `instruction` into `turnHistory` as a `ConverseRole.harness` entry, leaves the stage locked, and lets the turn finish normally through safe-prune → foreground agents → background agents → memory update → compaction.
+
+Ending the turn early would skip the memory update and compaction phases, starving the lorebook, summary and compaction managers on exactly the turns when the harness is struggling. The agent keeps its ability to dispatch and do the missing work; what it loses is access to the next stage's capabilities.
+
+The ordering is enforced by the **stage lock**, not by blocking the loop. The harness never refuses to run a phase because a gate failed.
+
+### Stages
+
+A station may declare an ordered sequence of stages. Each stage names the gateway that gates it and carries the reconfiguration to apply when the stage becomes active.
+
+```kotlin
+gatewayStage("implementation") {
+    gateway = "todo-check"
+    setVisiblePaths("implement")
+    enableHarnessAgent("reviewer")
+}
+```
+
+Stage 0 is active from the start: its `onEnter` actions are applied when the harness initializes, and a `GatewayStageAdvanced` event with `fromStage = null` records the initial configuration in the trace.
+
+A stage advances when its gate is met:
+
+| `gateBlocking` | Behavior |
+|---|---|
+| `true` (default) | The stage advances only when the gating gateway returns `complete = true`. |
+| `false` | The gate is advisory: it still evaluates and still emits a verdict, but the stage advances anyway. |
+
+`gateBlocking = false` is the escape hatch for a gate that cannot be satisfied or would otherwise deadlock the harness.
+
+When the stage advances, the new stage's `onEnter` actions run in list order on the foreground harness loop. A failing action is recorded and skipped; the remaining actions still run.
+
+### Reconfiguration Actions
+
+| Action | Effect |
+|---|---|
+| `RevealPath(name)` | Moves a reserve path into the visible path list, bypassing its `revealWhen` predicate. |
+| `HidePath(name)` | Hides a path: a visible path moves back into the reserve list; a reserve path revealed by its `revealWhen` predicate has the predicate neutralised and the sticky reveal flag cleared, so it leaves the visible set. |
+| `SetVisiblePaths(names...)` | Replaces the entire visible path set with exactly these names. |
+| `SetHarnessAgentEnabled(name, enabled)` | Enables or disables one named harness agent slot. |
+| `SetHarnessAgents(slots...)` | Replaces the entire harness agent roster. |
+| `SetSetting(setting, value)` | Changes one station setting. |
+| `Custom { station -> ... }` | Arbitrary developer-supplied reconfiguration. |
+
+The settings a stage may change are `ForegroundTurnInterval`, `BackgroundTurnInterval`, `MaxConcurrentForegroundAgents`, `MaxConcurrentBackgroundAgents`, `CompactionThreshold`, `MaxTurnHistorySize` and `MaxTurns`. A value whose type does not match the target setting is **rejected, not coerced**: the action is recorded as failed and the setting is unchanged.
+
+### Observability
+
+| Event | Trace type | When |
+|---|---|---|
+| `GatewayEvaluated` | `PUMP_STATION_GATEWAY_EVALUATED` | A gateway produced a verdict. |
+| `GatewayStageAdvanced` | `PUMP_STATION_GATEWAY_STAGE_ADVANCED` | The active stage changed. |
+| `GatewaySkipped` | `PUMP_STATION_GATEWAY_SKIPPED` | A requested gateway could not be evaluated. |
+
+The active stage index, the stage name and the consecutive-failure count live in `PumpStationTaskState` and are therefore snapshotted.
+
+See [PumpStation Gateway](../core-concepts/pumpstation-gateway.md) for the full concept, including the end-to-end example.
+
 ## Tracing Support
 
 PumpStation tracing is keyed by `taskState.runId` (e.g. `ps-1718371200000-1234`). Every `PumpStationEvent` is mirrored into the global `PipeTracer` when tracing is enabled. The trace funnel (`Pipeline/PumpStationHelpers.kt:75`) maps each sealed event subtype to a `PUMP_STATION_*` `TraceEventType`.
@@ -2339,6 +2480,9 @@ Trace events emitted by PumpStation:
 | `PUMP_STATION_PATH_VALIDATION_COMPLETED` | `PathValidationCompleted` | pathName, approved, reason |
 | `PUMP_STATION_INTERVENTION_STARTED` | `InterventionStarted` | pathName, trigger |
 | `PUMP_STATION_INTERVENTION_COMPLETED` | `InterventionCompleted` | nudges, shouldContinue, contentPreview, token usage |
+| `PUMP_STATION_GATEWAY_EVALUATED` | `GatewayEvaluated` | gatewayName, stageName, complete, reason, instruction, parseFailed |
+| `PUMP_STATION_GATEWAY_STAGE_ADVANCED` | `GatewayStageAdvanced` | fromStage, toStage, applied, failed |
+| `PUMP_STATION_GATEWAY_SKIPPED` | `GatewaySkipped` | gatewayName, reason |
 | `PUMP_STATION_FOREGROUND_AGENT_COMPLETED` | `ForegroundAgentCompleted` | agentName, contentPreview, token usage |
 | `PUMP_STATION_MEMORY_UPDATE_STARTED` | `MemoryUpdateStarted` | memoryMode |
 | `PUMP_STATION_MEMORY_UPDATE_COMPLETED` | `MemoryUpdateCompleted` | memoryMode, compactionPercent, loreBookActive, summaryActive |

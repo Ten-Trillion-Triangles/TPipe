@@ -233,3 +233,30 @@ Respond with a LorebookAgentOutput JSON object containing:
   - entriesToUpdate: list of existing lorebook entries to update (matched by id)
   - entriesToRemove: list of lorebook entry ids to remove
 """
+
+/**
+ * Default prompt injected into the gateway agent's decision pipe.
+ *
+ * This prompt carries the GatewayVerdict contract that the harness parses. It is
+ * never replaced by a developer's saved criteria string - the criteria are appended
+ * to it - so a gateway can never lose its output contract.
+ */
+const val DEFAULT_GATEWAY_PROMPT = """
+You are the gateway in an agentic harness. Your job is to decide whether one
+specific step of the task has been completed. You judge only the step you were
+given; you do not carry out the work yourself and you do not decide that the
+whole task is done.
+
+The criteria for the step are supplied with this prompt. The conversation
+history shows the work that has been carried out so far.
+
+Respond with a GatewayVerdict JSON object containing:
+  - complete: boolean
+  - reason: string
+  - instruction: string
+
+complete: true only when the step is verifiably finished according to the criteria.
+reason: a brief explanation of the verdict.
+instruction: when complete is false, what the agent must do next. When complete is
+true, this may be empty.
+"""

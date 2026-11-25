@@ -508,6 +508,7 @@ internal suspend fun PumpStation.runJudgePhase(): JudgeVerdict
 
     // Post-judge hook
     val postResult = postJudgeFunctionInternal?.invoke(result, this) ?: result
+    collectGatewayRequests(postResult)
 
     // Parse verdict + flag check.
     // When the judge contract is disabled (judgeExpectsJsonContract = false), the
@@ -651,6 +652,7 @@ internal suspend fun PumpStation.runDispatchPhase(): PathRequest?
             // emitted null/blank rationale, append a Hint to turn history so the
             // next dispatch LLM sees the field it forgot.
             applyRationaleNudgeIfNeeded(pathRequest, pathRequest.pathSelectionRationale)
+            pathRequest.gatewayRequest?.takeIf { it.isNotBlank() }?.let { gatewayService.request(it) }
             return pathRequest
         }
 
@@ -740,6 +742,9 @@ internal suspend fun PumpStation.runDispatchPhaseMulti(): PathRequest?
             return null
         }
         val pathRequestList = parseDispatchOutputMulti(result)
+        pathRequestList?.paths?.forEach { request ->
+            request.gatewayRequest?.takeIf { it.isNotBlank() }?.let { gatewayService.request(it) }
+        }
         if (pathRequestList != null && pathRequestList.paths.isNotEmpty())
 {
             emitEventInternal(PathBatchStarted(
@@ -2198,6 +2203,7 @@ internal suspend fun PumpStation.runMemoryUpdatePhase()
 {
             postMemoryFunctionInternal?.invoke(currentContent, this)?.let { transformed ->
                 taskState.latestContent = transformed
+                collectGatewayRequests(transformed)
             }
         }
     }
@@ -2339,11 +2345,12 @@ internal suspend fun PumpStation.runCompactionPhase(): CompactionResult
 
     val afterSize = turnHistory.history.size
 
-    postCompactionFunctionInternal?.invoke(
+    val postCompactionResult = postCompactionFunctionInternal?.invoke(
         taskState.latestContent ?: MultimodalContent(),
         turnHistory,
         this
     )
+    collectGatewayRequests(postCompactionResult)
 
     emitEventInternal(CompactionCompleted(
         runId = taskState.runId,
@@ -2899,7 +2906,7 @@ internal suspend fun PumpStation.runForegroundAgentsPhase()
                       taskState.turnIndex % foregroundTurnIntervalInternal == 0
     if (!forced && !intervalHit) return
 
-    val blockingSlotCount = additionalHarnessAgentSlotsInternal.count { it.concurrency == PumpStationConcurrencyMode.Blocking }
+    val blockingSlotCount = additionalHarnessAgentSlotsInternal.count { it.concurrency == PumpStationConcurrencyMode.Blocking && it.enabled }
     if (blockingSlotCount == 0)
     {
         if (forced) emitForceSkipped(PumpStationForceTarget.ForegroundAgents, PumpStationPhase.ForegroundAgents, "no blocking harness agent slots registered")
@@ -2910,6 +2917,7 @@ internal suspend fun PumpStation.runForegroundAgentsPhase()
     for (slot in additionalHarnessAgentSlotsInternal)
 {
         if (slot.concurrency != PumpStationConcurrencyMode.Blocking) continue
+        if (!slot.enabled) continue
         val agent = slot.builderFunction?.invoke(this) ?: slot.agent ?: continue
         agent.setParentInterface(this)
         agent.P2PInit()
@@ -2979,7 +2987,7 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
                       taskState.turnIndex % backgroundTurnIntervalInternal == 0
     if (!forced && !intervalHit) return
 
-    val asyncSlotCount = additionalHarnessAgentSlotsInternal.count { it.concurrency == PumpStationConcurrencyMode.Async }
+    val asyncSlotCount = additionalHarnessAgentSlotsInternal.count { it.concurrency == PumpStationConcurrencyMode.Async && it.enabled }
     if (asyncSlotCount == 0)
     {
         if (forced) emitForceSkipped(PumpStationForceTarget.BackgroundAgents, PumpStationPhase.BackgroundAgents, "no async harness agent slots registered")
@@ -2997,6 +3005,7 @@ internal suspend fun PumpStation.runBackgroundAgentsPhase()
     for (slot in additionalHarnessAgentSlotsInternal)
 {
         if (slot.concurrency != PumpStationConcurrencyMode.Async) continue
+        if (!slot.enabled) continue
         val appends = slot.appendsToTurnHistory || asyncAgentsAppendToTurnHistoryInternal
         val seq = if (appends) asyncSeqCounterInternal.incrementAndGet() else -1L
         val turnIndexSnapshot = taskState.turnIndex
@@ -3223,11 +3232,12 @@ internal suspend fun PumpStation.detectAndHandleContextBlowout(afterPhase: PumpS
 
     runCompactionPhase()
 
-    postCompactionFunctionInternal?.invoke(
+    val postCompactionResult = postCompactionFunctionInternal?.invoke(
         taskState.latestContent ?: MultimodalContent(),
         turnHistory,
         this
     )
+    collectGatewayRequests(postCompactionResult)
 
     onContextTruncatedInternal?.invoke(true, (1.0 - contextFillRatio()).toInt())
 
@@ -3362,6 +3372,7 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
 {
     taskState.originalInput = content
     taskState.latestContent = content
+    collectGatewayRequests(content)
     taskState.status = PumpStationStatus.Running
     taskState.phase = PumpStationPhase.PreInit
 
@@ -3598,6 +3609,8 @@ internal suspend fun PumpStation.runTurn(): TurnResult
     pruneTurnHistory()
     pruneRawTurnHistory()
     runSafePrunePhase()
+
+    runGatewayPhase()
 
     runForegroundAgentsPhase()
     detectAndHandleContextBlowout(PumpStationPhase.ForegroundAgents)

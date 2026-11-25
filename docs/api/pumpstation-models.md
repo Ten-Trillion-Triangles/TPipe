@@ -10,11 +10,14 @@
 data class PathRequest(
     var pathName: String = "",
     var pathSchema: String = "",
-    var pathSelectionRationale: String? = null
+    var pathSelectionRationale: String? = null,
+    var gatewayRequest: String? = null
 )
 ```
 
 `pathName` is matched case-insensitively against `pathList` and `reservePaths`. `pathSchema` is passed to the path as the input. `pathSelectionRationale` is an optional free-text reason the dispatch LLM writes for the path it picked. It rides into `DispatchCompleted.pathRequest` and into the `PUMP_STATION_DISPATCH_COMPLETED` trace event. The field is nullable, so old checkpoints that don't emit it still produce a schema-valid `PathRequest`. When `failurePolicy.requirePathSelectionRationale = true` (the default) and the LLM returns null, the harness appends a one-shot reminder to the next dispatch prompt. See [Dispatch Contract: `pathSelectionRationale`](../containers/pumpstation.md#dispatch-contract-pathselectionrationale).
+
+`gatewayRequest` names a gateway the dispatch agent wants evaluated. The field is optional and nullable, so a dispatch payload without it is still schema-valid. It is advertised to the dispatch LLM automatically: the dispatch JSON example is generated from `examplePromptFor(PathRequest::class)`, so a new field appears in the prompt without extra wiring. The named gateway is evaluated in the same turn, right after the dispatched path has run. See [PumpStation Gateway](../core-concepts/pumpstation-gateway.md).
 
 ### PathRequestList
 
@@ -612,9 +615,14 @@ data class PumpStationTaskState(
     var pauseReason: String? = null,
     var requestJudgeNextTurn: Boolean = false,
     var compactionCursor: CompactionCursor? = null,
-    var lorebookCursor: LorebookCursor? = null
+    var lorebookCursor: LorebookCursor? = null,
+    var gatewayStageIndex: Int = 0,
+    var gatewayStageName: String? = null,
+    var gatewayFailureCount: Int = 0
 )
 ```
+
+`gatewayStageIndex` is the index into the ordered gateway stage sequence; zero is the first stage. `gatewayStageName` is the name of the active stage, or null when no stage is active. `gatewayFailureCount` counts the consecutive failed gateway evaluations and resets to zero on a successful verdict. All three are part of the snapshotted task state.
 
 `currentPathName` is set while a path is being executed and is used to annotate nested P2P events with the parent path's name. `requestJudgeNextTurn` is the one-shot flag consumed by `runJudgePhase` in `FlagTriggered` mode.
 
@@ -721,6 +729,16 @@ The full event taxonomy is documented below. Each event has a corresponding `Tra
 | `BackgroundAgentQueued` | `agentName: String` | `BackgroundAgents` | Emitted when a background (Async) agent is queued. |
 | `AsyncTurnAppended` | `source: String`, `pathName: String?`, `agentName: String?`, `seq: Long`, `content: MultimodalContent?` | `PathExecution` | Emitted when an async path or async harness agent result is merged into `turnHistory` by the foreground drain. Observers can correlate the merge back to the dispatch via `seq` and `pathName` / `agentName`. |
 
+### Gateway Events
+
+`Pipeline/PumpStationModels.kt:1300-1375`
+
+| Event | Data | Phase | Description |
+|-------|------|-------|-------------|
+| `GatewayEvaluated` | `gatewayName: String`, `stageName: String?`, `complete: Boolean`, `reason: String`, `instruction: String`, `parseFailed: Boolean` | `Gateway` | Emitted when a gateway agent produces a verdict. `parseFailed` is true when the output could not be parsed at all; such a verdict fails closed and the stage stays locked. |
+| `GatewayStageAdvanced` | `fromStage: String?`, `toStage: String?`, `applied: List<String>`, `failed: List<String>` | `Gateway` | Emitted when the active stage changes. The initial stage emits this with `fromStage = null`. `applied` and `failed` describe the stage reconfiguration actions. |
+| `GatewaySkipped` | `gatewayName: String`, `reason: String` | `Gateway` | Emitted when a requested gateway could not be evaluated — no gateway with that name is configured, or it has no agent. |
+
 ### Memory and Compaction Events
 
 `Pipeline/PumpStationModels.kt:545-676`
@@ -800,13 +818,19 @@ data class HarnessAgentSlot(
     val agent: P2PInterface?,
     val concurrency: PumpStationConcurrencyMode,
     val builderFunction: (suspend (harness: PumpStation) -> P2PInterface)? = null,
-    val appendsToTurnHistory: Boolean = false
+    val appendsToTurnHistory: Boolean = false,
+    val name: String? = null,
+    val enabled: Boolean = true
 )
 ```
 
 `concurrency = Blocking` fires synchronously during the foreground phase. `concurrency = Async` queues the agent as a coroutine during the background phase.
 
 `appendsToTurnHistory` (default `false`) is honoured only when `concurrency = Async`. When `true`, the agent's result is captured into a `PendingTurnEntry` and merged into `turnHistory` by the foreground drain at the next safe phase boundary. When `false`, the result is discarded, preserving the historical fire-and-forget semantics. The station-wide `asyncAgentsAppendToTurnHistory` flag can be used as an umbrella default; per-slot flags override the station default.
+
+`name` is the stable handle for the slot. Gateway stage actions target a slot by this name when they enable, disable or replace part of the harness agent roster. A null name means the slot can only be addressed positionally.
+
+`enabled` (default `true`) gates the slot. When false, the foreground and background agent phases skip it, and the slot tallies count only the enabled slots. Gateway stages use this to silo off an agent for the duration of a stage.
 
 ### FlagCheckResult
 
@@ -929,6 +953,236 @@ data class ForceSkipped(
 
 A skipped force is still consumed: the registry never leaves a force armed.
 
+## Gateway Models
+
+The models behind the gateway system. See [PumpStation Gateway](../core-concepts/pumpstation-gateway.md) for the full concept.
+
+### PumpStationGatewayHistorySource
+
+`Enums/PumpStationGatewayHistorySource.kt` — Selects which history the gateway agent reads when it evaluates a step.
+
+```kotlin
+enum class PumpStationGatewayHistorySource
+{
+    Summarized,
+    Full
+}
+```
+
+`Summarized` is the pruned, curated history the judge and dispatch agents see (`turnHistory`). `Full` is the full retained event log (`rawTurnHistory`), including entries the pruned view has dropped.
+
+### PumpStationGatewayPromptPlacement
+
+`Enums/PumpStationGatewayPromptPlacement.kt` — Selects where the gateway's injectable user prompt is placed in the assembled prompt.
+
+```kotlin
+enum class PumpStationGatewayPromptPlacement
+{
+    SystemPrompt,
+    BeforeHistory,
+    AfterHistory,
+    Suffix
+}
+```
+
+`SystemPrompt` appends the text to the gateway agent's system prompt, after the contract prompt and the saved criteria string. The remaining values place the text inside the gateway's user message, relative to the conversation-history block.
+
+### PumpStationGatewaySetting
+
+`Enums/PumpStationGatewaySetting.kt` — Station settings a gateway stage may reconfigure.
+
+```kotlin
+enum class PumpStationGatewaySetting
+{
+    ForegroundTurnInterval,
+    BackgroundTurnInterval,
+    MaxConcurrentForegroundAgents,
+    MaxConcurrentBackgroundAgents,
+    CompactionThreshold,
+    MaxTurnHistorySize,
+    MaxTurns
+}
+```
+
+The set is deliberately narrow: only knobs that change what the agent can reach or how the harness behaves for the next step. Adding a value here is a source-compatible change.
+
+### PumpStationGatewayVerdict
+
+`Pipeline/PumpStationGatewayModels.kt` — The verdict a gateway agent returns when it evaluates a step.
+
+```kotlin
+@kotlinx.serialization.Serializable
+data class PumpStationGatewayVerdict(
+    val complete: Boolean = false,
+    val reason: String = "",
+    val instruction: String = ""
+)
+```
+
+| Field | Description |
+|---|---|
+| `complete` | True when the step is verifiably finished. |
+| `reason` | Short explanation of the verdict. |
+| `instruction` | What the agent must do next when the step is NOT complete. Appended to turn history as a harness-role entry. |
+
+### PumpStationGatewayConfig
+
+`Pipeline/PumpStationGatewayModels.kt` — Configuration for one named gateway.
+
+```kotlin
+data class PumpStationGatewayConfig(
+    val name: String,
+    val agent: Pipeline? = null,
+    val builderFunction: (suspend (PumpStation) -> P2PInterface)? = null,
+    val systemPrompt: String? = null,
+    val userPrompt: String? = null,
+    val userPromptPlacement: PumpStationGatewayPromptPlacement = PumpStationGatewayPromptPlacement.BeforeHistory,
+    val historySource: PumpStationGatewayHistorySource = PumpStationGatewayHistorySource.Summarized,
+    val todoPageKey: String? = null,
+    val todoTaskNumber: Int? = null
+)
+```
+
+Holds an agent reference rather than being serializable, matching `HarnessAgentSlot`, which also carries a non-serializable builder function.
+
+| Property | Description |
+|---|---|
+| `name` | Unique gateway name. Referenced by stage definitions and by request carriers. |
+| `agent` | The gateway agent. Must be a `Pipeline` so the system prompt can be injected. |
+| `builderFunction` | Optional per-turn agent factory, evaluated before each invocation. |
+| `systemPrompt` | Saved criteria string. Appended to `DEFAULT_GATEWAY_PROMPT`. |
+| `userPrompt` | Injectable instruction. Placement is governed by `userPromptPlacement`. |
+| `userPromptPlacement` | Where `userPrompt` lands in the assembled prompt. |
+| `historySource` | Which history the gateway reads. |
+| `todoPageKey` | Optional ContextBank page key of a todo list to bind this gateway to. |
+| `todoTaskNumber` | Optional todo task number to bind this gateway to. |
+
+### PumpStationGatewayStage
+
+`Pipeline/PumpStationGatewayModels.kt` — One stage in the ordered gateway stage sequence.
+
+```kotlin
+data class PumpStationGatewayStage(
+    val name: String,
+    val gateway: String,
+    val gateBlocking: Boolean = true,
+    val onEnter: List<PumpStationStageAction> = emptyList()
+)
+```
+
+| Property | Description |
+|---|---|
+| `name` | Human-readable stage name, surfaced in events and traces. |
+| `gateway` | Name of the gateway that gates this stage. |
+| `gateBlocking` | When false, a "not complete" verdict still advances the stage. Use this for advisory gates, and as the escape hatch for a gate that cannot be satisfied. |
+| `onEnter` | Reconfiguration applied when this stage becomes active. |
+
+### PumpStationStageAction
+
+`Pipeline/PumpStationGatewayModels.kt` — A harness reconfiguration applied when a gateway stage becomes active.
+
+```kotlin
+sealed interface PumpStationStageAction
+{
+    data class RevealPath(val pathName: String) : PumpStationStageAction
+    data class HidePath(val pathName: String) : PumpStationStageAction
+    data class SetVisiblePaths(val pathNames: List<String>) : PumpStationStageAction
+    data class SetHarnessAgentEnabled(val slotName: String, val enabled: Boolean) : PumpStationStageAction
+    data class SetHarnessAgents(val slots: List<HarnessAgentSlot>) : PumpStationStageAction
+    data class SetSetting(
+        val setting: PumpStationGatewaySetting,
+        val value: PumpStationGatewaySettingValue
+    ) : PumpStationStageAction
+    class Custom(val apply: suspend (PumpStation) -> Unit) : PumpStationStageAction
+}
+```
+
+Actions are applied in list order on the foreground harness loop, immediately after the stage advances. A failing action is recorded and skipped; the remaining actions still run.
+
+| Action | Effect |
+|---|---|
+| `RevealPath` | Moves a reserve path into the visible path list, bypassing its `revealWhen` predicate. |
+| `HidePath` | Hides a path: a visible path moves back into the reserve list; a reserve path revealed by its `revealWhen` predicate has the predicate neutralised and the sticky reveal flag cleared, so it leaves the visible set. |
+| `SetVisiblePaths` | Replaces the entire visible path set with exactly these names. |
+| `SetHarnessAgentEnabled` | Enables or disables one named harness agent slot. |
+| `SetHarnessAgents` | Replaces the entire harness agent roster. |
+| `SetSetting` | Changes one station setting. |
+| `Custom` | Arbitrary developer-supplied reconfiguration. |
+
+### PumpStationGatewaySettingValue
+
+`Pipeline/PumpStationGatewayModels.kt` — A typed setting value for `PumpStationStageAction.SetSetting`.
+
+```kotlin
+sealed interface PumpStationGatewaySettingValue
+{
+    data class IntValue(val value: Int) : PumpStationGatewaySettingValue
+    data class DoubleValue(val value: Double) : PumpStationGatewaySettingValue
+    data class BooleanValue(val value: Boolean) : PumpStationGatewaySettingValue
+    data class StringValue(val value: String) : PumpStationGatewaySettingValue
+}
+```
+
+A value whose type does not match the target setting is rejected at apply time and recorded as a failed action rather than silently coerced.
+
+### GatewayEvaluated (event)
+
+`Pipeline/PumpStationModels.kt:1314` — A gateway agent evaluated a step of the task.
+
+```kotlin
+@kotlinx.serialization.Serializable
+data class GatewayEvaluated(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Gateway,
+    val gatewayName: String,
+    val stageName: String? = null,
+    val complete: Boolean = false,
+    val reason: String = "",
+    val instruction: String = "",
+    val parseFailed: Boolean = false,
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null,
+    val totalTokens: Int? = null
+) : PumpStationEvent
+```
+
+### GatewayStageAdvanced (event)
+
+`Pipeline/PumpStationModels.kt:1339` — A gateway stage advanced and its reconfiguration was applied.
+
+```kotlin
+@kotlinx.serialization.Serializable
+data class GatewayStageAdvanced(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Gateway,
+    val fromStage: String? = null,
+    val toStage: String? = null,
+    val applied: List<String> = emptyList(),
+    val failed: List<String> = emptyList()
+) : PumpStationEvent
+```
+
+### GatewaySkipped (event)
+
+`Pipeline/PumpStationModels.kt:1357` — A gateway was requested but could not be evaluated.
+
+```kotlin
+@kotlinx.serialization.Serializable
+data class GatewaySkipped(
+    override val runId: String,
+    override val turnIndex: Int,
+    override val timestamp: Long = System.currentTimeMillis(),
+    override val phase: PumpStationPhase = PumpStationPhase.Gateway,
+    val gatewayName: String,
+    val reason: String = ""
+) : PumpStationEvent
+```
+
+
 ## Async Substrate Models
 
 ### PendingTurnEntry
@@ -1026,10 +1280,14 @@ The `revealWhen` predicate on a `PathObject` is typed as this alias. The receive
 | `MemoryWriteProposal` (sealed interface) and its `Lorebook` / `Summary` subtypes | `Pipeline/PumpStationMemoryModels.kt` |
 | `MemoryWriteKind` | `Enums/MemoryWriteKind.kt` |
 | `HealthContext`, `HealthReport` | `Pipeline/PumpStationModels.kt` |
+| `PumpStationGatewayVerdict`, `PumpStationGatewayConfig`, `PumpStationGatewayStage`, `PumpStationStageAction`, `PumpStationGatewaySettingValue` | `Pipeline/PumpStationGatewayModels.kt` |
+| `PumpStationGatewayService` | `Pipeline/PumpStationGatewayService.kt` |
+| `PumpStationGatewayHistorySource`, `PumpStationGatewayPromptPlacement`, `PumpStationGatewaySetting` | `Enums/PumpStationGatewayHistorySource.kt`, `Enums/PumpStationGatewayPromptPlacement.kt`, `Enums/PumpStationGatewaySetting.kt` |
 
 
 ## Cross-References
 
+- **[PumpStation Gateway](../core-concepts/pumpstation-gateway.md)** — The gateway agent, the stage model, and the harness reconfiguration
 - **[PumpStation Container Doc](../containers/pumpstation.md)** — Architecture, execution flow
 - **[PumpStation API Reference](pumpstation.md)** — Public properties, methods, and setters
 - **[PumpStation Magic Contracts](../core-concepts/pumpstation-magic-contracts.md)** — JSON schemas and parsers, including `parseDispatchOutputMulti` for the multi-path contract

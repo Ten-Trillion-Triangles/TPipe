@@ -233,6 +233,14 @@ data class PathRequest(
     var pathName: String = "",
     var pathSchema: String = "",
     var pathSelectionRationale: String? = null,
+    /**
+     * Optional gateway to evaluate once the dispatched path has run.
+     *
+     * When set, the named gateway is evaluated in the same turn, right after the path
+     * executes. Null keeps the dispatch output schema-valid for LLM checkpoints that never
+     * emit the field.
+     */
+    var gatewayRequest: String? = null,
     var inputData: JsonObject = JsonObject(emptyMap())
 )
 
@@ -1379,6 +1387,191 @@ fun getInterruptTargetMode(): PumpStationControlTargetMode = interruptTargetMode
     {
         forceService.clear(target)
         return this
+    }
+
+//======================================Gateway System (Group G)====================================================
+
+    /**
+     * Thread-safe registry of pending gateway evaluation requests.
+     *
+     * The registry is owned by this station: a nested station keeps its own registry, so a
+     * gateway requested on an outer station does not propagate inward. It lives outside
+     * [PumpStationTaskState] and [PumpStationSnapshot], so a request survives [P2PInit] and
+     * is not part of a resume. This mirrors [forceService].
+     */
+    val gatewayService: PumpStationGatewayService = PumpStationGatewayService()
+
+    /**
+     * The named gateways registered on this station. Keyed by gateway name, which is what
+     * the request carriers and the stage definitions refer to.
+     */
+    internal val gateways: MutableMap<String, PumpStationGatewayConfig> = mutableMapOf()
+
+    /**
+     * The ordered gateway stage sequence. The active stage is identified by
+     * [PumpStationTaskState.gatewayStageIndex].
+     */
+    internal var gatewayStages: List<PumpStationGatewayStage> = emptyList()
+
+    /**
+     * Request that the named gateway evaluate on the next gateway phase.
+     *
+     * The request is consumed by the next gateway phase, so a request that is never acted
+     * on is not replayed.
+     *
+     * Thread-safe: may be called from any thread or coroutine context.
+     *
+     * @param gatewayName The gateway to evaluate.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun signalGateway(gatewayName: String): PumpStation
+    {
+        gatewayService.request(gatewayName)
+        return this
+    }
+
+    /**
+     * Whether an evaluation of the named gateway is pending.
+     *
+     * @param gatewayName The gateway to inspect.
+     * @return True when the gateway is queued for evaluation.
+     */
+    fun isGatewayRequested(gatewayName: String): Boolean = gatewayService.isRequested(gatewayName)
+
+    /**
+     * Discard every pending gateway request without evaluating it.
+     *
+     * @return This PumpStation instance for method chaining.
+     */
+    fun clearGatewayRequests(): PumpStation
+    {
+        gatewayService.clear()
+        return this
+    }
+
+    /**
+     * Register or replace a named gateway.
+     *
+     * @param config The gateway configuration.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setGateway(config: PumpStationGatewayConfig): PumpStation
+    {
+        gateways[config.name] = config
+        return this
+    }
+
+    /**
+     * Remove a named gateway.
+     *
+     * @param name The gateway to remove.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun removeGateway(name: String): PumpStation
+    {
+        gateways.remove(name)
+        return this
+    }
+
+    /**
+     * Return an immutable snapshot of the registered gateways.
+     *
+     * @return The registered gateways keyed by name.
+     */
+    fun getGateways(): Map<String, PumpStationGatewayConfig> = gateways.toMap()
+
+    /**
+     * Set the ordered gateway stage sequence.
+     *
+     * The active stage is [PumpStationTaskState.gatewayStageIndex]; setting a new sequence
+     * does not reset that cursor.
+     *
+     * @param stages The ordered stages.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setGatewayStages(stages: List<PumpStationGatewayStage>): PumpStation
+    {
+        gatewayStages = stages.toList()
+        return this
+    }
+
+    /**
+     * Return an immutable snapshot of the stage sequence.
+     *
+     * @return The ordered stages.
+     */
+    fun getGatewayStages(): List<PumpStationGatewayStage> = gatewayStages.toList()
+
+    /**
+     * The index of the active gateway stage.
+     *
+     * @return The active stage index. Zero is the first stage.
+     */
+    fun getGatewayStageIndex(): Int = taskState.gatewayStageIndex
+
+    /**
+     * Whether a path with the given name is registered, in either the normal or the reserve list.
+     *
+     * @param name The path name. Lookup is case-insensitive.
+     * @return True when the path is registered.
+     */
+    internal fun pathExists(name: String): Boolean
+    {
+        val key = pathKey(name)
+        return pathList.containsKey(key) || reservePaths.containsKey(key)
+    }
+
+    /**
+     * Move a reserve path back into the normal path list so it becomes unconditionally visible
+     * to the dispatch agent, bypassing its revealWhen predicate.
+     *
+     * @param name The path name. Lookup is case-insensitive.
+     * @return True when a reserve path was moved.
+     */
+    internal fun moveReserveToPath(name: String): Boolean
+    {
+        val key = pathKey(name)
+        val path = reservePaths.remove(key) ?: return false
+        pathList[key] = path
+        revealedReservePaths.remove(key)
+        emitEvent(ReservePathRevealed(
+            runId = taskState.runId,
+            turnIndex = taskState.turnIndex,
+            pathName = path.pathName,
+            reservePathNames = reservePaths.values.map { it.pathName }
+        ))
+        return true
+    }
+
+    /**
+     * Hide a path so it stops being visible to the dispatch agent.
+     *
+     * A normal path moves into the reserve list. A reserve path that was revealed by its
+     * revealWhen predicate stays in the reserve list, but the predicate is neutralised and
+     * the sticky reveal flag is cleared, so it leaves the visible set.
+     *
+     * @param name The path name. Lookup is case-insensitive.
+     * @return True when a visible path was hidden.
+     */
+    internal fun movePathToReserveInternal(name: String): Boolean
+    {
+        val key = pathKey(name)
+        val path = pathList.remove(key)
+        if(path != null)
+        {
+            path.revealWhen = { _, _ -> false }
+            reservePaths[key] = path
+            revealedReservePaths.remove(key)
+            return true
+        }
+
+        // A reserve path whose revealWhen predicate fired stays in the reserve list but
+        // is visible to the dispatch agent. Hiding it means neutralising the predicate
+        // and clearing the sticky reveal flag, not moving the path.
+        val reservePath = reservePaths[key] ?: return false
+        if(!revealedReservePaths.remove(key)) return false
+        reservePath.revealWhen = { _, _ -> false }
+        return true
     }
 
 //======================================Properties======================================================================
@@ -2623,6 +2816,10 @@ private fun pathKey(name: String): String = name.lowercase()
             (lorebookAgent != null || summaryAgent != null)) {
             memoryManagementMode = PumpStationMemoryManagementMode.Hybrid
         }
+
+        // The first gateway stage is active from the start, so its reconfiguration is
+        // applied here rather than when a gate is met.
+        applyInitialGatewayStage()
 
         // Initialize all paths and build path descriptors
         pathDescriptors.paths.clear()
@@ -4322,6 +4519,7 @@ private fun pathKey(name: String): String = name.lowercase()
         // place every path result flows through - so it covers single-path dispatch,
         // MultiPath fan-out, and SuperPath routing alike.
         result.forceTargets?.forEach { forceService.arm(it) }
+        collectGatewayRequests(result)
 
         // --- Emit PathCompleted event ---
         // Read the path's token usage. The legacy-fields helper is preferred over the
@@ -6486,9 +6684,16 @@ private fun pathKey(name: String): String = name.lowercase()
      * @param concurrency The concurrency mode (Blocking by default).
      * @return This PumpStation instance for method chaining.
      */
-    fun addHarnessAgent(agent: P2PInterface, concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Blocking): PumpStation
+    fun addHarnessAgent(
+        agent: P2PInterface,
+        concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Blocking,
+        name: String? = null,
+        enabled: Boolean = true
+    ): PumpStation
     {
-        this.additionalHarnessAgentSlots.add(HarnessAgentSlot(agent = agent, concurrency = concurrency))
+        this.additionalHarnessAgentSlots.add(
+            HarnessAgentSlot(agent = agent, concurrency = concurrency, name = name, enabled = enabled)
+        )
         return this
     }
 
@@ -6503,11 +6708,13 @@ private fun pathKey(name: String): String = name.lowercase()
      */
     fun addHarnessAgentBuilder(
         fn: (suspend (harness: PumpStation) -> P2PInterface),
-        concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Async
+        concurrency: PumpStationConcurrencyMode = PumpStationConcurrencyMode.Async,
+        name: String? = null,
+        enabled: Boolean = true
     ): PumpStation
     {
         this.additionalHarnessAgentSlots.add(
-            HarnessAgentSlot(agent = null, concurrency = concurrency, builderFunction = fn)
+            HarnessAgentSlot(agent = null, concurrency = concurrency, builderFunction = fn, name = name, enabled = enabled)
         )
         return this
     }

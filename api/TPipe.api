@@ -1862,6 +1862,9 @@ public final class com/TTT/Debug/TraceEventType : java/lang/Enum {
 	public static final field PUMP_STATION_FORCE_APPLIED Lcom/TTT/Debug/TraceEventType;
 	public static final field PUMP_STATION_FORCE_SKIPPED Lcom/TTT/Debug/TraceEventType;
 	public static final field PUMP_STATION_FOREGROUND_AGENT_COMPLETED Lcom/TTT/Debug/TraceEventType;
+	public static final field PUMP_STATION_GATEWAY_EVALUATED Lcom/TTT/Debug/TraceEventType;
+	public static final field PUMP_STATION_GATEWAY_SKIPPED Lcom/TTT/Debug/TraceEventType;
+	public static final field PUMP_STATION_GATEWAY_STAGE_ADVANCED Lcom/TTT/Debug/TraceEventType;
 	public static final field PUMP_STATION_GOAL_VALIDATION_COMPLETED Lcom/TTT/Debug/TraceEventType;
 	public static final field PUMP_STATION_GOAL_VALIDATION_STARTED Lcom/TTT/Debug/TraceEventType;
 	public static final field PUMP_STATION_HARNESS_WARNING Lcom/TTT/Debug/TraceEventType;
@@ -2141,6 +2144,37 @@ public final class com/TTT/Enums/PumpStationForceTarget : java/lang/Enum {
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Enums/PumpStationForceTarget;
 	public static fun values ()[Lcom/TTT/Enums/PumpStationForceTarget;
+}
+
+public final class com/TTT/Enums/PumpStationGatewayHistorySource : java/lang/Enum {
+	public static final field Full Lcom/TTT/Enums/PumpStationGatewayHistorySource;
+	public static final field Summarized Lcom/TTT/Enums/PumpStationGatewayHistorySource;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Enums/PumpStationGatewayHistorySource;
+	public static fun values ()[Lcom/TTT/Enums/PumpStationGatewayHistorySource;
+}
+
+public final class com/TTT/Enums/PumpStationGatewayPromptPlacement : java/lang/Enum {
+	public static final field AfterHistory Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+	public static final field BeforeHistory Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+	public static final field Suffix Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+	public static final field SystemPrompt Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+	public static fun values ()[Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+}
+
+public final class com/TTT/Enums/PumpStationGatewaySetting : java/lang/Enum {
+	public static final field BackgroundTurnInterval Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public static final field CompactionThreshold Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public static final field ForegroundTurnInterval Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public static final field MaxConcurrentBackgroundAgents Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public static final field MaxConcurrentForegroundAgents Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public static final field MaxTurnHistorySize Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public static final field MaxTurns Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public static fun values ()[Lcom/TTT/Enums/PumpStationGatewaySetting;
 }
 
 public final class com/TTT/Enums/PumpStationGoalHistorySource : java/lang/Enum {
@@ -4657,8 +4691,8 @@ public final class com/TTT/Pipe/MultiPageBudgetStrategy$Companion {
 public final class com/TTT/Pipe/MultimodalContent {
 	public static final field Companion Lcom/TTT/Pipe/MultimodalContent$Companion;
 	public fun <init> ()V
-	public fun <init> (Ljava/lang/String;Ljava/util/List;ZLcom/TTT/Context/ContextWindow;Lcom/TTT/Context/MiniBank;Lcom/TTT/PipeContextProtocol/PcPRequest;Ljava/lang/String;ZLcom/TTT/Pipe/PipeError;Ljava/util/List;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZLcom/TTT/Context/ContextWindow;Lcom/TTT/Context/MiniBank;Lcom/TTT/PipeContextProtocol/PcPRequest;Ljava/lang/String;ZLcom/TTT/Pipe/PipeError;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/util/List;ZLcom/TTT/Context/ContextWindow;Lcom/TTT/Context/MiniBank;Lcom/TTT/PipeContextProtocol/PcPRequest;Ljava/lang/String;ZLcom/TTT/Pipe/PipeError;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZLcom/TTT/Context/ContextWindow;Lcom/TTT/Context/MiniBank;Lcom/TTT/PipeContextProtocol/PcPRequest;Ljava/lang/String;ZLcom/TTT/Pipe/PipeError;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun addBinary (Lcom/TTT/Pipe/BinaryContent;)V
 	public final fun addBinary ([BLjava/lang/String;Ljava/lang/String;)V
 	public static synthetic fun addBinary$default (Lcom/TTT/Pipe/MultimodalContent;[BLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
@@ -4666,6 +4700,7 @@ public final class com/TTT/Pipe/MultimodalContent {
 	public final fun clearJumpToPipe ()V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component10 ()Ljava/util/List;
+	public final fun component11 ()Ljava/util/List;
 	public final fun component2 ()Ljava/util/List;
 	public final fun component3 ()Z
 	public final fun component4 ()Lcom/TTT/Context/ContextWindow;
@@ -4674,8 +4709,8 @@ public final class com/TTT/Pipe/MultimodalContent {
 	public final fun component7 ()Ljava/lang/String;
 	public final fun component8 ()Z
 	public final fun component9 ()Lcom/TTT/Pipe/PipeError;
-	public final fun copy (Ljava/lang/String;Ljava/util/List;ZLcom/TTT/Context/ContextWindow;Lcom/TTT/Context/MiniBank;Lcom/TTT/PipeContextProtocol/PcPRequest;Ljava/lang/String;ZLcom/TTT/Pipe/PipeError;Ljava/util/List;)Lcom/TTT/Pipe/MultimodalContent;
-	public static synthetic fun copy$default (Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Ljava/util/List;ZLcom/TTT/Context/ContextWindow;Lcom/TTT/Context/MiniBank;Lcom/TTT/PipeContextProtocol/PcPRequest;Ljava/lang/String;ZLcom/TTT/Pipe/PipeError;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/Pipe/MultimodalContent;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;ZLcom/TTT/Context/ContextWindow;Lcom/TTT/Context/MiniBank;Lcom/TTT/PipeContextProtocol/PcPRequest;Ljava/lang/String;ZLcom/TTT/Pipe/PipeError;Ljava/util/List;Ljava/util/List;)Lcom/TTT/Pipe/MultimodalContent;
+	public static synthetic fun copy$default (Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Ljava/util/List;ZLcom/TTT/Context/ContextWindow;Lcom/TTT/Context/MiniBank;Lcom/TTT/PipeContextProtocol/PcPRequest;Ljava/lang/String;ZLcom/TTT/Pipe/PipeError;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/Pipe/MultimodalContent;
 	public final fun copyMultimodal ()Lcom/TTT/Pipe/MultimodalContent;
 	public final fun deleteSnapshot ()V
 	public fun equals (Ljava/lang/Object;)Z
@@ -4686,6 +4721,7 @@ public final class com/TTT/Pipe/MultimodalContent {
 	public final fun getDistributionGridDirective ()Lcom/TTT/Pipeline/DistributionGridDirective;
 	public final fun getDocuments ()Ljava/util/List;
 	public final fun getForceTargets ()Ljava/util/List;
+	public final fun getGatewayRequests ()Ljava/util/List;
 	public final fun getImages ()Ljava/util/List;
 	public final fun getInteruptPipeline ()Z
 	public final fun getJumpToPipe ()Ljava/lang/String;
@@ -4708,12 +4744,14 @@ public final class com/TTT/Pipe/MultimodalContent {
 	public final fun jumpToPipe (Ljava/lang/String;)V
 	public final fun merge (Lcom/TTT/Pipe/MultimodalContent;)V
 	public final fun repeat ()V
+	public final fun requestGateway (Ljava/lang/String;)V
 	public final fun saveSnapshot ()V
 	public final fun setBinaryContent (Ljava/util/List;)V
 	public final fun setContext (Lcom/TTT/Context/ContextWindow;)V
 	public final fun setCurrentPipe (Lcom/TTT/Pipe/Pipe;)V
 	public final fun setDistributionGridDirective (Lcom/TTT/Pipeline/DistributionGridDirective;)V
 	public final fun setForceTargets (Ljava/util/List;)V
+	public final fun setGatewayRequests (Ljava/util/List;)V
 	public final fun setInteruptPipeline (Z)V
 	public final fun setMetadata (Ljava/util/Map;)V
 	public final fun setMiniBankContext (Lcom/TTT/Context/MiniBank;)V
@@ -10740,6 +10778,174 @@ public final class com/TTT/Pipeline/ForegroundAgentCompleted$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
+public final class com/TTT/Pipeline/GatewayBlock {
+	public fun <init> ()V
+	public final fun getAgent ()Lcom/TTT/Pipeline/Pipeline;
+	public final fun getBuilderFunction ()Lkotlin/jvm/functions/Function2;
+	public final fun getHistorySource ()Lcom/TTT/Enums/PumpStationGatewayHistorySource;
+	public final fun getSystemPrompt ()Ljava/lang/String;
+	public final fun getTodoPageKey ()Ljava/lang/String;
+	public final fun getTodoTaskNumber ()Ljava/lang/Integer;
+	public final fun getUserPrompt ()Ljava/lang/String;
+	public final fun getUserPromptPlacement ()Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+	public final fun setAgent (Lcom/TTT/Pipeline/Pipeline;)V
+	public final fun setBuilderFunction (Lkotlin/jvm/functions/Function2;)V
+	public final fun setHistorySource (Lcom/TTT/Enums/PumpStationGatewayHistorySource;)V
+	public final fun setSystemPrompt (Ljava/lang/String;)V
+	public final fun setTodoPageKey (Ljava/lang/String;)V
+	public final fun setTodoTaskNumber (Ljava/lang/Integer;)V
+	public final fun setUserPrompt (Ljava/lang/String;)V
+	public final fun setUserPromptPlacement (Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;)V
+}
+
+public final class com/TTT/Pipeline/GatewayEvaluated : com/TTT/Pipeline/PumpStationEvent {
+	public static final field Companion Lcom/TTT/Pipeline/GatewayEvaluated$Companion;
+	public fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Z
+	public final fun component11 ()Ljava/lang/Integer;
+	public final fun component12 ()Ljava/lang/Integer;
+	public final fun component13 ()Ljava/lang/Integer;
+	public final fun component2 ()I
+	public final fun component3 ()J
+	public final fun component4 ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Z
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;)Lcom/TTT/Pipeline/GatewayEvaluated;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/GatewayEvaluated;Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)Lcom/TTT/Pipeline/GatewayEvaluated;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getComplete ()Z
+	public final fun getGatewayName ()Ljava/lang/String;
+	public final fun getInputTokens ()Ljava/lang/Integer;
+	public final fun getInstruction ()Ljava/lang/String;
+	public final fun getOutputTokens ()Ljava/lang/Integer;
+	public final fun getParseFailed ()Z
+	public fun getPhase ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun getReason ()Ljava/lang/String;
+	public fun getRunId ()Ljava/lang/String;
+	public final fun getStageName ()Ljava/lang/String;
+	public fun getTimestamp ()J
+	public final fun getTotalTokens ()Ljava/lang/Integer;
+	public fun getTurnIndex ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/GatewayEvaluated$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/GatewayEvaluated$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/GatewayEvaluated;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/GatewayEvaluated;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/GatewayEvaluated$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/GatewaySkipped : com/TTT/Pipeline/PumpStationEvent {
+	public static final field Companion Lcom/TTT/Pipeline/GatewaySkipped$Companion;
+	public fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()J
+	public final fun component4 ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;)Lcom/TTT/Pipeline/GatewaySkipped;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/GatewaySkipped;Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/GatewaySkipped;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGatewayName ()Ljava/lang/String;
+	public fun getPhase ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun getReason ()Ljava/lang/String;
+	public fun getRunId ()Ljava/lang/String;
+	public fun getTimestamp ()J
+	public fun getTurnIndex ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/GatewaySkipped$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/GatewaySkipped$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/GatewaySkipped;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/GatewaySkipped;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/GatewaySkipped$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/GatewayStageAdvanced : com/TTT/Pipeline/PumpStationEvent {
+	public static final field Companion Lcom/TTT/Pipeline/GatewayStageAdvanced$Companion;
+	public fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()J
+	public final fun component4 ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/util/List;
+	public final fun component8 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)Lcom/TTT/Pipeline/GatewayStageAdvanced;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/GatewayStageAdvanced;Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/Pipeline/GatewayStageAdvanced;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getApplied ()Ljava/util/List;
+	public final fun getFailed ()Ljava/util/List;
+	public final fun getFromStage ()Ljava/lang/String;
+	public fun getPhase ()Lcom/TTT/Pipeline/PumpStationPhase;
+	public fun getRunId ()Ljava/lang/String;
+	public fun getTimestamp ()J
+	public final fun getToStage ()Ljava/lang/String;
+	public fun getTurnIndex ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/GatewayStageAdvanced$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/GatewayStageAdvanced$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/GatewayStageAdvanced;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/GatewayStageAdvanced;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/GatewayStageAdvanced$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/GatewayStageBlock {
+	public fun <init> ()V
+	public final fun disableHarnessAgent (Ljava/lang/String;)V
+	public final fun enableHarnessAgent (Ljava/lang/String;)V
+	public final fun getGateBlocking ()Z
+	public final fun getGateway ()Ljava/lang/String;
+	public final fun hidePath (Ljava/lang/String;)V
+	public final fun onEnter (Lkotlin/jvm/functions/Function2;)V
+	public final fun revealPath (Ljava/lang/String;)V
+	public final fun setGateBlocking (Z)V
+	public final fun setGateway (Ljava/lang/String;)V
+	public final fun setHarnessAgents ([Lcom/TTT/Pipeline/HarnessAgentSlot;)V
+	public final fun setSetting (Lcom/TTT/Enums/PumpStationGatewaySetting;Lcom/TTT/Pipeline/PumpStationGatewaySettingValue;)V
+	public final fun setVisiblePaths ([Ljava/lang/String;)V
+}
+
 public final class com/TTT/Pipeline/GoalValidationCompleted : com/TTT/Pipeline/PumpStationEvent {
 	public static final field Companion Lcom/TTT/Pipeline/GoalValidationCompleted$Companion;
 	public fun <init> (Ljava/lang/String;IJLcom/TTT/Pipeline/PumpStationPhase;ZLjava/lang/String;)V
@@ -10849,19 +11055,23 @@ public final class com/TTT/Pipeline/GridStage$Ready : com/TTT/Pipeline/GridStage
 }
 
 public final class com/TTT/Pipeline/HarnessAgentSlot {
-	public fun <init> (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function2;Z)V
-	public synthetic fun <init> (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function2;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function2;ZLjava/lang/String;Z)V
+	public synthetic fun <init> (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function2;ZLjava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lcom/TTT/P2P/P2PInterface;
 	public final fun component2 ()Lcom/TTT/Pipeline/PumpStationConcurrencyMode;
 	public final fun component3 ()Lkotlin/jvm/functions/Function2;
 	public final fun component4 ()Z
-	public final fun copy (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function2;Z)Lcom/TTT/Pipeline/HarnessAgentSlot;
-	public static synthetic fun copy$default (Lcom/TTT/Pipeline/HarnessAgentSlot;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function2;ZILjava/lang/Object;)Lcom/TTT/Pipeline/HarnessAgentSlot;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Z
+	public final fun copy (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function2;ZLjava/lang/String;Z)Lcom/TTT/Pipeline/HarnessAgentSlot;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/HarnessAgentSlot;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function2;ZLjava/lang/String;ZILjava/lang/Object;)Lcom/TTT/Pipeline/HarnessAgentSlot;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAgent ()Lcom/TTT/P2P/P2PInterface;
 	public final fun getAppendsToTurnHistory ()Z
 	public final fun getBuilderFunction ()Lkotlin/jvm/functions/Function2;
 	public final fun getConcurrency ()Lcom/TTT/Pipeline/PumpStationConcurrencyMode;
+	public final fun getEnabled ()Z
+	public final fun getName ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -13767,20 +13977,23 @@ public class com/TTT/Pipeline/PathObject : com/TTT/P2P/P2PInterface {
 public final class com/TTT/Pipeline/PathRequest {
 	public static final field Companion Lcom/TTT/Pipeline/PathRequest$Companion;
 	public fun <init> ()V
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
-	public final fun component4 ()Lkotlinx/serialization/json/JsonObject;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)Lcom/TTT/Pipeline/PathRequest;
-	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PathRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILjava/lang/Object;)Lcom/TTT/Pipeline/PathRequest;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lkotlinx/serialization/json/JsonObject;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;)Lcom/TTT/Pipeline/PathRequest;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PathRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlinx/serialization/json/JsonObject;ILjava/lang/Object;)Lcom/TTT/Pipeline/PathRequest;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGatewayRequest ()Ljava/lang/String;
 	public final fun getInputData ()Lkotlinx/serialization/json/JsonObject;
 	public final fun getPathName ()Ljava/lang/String;
 	public final fun getPathSchema ()Ljava/lang/String;
 	public final fun getPathSelectionRationale ()Ljava/lang/String;
 	public fun hashCode ()I
+	public final fun setGatewayRequest (Ljava/lang/String;)V
 	public final fun setInputData (Lkotlinx/serialization/json/JsonObject;)V
 	public final fun setPathName (Ljava/lang/String;)V
 	public final fun setPathSchema (Ljava/lang/String;)V
@@ -14309,10 +14522,10 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public fun abortRecursive (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun addDispatcherRule (Lcom/TTT/Pipeline/DispatcherRule;)V
 	public final fun addEventObserver (Lkotlin/jvm/functions/Function1;)Ljava/lang/AutoCloseable;
-	public final fun addHarnessAgent (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;)Lcom/TTT/Pipeline/PumpStation;
-	public static synthetic fun addHarnessAgent$default (Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStation;
-	public final fun addHarnessAgentBuilder (Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;)Lcom/TTT/Pipeline/PumpStation;
-	public static synthetic fun addHarnessAgentBuilder$default (Lcom/TTT/Pipeline/PumpStation;Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun addHarnessAgent (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Ljava/lang/String;Z)Lcom/TTT/Pipeline/PumpStation;
+	public static synthetic fun addHarnessAgent$default (Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Ljava/lang/String;ZILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun addHarnessAgentBuilder (Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Ljava/lang/String;Z)Lcom/TTT/Pipeline/PumpStation;
+	public static synthetic fun addHarnessAgentBuilder$default (Lcom/TTT/Pipeline/PumpStation;Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Ljava/lang/String;ZILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun addPath (Lcom/TTT/Pipeline/PathObject;)V
 	public final fun addReservePath (Lcom/TTT/Pipeline/PathObject;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun appendPrePruneTransform (Lkotlin/jvm/functions/Function3;)I
@@ -14326,6 +14539,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun checkPathSafety (Lcom/TTT/Pipeline/PathObject;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun clearForces (Lcom/TTT/Enums/PumpStationForceTarget;)Lcom/TTT/Pipeline/PumpStation;
 	public static synthetic fun clearForces$default (Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/Enums/PumpStationForceTarget;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun clearGatewayRequests ()Lcom/TTT/Pipeline/PumpStation;
 	public final fun clearHarnessAgentBuilders ()Lcom/TTT/Pipeline/PumpStation;
 	public final fun clearHarnessAgents ()Lcom/TTT/Pipeline/PumpStation;
 	public final fun clearSteering (Lcom/TTT/Pipeline/PumpStationPausePhase;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -14356,6 +14570,10 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun getFailureAnalysis ()Lcom/TTT/Debug/FailureAnalysis;
 	public final fun getFailurePolicy ()Lcom/TTT/Pipeline/PumpStationFailurePolicy;
 	public final fun getForceService ()Lcom/TTT/Pipeline/PumpStationForceService;
+	public final fun getGatewayService ()Lcom/TTT/Pipeline/PumpStationGatewayService;
+	public final fun getGatewayStageIndex ()I
+	public final fun getGatewayStages ()Ljava/util/List;
+	public final fun getGateways ()Ljava/util/Map;
 	public final fun getGoalHistorySource ()Lcom/TTT/Enums/PumpStationGoalHistorySource;
 	public final fun getImplementationPlan ()Ljava/lang/String;
 	public final fun getIncludeRejectedDispatchOutputInRepairPrompt ()Z
@@ -14418,11 +14636,13 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun isAsyncPathsAppendToTurnHistory ()Z
 	public final fun isAsyncScopeActive ()Z
 	public final fun isForceArmed (Lcom/TTT/Enums/PumpStationForceTarget;)Z
+	public final fun isGatewayRequested (Ljava/lang/String;)Z
 	public final fun openSession (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationSession;
 	public static synthetic fun openSession$default (Lcom/TTT/Pipeline/PumpStation;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationSession;
 	public final fun pauseAt ([Lcom/TTT/Pipeline/PumpStationPausePhase;)V
 	public final fun pullMetaPageKeysIntoPumpStationMetadata ()V
 	public final fun releaseWait (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun removeGateway (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun removePath (Ljava/lang/String;)V
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun requestJudgeNextTurn ()Lcom/TTT/Pipeline/PumpStation;
@@ -14456,6 +14676,8 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setExternalContextProvider (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setFailurePolicy (Lcom/TTT/Pipeline/PumpStationFailurePolicy;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setForegroundTurnInterval (I)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setGateway (Lcom/TTT/Pipeline/PumpStationGatewayConfig;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setGatewayStages (Ljava/util/List;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setGoalAgent (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setGoalAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setGoalHistorySource (Lcom/TTT/Enums/PumpStationGoalHistorySource;)Lcom/TTT/Pipeline/PumpStation;
@@ -14557,6 +14779,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setUserGuidelines (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setWaitAllPathsOnMultiDispatch (Z)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setWaitDefaultTimeoutMs (Ljava/lang/Long;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun signalGateway (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun steer (Lcom/TTT/Pipeline/PumpStationPausePhase;Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun steer (Lcom/TTT/Pipeline/PumpStationPausePhase;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun steerNow (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -14579,6 +14802,8 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun dispatcherRules (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
 	public final fun enableSafePruneStrategy (Lcom/TTT/Pipeline/SafePruneStrategy;)V
 	public final fun forcePolicy (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
+	public final fun gateway (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
+	public final fun gatewayStage (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
 	public final fun getAsyncAgentsAppendToTurnHistory ()Z
 	public final fun getAsyncJobGracePeriodMs ()Ljava/lang/Long;
 	public final fun getAsyncJobsScopedToStation ()Z
@@ -14683,10 +14908,10 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun getTracingConfiguration ()Lcom/TTT/Debug/TraceConfig;
 	public final fun getUserGuidelines ()Ljava/lang/String;
 	public final fun getWaitConfiguration ()Lcom/TTT/Pipeline/PumpStationWaitConfiguration;
-	public final fun harnessAgent (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
-	public static synthetic fun harnessAgent$default (Lcom/TTT/Pipeline/PumpStationBuilder;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationBuilder;
-	public final fun harnessAgentBuilder (Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
-	public static synthetic fun harnessAgentBuilder$default (Lcom/TTT/Pipeline/PumpStationBuilder;Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationBuilder;
+	public final fun harnessAgent (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
+	public static synthetic fun harnessAgent$default (Lcom/TTT/Pipeline/PumpStationBuilder;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationBuilder;
+	public final fun harnessAgentBuilder (Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
+	public static synthetic fun harnessAgentBuilder$default (Lcom/TTT/Pipeline/PumpStationBuilder;Lkotlin/jvm/functions/Function2;Lcom/TTT/Pipeline/PumpStationConcurrencyMode;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationBuilder;
 	public final fun implementationPlan (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationBuilder;
 	public final fun interruptPolicy (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
 	public final fun killSwitch (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/PumpStationBuilder;
@@ -14862,6 +15087,7 @@ public final class com/TTT/Pipeline/PumpStationControlTargetMode : java/lang/Enu
 public final class com/TTT/Pipeline/PumpStationDefaultsKt {
 	public static final field DEFAULT_DISPATCH_PROMPT Ljava/lang/String;
 	public static final field DEFAULT_DISPATCH_PROMPT_MULTI Ljava/lang/String;
+	public static final field DEFAULT_GATEWAY_PROMPT Ljava/lang/String;
 	public static final field DEFAULT_HEALTH_PROMPT Ljava/lang/String;
 	public static final field DEFAULT_JUDGE_PROMPT Ljava/lang/String;
 	public static final field DEFAULT_LOREBOOK_PROMPT Ljava/lang/String;
@@ -14999,6 +15225,140 @@ public final class com/TTT/Pipeline/PumpStationForceService {
 	public final fun isArmed (Lcom/TTT/Enums/PumpStationForceTarget;)Z
 }
 
+public final class com/TTT/Pipeline/PumpStationGatewayConfig {
+	public fun <init> (Ljava/lang/String;Lcom/TTT/Pipeline/Pipeline;Lkotlin/jvm/functions/Function2;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;Lcom/TTT/Enums/PumpStationGatewayHistorySource;Ljava/lang/String;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/Pipeline/Pipeline;Lkotlin/jvm/functions/Function2;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;Lcom/TTT/Enums/PumpStationGatewayHistorySource;Ljava/lang/String;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/TTT/Pipeline/Pipeline;
+	public final fun component3 ()Lkotlin/jvm/functions/Function2;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+	public final fun component7 ()Lcom/TTT/Enums/PumpStationGatewayHistorySource;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/String;Lcom/TTT/Pipeline/Pipeline;Lkotlin/jvm/functions/Function2;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;Lcom/TTT/Enums/PumpStationGatewayHistorySource;Ljava/lang/String;Ljava/lang/Integer;)Lcom/TTT/Pipeline/PumpStationGatewayConfig;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationGatewayConfig;Ljava/lang/String;Lcom/TTT/Pipeline/Pipeline;Lkotlin/jvm/functions/Function2;Ljava/lang/String;Ljava/lang/String;Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;Lcom/TTT/Enums/PumpStationGatewayHistorySource;Ljava/lang/String;Ljava/lang/Integer;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationGatewayConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAgent ()Lcom/TTT/Pipeline/Pipeline;
+	public final fun getBuilderFunction ()Lkotlin/jvm/functions/Function2;
+	public final fun getHistorySource ()Lcom/TTT/Enums/PumpStationGatewayHistorySource;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getSystemPrompt ()Ljava/lang/String;
+	public final fun getTodoPageKey ()Ljava/lang/String;
+	public final fun getTodoTaskNumber ()Ljava/lang/Integer;
+	public final fun getUserPrompt ()Ljava/lang/String;
+	public final fun getUserPromptPlacement ()Lcom/TTT/Enums/PumpStationGatewayPromptPlacement;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationGatewayService {
+	public fun <init> ()V
+	public final fun clear ()V
+	public final fun drain ()Ljava/util/List;
+	public final fun isRequested (Ljava/lang/String;)Z
+	public final fun request (Ljava/lang/String;)V
+}
+
+public abstract interface class com/TTT/Pipeline/PumpStationGatewaySettingValue {
+}
+
+public final class com/TTT/Pipeline/PumpStationGatewaySettingValue$BooleanValue : com/TTT/Pipeline/PumpStationGatewaySettingValue {
+	public fun <init> (Z)V
+	public final fun component1 ()Z
+	public final fun copy (Z)Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$BooleanValue;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$BooleanValue;ZILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$BooleanValue;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationGatewaySettingValue$DoubleValue : com/TTT/Pipeline/PumpStationGatewaySettingValue {
+	public fun <init> (D)V
+	public final fun component1 ()D
+	public final fun copy (D)Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$DoubleValue;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$DoubleValue;DILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$DoubleValue;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationGatewaySettingValue$IntValue : com/TTT/Pipeline/PumpStationGatewaySettingValue {
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$IntValue;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$IntValue;IILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$IntValue;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationGatewaySettingValue$StringValue : com/TTT/Pipeline/PumpStationGatewaySettingValue {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$StringValue;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$StringValue;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationGatewaySettingValue$StringValue;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationGatewayStage {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;)Lcom/TTT/Pipeline/PumpStationGatewayStage;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationGatewayStage;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationGatewayStage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGateBlocking ()Z
+	public final fun getGateway ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getOnEnter ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationGatewayVerdict {
+	public static final field Companion Lcom/TTT/Pipeline/PumpStationGatewayVerdict$Companion;
+	public fun <init> ()V
+	public fun <init> (ZLjava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (ZLjava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (ZLjava/lang/String;Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationGatewayVerdict;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationGatewayVerdict;ZLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationGatewayVerdict;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getComplete ()Z
+	public final fun getInstruction ()Ljava/lang/String;
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class com/TTT/Pipeline/PumpStationGatewayVerdict$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lcom/TTT/Pipeline/PumpStationGatewayVerdict$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lcom/TTT/Pipeline/PumpStationGatewayVerdict;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lcom/TTT/Pipeline/PumpStationGatewayVerdict;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class com/TTT/Pipeline/PumpStationGatewayVerdict$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
 public final class com/TTT/Pipeline/PumpStationInterruptConfiguration {
 	public fun <init> ()V
 	public fun <init> (Ljava/util/Map;)V
@@ -15094,6 +15454,7 @@ public final class com/TTT/Pipeline/PumpStationPhase : java/lang/Enum {
 	public static final field Dispatch Lcom/TTT/Pipeline/PumpStationPhase;
 	public static final field Exit Lcom/TTT/Pipeline/PumpStationPhase;
 	public static final field ForegroundAgents Lcom/TTT/Pipeline/PumpStationPhase;
+	public static final field Gateway Lcom/TTT/Pipeline/PumpStationPhase;
 	public static final field GoalValidation Lcom/TTT/Pipeline/PumpStationPhase;
 	public static final field HealthCheck Lcom/TTT/Pipeline/PumpStationPhase;
 	public static final field Intervention Lcom/TTT/Pipeline/PumpStationPhase;
@@ -15240,6 +15601,84 @@ public final class com/TTT/Pipeline/PumpStationStage$Ready : com/TTT/Pipeline/Pu
 	public static final field INSTANCE Lcom/TTT/Pipeline/PumpStationStage$Ready;
 }
 
+public abstract interface class com/TTT/Pipeline/PumpStationStageAction {
+}
+
+public final class com/TTT/Pipeline/PumpStationStageAction$Custom : com/TTT/Pipeline/PumpStationStageAction {
+	public fun <init> (Lkotlin/jvm/functions/Function2;)V
+	public final fun getApply ()Lkotlin/jvm/functions/Function2;
+}
+
+public final class com/TTT/Pipeline/PumpStationStageAction$HidePath : com/TTT/Pipeline/PumpStationStageAction {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationStageAction$HidePath;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationStageAction$HidePath;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationStageAction$HidePath;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPathName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationStageAction$RevealPath : com/TTT/Pipeline/PumpStationStageAction {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStationStageAction$RevealPath;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationStageAction$RevealPath;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationStageAction$RevealPath;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPathName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationStageAction$SetHarnessAgentEnabled : com/TTT/Pipeline/PumpStationStageAction {
+	public fun <init> (Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Lcom/TTT/Pipeline/PumpStationStageAction$SetHarnessAgentEnabled;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationStageAction$SetHarnessAgentEnabled;Ljava/lang/String;ZILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationStageAction$SetHarnessAgentEnabled;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnabled ()Z
+	public final fun getSlotName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationStageAction$SetHarnessAgents : com/TTT/Pipeline/PumpStationStageAction {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lcom/TTT/Pipeline/PumpStationStageAction$SetHarnessAgents;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationStageAction$SetHarnessAgents;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationStageAction$SetHarnessAgents;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSlots ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationStageAction$SetSetting : com/TTT/Pipeline/PumpStationStageAction {
+	public fun <init> (Lcom/TTT/Enums/PumpStationGatewaySetting;Lcom/TTT/Pipeline/PumpStationGatewaySettingValue;)V
+	public final fun component1 ()Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public final fun component2 ()Lcom/TTT/Pipeline/PumpStationGatewaySettingValue;
+	public final fun copy (Lcom/TTT/Enums/PumpStationGatewaySetting;Lcom/TTT/Pipeline/PumpStationGatewaySettingValue;)Lcom/TTT/Pipeline/PumpStationStageAction$SetSetting;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationStageAction$SetSetting;Lcom/TTT/Enums/PumpStationGatewaySetting;Lcom/TTT/Pipeline/PumpStationGatewaySettingValue;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationStageAction$SetSetting;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSetting ()Lcom/TTT/Enums/PumpStationGatewaySetting;
+	public final fun getValue ()Lcom/TTT/Pipeline/PumpStationGatewaySettingValue;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/TTT/Pipeline/PumpStationStageAction$SetVisiblePaths : com/TTT/Pipeline/PumpStationStageAction {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lcom/TTT/Pipeline/PumpStationStageAction$SetVisiblePaths;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationStageAction$SetVisiblePaths;Ljava/util/List;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationStageAction$SetVisiblePaths;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPathNames ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/TTT/Pipeline/PumpStationStatus : java/lang/Enum {
 	public static final field Completed Lcom/TTT/Pipeline/PumpStationStatus;
 	public static final field Failed Lcom/TTT/Pipeline/PumpStationStatus;
@@ -15322,8 +15761,8 @@ public final class com/TTT/Pipeline/PumpStationSteeringService {
 
 public final class com/TTT/Pipeline/PumpStationTaskState {
 	public static final field Companion Lcom/TTT/Pipeline/PumpStationTaskState$Companion;
-	public fun <init> (Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationStatus;Lcom/TTT/Pipeline/PumpStationPhase;IILcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStationError;Lcom/TTT/Pipeline/PumpStationExitReason;Lcom/TTT/Pipeline/MemoryActionResult;Ljava/lang/String;ZLjava/util/Set;Ljava/lang/String;ZLcom/TTT/Pipeline/CompactionCursor;Lcom/TTT/Pipeline/LorebookCursor;)V
-	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationStatus;Lcom/TTT/Pipeline/PumpStationPhase;IILcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStationError;Lcom/TTT/Pipeline/PumpStationExitReason;Lcom/TTT/Pipeline/MemoryActionResult;Ljava/lang/String;ZLjava/util/Set;Ljava/lang/String;ZLcom/TTT/Pipeline/CompactionCursor;Lcom/TTT/Pipeline/LorebookCursor;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationStatus;Lcom/TTT/Pipeline/PumpStationPhase;IILcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStationError;Lcom/TTT/Pipeline/PumpStationExitReason;Lcom/TTT/Pipeline/MemoryActionResult;Ljava/lang/String;ZLjava/util/Set;Ljava/lang/String;ZLcom/TTT/Pipeline/CompactionCursor;Lcom/TTT/Pipeline/LorebookCursor;ILjava/lang/String;I)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationStatus;Lcom/TTT/Pipeline/PumpStationPhase;IILcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStationError;Lcom/TTT/Pipeline/PumpStationExitReason;Lcom/TTT/Pipeline/MemoryActionResult;Ljava/lang/String;ZLjava/util/Set;Ljava/lang/String;ZLcom/TTT/Pipeline/CompactionCursor;Lcom/TTT/Pipeline/LorebookCursor;ILjava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component10 ()Lcom/TTT/Pipeline/PumpStationError;
 	public final fun component11 ()Lcom/TTT/Pipeline/PumpStationExitReason;
@@ -15336,6 +15775,9 @@ public final class com/TTT/Pipeline/PumpStationTaskState {
 	public final fun component18 ()Lcom/TTT/Pipeline/CompactionCursor;
 	public final fun component19 ()Lcom/TTT/Pipeline/LorebookCursor;
 	public final fun component2 ()Lcom/TTT/Pipeline/PumpStationStatus;
+	public final fun component20 ()I
+	public final fun component21 ()Ljava/lang/String;
+	public final fun component22 ()I
 	public final fun component3 ()Lcom/TTT/Pipeline/PumpStationPhase;
 	public final fun component4 ()I
 	public final fun component5 ()I
@@ -15343,12 +15785,15 @@ public final class com/TTT/Pipeline/PumpStationTaskState {
 	public final fun component7 ()Lcom/TTT/Pipe/MultimodalContent;
 	public final fun component8 ()Ljava/lang/String;
 	public final fun component9 ()Lcom/TTT/Pipe/MultimodalContent;
-	public final fun copy (Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationStatus;Lcom/TTT/Pipeline/PumpStationPhase;IILcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStationError;Lcom/TTT/Pipeline/PumpStationExitReason;Lcom/TTT/Pipeline/MemoryActionResult;Ljava/lang/String;ZLjava/util/Set;Ljava/lang/String;ZLcom/TTT/Pipeline/CompactionCursor;Lcom/TTT/Pipeline/LorebookCursor;)Lcom/TTT/Pipeline/PumpStationTaskState;
-	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationTaskState;Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationStatus;Lcom/TTT/Pipeline/PumpStationPhase;IILcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStationError;Lcom/TTT/Pipeline/PumpStationExitReason;Lcom/TTT/Pipeline/MemoryActionResult;Ljava/lang/String;ZLjava/util/Set;Ljava/lang/String;ZLcom/TTT/Pipeline/CompactionCursor;Lcom/TTT/Pipeline/LorebookCursor;ILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationTaskState;
+	public final fun copy (Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationStatus;Lcom/TTT/Pipeline/PumpStationPhase;IILcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStationError;Lcom/TTT/Pipeline/PumpStationExitReason;Lcom/TTT/Pipeline/MemoryActionResult;Ljava/lang/String;ZLjava/util/Set;Ljava/lang/String;ZLcom/TTT/Pipeline/CompactionCursor;Lcom/TTT/Pipeline/LorebookCursor;ILjava/lang/String;I)Lcom/TTT/Pipeline/PumpStationTaskState;
+	public static synthetic fun copy$default (Lcom/TTT/Pipeline/PumpStationTaskState;Ljava/lang/String;Lcom/TTT/Pipeline/PumpStationStatus;Lcom/TTT/Pipeline/PumpStationPhase;IILcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipe/MultimodalContent;Ljava/lang/String;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStationError;Lcom/TTT/Pipeline/PumpStationExitReason;Lcom/TTT/Pipeline/MemoryActionResult;Ljava/lang/String;ZLjava/util/Set;Ljava/lang/String;ZLcom/TTT/Pipeline/CompactionCursor;Lcom/TTT/Pipeline/LorebookCursor;ILjava/lang/String;IILjava/lang/Object;)Lcom/TTT/Pipeline/PumpStationTaskState;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCompactionCursor ()Lcom/TTT/Pipeline/CompactionCursor;
 	public final fun getCurrentPathName ()Ljava/lang/String;
 	public final fun getExitReason ()Lcom/TTT/Pipeline/PumpStationExitReason;
+	public final fun getGatewayFailureCount ()I
+	public final fun getGatewayStageIndex ()I
+	public final fun getGatewayStageName ()Ljava/lang/String;
 	public final fun getGoalFailCount ()I
 	public final fun getLastError ()Lcom/TTT/Pipeline/PumpStationError;
 	public final fun getLastPathResult ()Lcom/TTT/Pipe/MultimodalContent;
@@ -15369,6 +15814,9 @@ public final class com/TTT/Pipeline/PumpStationTaskState {
 	public final fun setCompactionCursor (Lcom/TTT/Pipeline/CompactionCursor;)V
 	public final fun setCurrentPathName (Ljava/lang/String;)V
 	public final fun setExitReason (Lcom/TTT/Pipeline/PumpStationExitReason;)V
+	public final fun setGatewayFailureCount (I)V
+	public final fun setGatewayStageIndex (I)V
+	public final fun setGatewayStageName (Ljava/lang/String;)V
 	public final fun setGoalFailCount (I)V
 	public final fun setLastError (Lcom/TTT/Pipeline/PumpStationError;)V
 	public final fun setLastPathResult (Lcom/TTT/Pipe/MultimodalContent;)V

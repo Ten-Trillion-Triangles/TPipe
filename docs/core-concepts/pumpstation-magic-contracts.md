@@ -454,6 +454,96 @@ The list is rebuilt per turn so changes to `taskState`, `pathCallCounts`, and `e
 `PathObject.dispatchHint: String` is a soft advisory injected as `"Hint: <text>"` into the path's description when surfaced to the dispatch agent. It does not affect execution — only the LLM-facing description. Useful for nudging the model toward a path when the situation is ambiguous.
 
 
+## Gateway Contract (Inbound Verdict)
+
+The gateway's output contract. A gateway agent answers a single question — "is this step done?" — with a typed verdict. The harness parses it, injects the instruction on failure, and uses it to gate a stage advance.
+
+### Default Prompt
+
+`DEFAULT_GATEWAY_PROMPT` lives in `Pipeline/PumpStationDefaults.kt`. It is always present: it carries the verdict shape the harness parses.
+
+```text
+You are the gateway in an agentic harness. Your job is to decide whether one
+specific step of the task has been completed. You judge only the step you were
+given; you do not carry out the work yourself and you do not decide that the
+whole task is done.
+
+The criteria for the step are supplied with this prompt. The conversation
+history shows the work that has been carried out so far.
+
+Respond with a GatewayVerdict JSON object containing:
+  - complete: boolean
+  - reason: string
+  - instruction: string
+
+complete: true only when the step is verifiably finished according to the criteria.
+reason: a brief explanation of the verdict.
+instruction: when complete is false, what the agent must do next. When complete is
+true, this may be empty.
+```
+
+A developer's saved criteria string is **appended** to this prompt under a `=== GATEWAY CRITERIA (<name>) ===` header. It is never substituted for the contract, so a gateway can never lose its output contract.
+
+### Required JSON
+
+```json
+{
+  "complete": false,
+  "reason": "The unit test file exists but the test suite was not run.",
+  "instruction": "Run the test suite and paste the result into the report."
+}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `complete` | yes | `true` only when the step is verifiably finished against the criteria. |
+| `reason` | no | A brief explanation of the verdict. Defaults to the empty string. |
+| `instruction` | no | When `complete` is false, what the agent must do next. Defaults to the empty string. |
+
+### Data Class
+
+```kotlin
+@kotlinx.serialization.Serializable
+data class PumpStationGatewayVerdict(
+    val complete: Boolean = false,
+    val reason: String = "",
+    val instruction: String = ""
+)
+```
+
+### Parser
+
+`parseGatewayVerdictDetailed` in `Pipeline/PumpStationGatewayLoop.kt` returns both the verdict and whether it was understood:
+
+```kotlin
+internal data class GatewayVerdictParse(
+    val verdict: PumpStationGatewayVerdict,
+    val parsed: Boolean
+)
+```
+
+The parse is tolerant, in three steps:
+
+1. **Typed JSON** — `deserialize<PumpStationGatewayVerdict>(content.text)`. The repository's deserialize helper repairs common AI JSON defects (see [Repair on Parse Failure](#repair-on-parse-failure)).
+2. **Flag fallback** — if the typed contract cannot be read, the standard loop-control flags are consulted via `checkMultimodalFlags(content, "Gateway")`. `passPipeline` reads as "complete"; `terminatePipeline` reads as "not complete".
+3. **Fail closed** — if neither works, the verdict is the default (`complete = false`) and `parsed` is `false`. The `GatewayEvaluated` event carries `parseFailed = true`.
+
+### Resulting Harness Behavior
+
+| Verdict | Effect |
+|---|---|
+| `complete = true` | The gating stage advances. The next stage's `onEnter` actions are applied. |
+| `complete = false` | The verdict's `instruction` is appended to `turnHistory` as a `ConverseRole.harness` entry. The stage stays locked. The turn continues normally. |
+
+A "not complete" verdict never ends the turn. The remaining phases — safe-prune, foreground agents, background agents, memory update and compaction — still run, so the memory and compaction managers are not starved on the turns where the gate failed.
+
+### Where the Verdict Is Read
+
+`runGatewayPhase` in `Pipeline/PumpStationGatewayLoop.kt`, between the safe-prune phase and the foreground-agents phase of `runTurn`. The phase drains the pending-request registry first, so each request produces at most one evaluation per turn.
+
+See [PumpStation Gateway](pumpstation-gateway.md) for the full concept: the triggers, the stage model and the reconfiguration actions.
+
+
 ## Flag-Based Contracts (Outbound)
 
 The universal control surface. The harness checks `MultimodalContent` flags on every agent result, regardless of whether the JSON contract is enabled.

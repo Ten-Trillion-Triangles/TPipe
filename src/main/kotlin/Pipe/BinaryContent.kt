@@ -139,7 +139,18 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
      * Declared as a constructor property so that [copy] carries it: a path that returns a
      * copied content object would otherwise drop the request without a trace.
      */
-    @kotlinx.serialization.Transient var forceTargets: MutableList<PumpStationForceTarget>? = null
+    @kotlinx.serialization.Transient var forceTargets: MutableList<PumpStationForceTarget>? = null,
+    /**
+     * Gateways whose evaluation this content requests.
+     *
+     * A developer-facing carrier, exactly like [forceTargets]: only developer code and path
+     * execution functions can set it, never the LLM. Null means "no request" and allocates
+     * nothing.
+     *
+     * Transient because a request is a within-turn scheduling instruction, not durable
+     * state. Declared as a constructor property so [copy] carries it.
+     */
+    @kotlinx.serialization.Transient var gatewayRequests: MutableList<String>? = null
 ) {
 
 //---------------------------------------Internal vars------------------------------------------------------------------
@@ -256,6 +267,20 @@ data class MultimodalContent @OptIn(ExperimentalSerializationApi::class) constru
     {
         val list = forceTargets ?: mutableListOf<PumpStationForceTarget>().also { forceTargets = it }
         list.add(target)
+    }
+
+    /**
+     * Request that the named gateway evaluate on the next gateway phase.
+     *
+     * Mirrors [force]: the request travels with the content, and the harness picks it up
+     * when the content enters the loop.
+     *
+     * @param gatewayName The gateway to evaluate.
+     */
+    fun requestGateway(gatewayName: String)
+    {
+        val list = gatewayRequests ?: mutableListOf<String>().also { gatewayRequests = it }
+        list.add(gatewayName)
     }
 
     fun repeat()

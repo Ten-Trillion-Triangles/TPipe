@@ -3347,14 +3347,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
                 // (parseDispatchOutput vs parseDispatchOutputMulti).
                 val multiPath = parentStation.pathExecutionShapeInternal ==
                     com.TTT.Pipeline.PathExecutionShape.MultiPath
+
                 val schemaClass = if(multiPath)
                 {
                     com.TTT.Pipeline.PathRequestList::class
                 }
+
                 else
                 {
                     PathRequest::class
                 }
+
                 val pathRequestSchema = examplePromptFor(schemaClass)
 
                 val defaultPathInjection = buildDefaultPathInjection(
@@ -3423,6 +3426,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             serialize(contextWindow)
         }
+
         else
         {
             serialize(miniContextBank)

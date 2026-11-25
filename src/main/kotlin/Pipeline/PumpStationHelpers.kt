@@ -552,6 +552,30 @@ private fun PumpStation.convertPumpStationEvent(event: PumpStationEvent): TraceE
             baseMetadata["target"] = event.target.name
             baseMetadata["reason"] = event.reason
         }
+        is GatewayEvaluated ->
+        {
+            eventType = TraceEventType.PUMP_STATION_GATEWAY_EVALUATED
+            baseMetadata["gatewayName"] = event.gatewayName
+            baseMetadata["stageName"] = event.stageName ?: ""
+            baseMetadata["complete"] = event.complete
+            baseMetadata["reason"] = event.reason
+            baseMetadata["instruction"] = event.instruction
+            baseMetadata["parseFailed"] = event.parseFailed
+        }
+        is GatewayStageAdvanced ->
+        {
+            eventType = TraceEventType.PUMP_STATION_GATEWAY_STAGE_ADVANCED
+            baseMetadata["fromStage"] = event.fromStage ?: ""
+            baseMetadata["toStage"] = event.toStage ?: ""
+            baseMetadata["applied"] = event.applied.joinToString(", ")
+            baseMetadata["failed"] = event.failed.joinToString(", ")
+        }
+        is GatewaySkipped ->
+        {
+            eventType = TraceEventType.PUMP_STATION_GATEWAY_SKIPPED
+            baseMetadata["gatewayName"] = event.gatewayName
+            baseMetadata["reason"] = event.reason
+        }
         is AsyncTurnAppended ->
         {
             eventType = TraceEventType.PUMP_STATION_ASYNC_TURN_APPENDED
@@ -647,6 +671,7 @@ internal fun mapPumpStationPhaseToTracePhase(phase: PumpStationPhase): TracePhas
     PumpStationPhase.Intervention -> TracePhase.EXECUTION
     PumpStationPhase.ForegroundAgents -> TracePhase.AGENT_COMMUNICATION
     PumpStationPhase.BackgroundAgents -> TracePhase.AGENT_COMMUNICATION
+    PumpStationPhase.Gateway -> TracePhase.AGENT_COMMUNICATION
     PumpStationPhase.MemoryUpdate -> TracePhase.CONTEXT_PREPARATION
     PumpStationPhase.Compaction -> TracePhase.CONTEXT_PREPARATION
     PumpStationPhase.SafePrune -> TracePhase.CONTEXT_PREPARATION
@@ -1030,31 +1055,65 @@ internal fun PumpStation.buildDispatchContent(): MultimodalContent
     if(deduplicateLatestContentAgainstHistoryInternal && turnHistory.history.any { it.content.text == latestText }) return baseContent
 
     val latestBlock = "[LATEST PRIOR AGENT OUTPUT]\n$latestText\n[/LATEST PRIOR AGENT OUTPUT]"
+    val updatedText = insertBlockAroundHistory(baseContent.text, latestBlock, latestContentPositionInternal)
+
+    return baseContent.copy(text = updatedText)
+}
+
+/**
+ * Insert [block] into [text] at [position], relative to the conversation-history markers.
+ *
+ * Shared by the dispatch latest-output block and the gateway's injectable instruction so both
+ * use identical marker handling and identical fallback when the markers are absent.
+ *
+ * @param text The assembled message text.
+ * @param block The block to insert.
+ * @param position Where the block lands relative to the history markers.
+ * @return The text with the block inserted.
+ */
+internal fun insertBlockAroundHistory(
+    text: String,
+    block: String,
+    position: PumpStationLatestContentPosition
+): String
+{
     val historyMarker = "[CONVERSATION HISTORY]"
     val historyEndMarker = "[/CONVERSATION HISTORY]"
-    val historyStart = baseContent.text.indexOf(historyMarker)
-    val historyEnd = if(historyStart >= 0) baseContent.text.indexOf(historyEndMarker, historyStart) else -1
+    val historyStart = text.indexOf(historyMarker)
+    val historyEnd = if(historyStart >= 0) text.indexOf(historyEndMarker, historyStart) else -1
 
-    val updatedText = when(latestContentPositionInternal)
+    return when(position)
     {
-        PumpStationLatestContentPosition.Prefix -> "$latestBlock\n\n${baseContent.text}"
+        PumpStationLatestContentPosition.Prefix -> "$block\n\n$text"
 
         PumpStationLatestContentPosition.BeforeHistory ->
-            if(historyStart >= 0) baseContent.text.substring(0, historyStart) + latestBlock + "\n\n" + baseContent.text.substring(historyStart)
-            else baseContent.text + "\n\n" + latestBlock
+            if(historyStart >= 0) text.substring(0, historyStart) + block + "\n\n" + text.substring(historyStart)
+            else text + "\n\n" + block
 
         PumpStationLatestContentPosition.AfterHistory ->
             if(historyEnd >= 0)
             {
                 val insertionPoint = historyEnd + historyEndMarker.length
-                baseContent.text.substring(0, insertionPoint) + "\n\n" + latestBlock + baseContent.text.substring(insertionPoint)
+                text.substring(0, insertionPoint) + "\n\n" + block + text.substring(insertionPoint)
             }
 
-            else baseContent.text + "\n\n" + latestBlock
-        PumpStationLatestContentPosition.Suffix -> baseContent.text + "\n\n" + latestBlock
-    }
+            else text + "\n\n" + block
 
-    return baseContent.copy(text = updatedText)
+        PumpStationLatestContentPosition.Suffix -> text + "\n\n" + block
+    }
+}
+
+/**
+ * Collect gateway requests carried by [content] into the station's request registry.
+ *
+ * Called at each point where externally-authored content enters the harness: the station's
+ * own input, path results, and DITL hook results.
+ *
+ * @param content The content to inspect.
+ */
+internal fun PumpStation.collectGatewayRequests(content: MultimodalContent?)
+{
+    content?.gatewayRequests?.forEach { gatewayService.request(it) }
 }
 
 /**

@@ -389,7 +389,7 @@ The enums referenced by the API are documented in full in **[PumpStation Models 
 - `PathRiskLevel` — Low, Medium, High
 - `PathExecutionShape` — SinglePath, MultiPath. Controls whether the dispatch agent emits one `PathRequest` per turn (default) or a `PathRequestList` that the harness fans out across multiple paths.
 - `PumpStationStatus` — NotStarted, Running, WaitingOnBackground, Suspended, Completed, Failed, Terminated
-- `PumpStationPhase` — PreInit, HealthCheck, Judge, Dispatch, PathSafety, PathExecution, PathValidation, Intervention, ForegroundAgents, BackgroundAgents, MemoryUpdate, Compaction, GoalValidation, Exit
+- `PumpStationPhase` — PreInit, HealthCheck, Judge, Dispatch, PathSafety, PathExecution, PathValidation, Intervention, ForegroundAgents, BackgroundAgents, Gateway, MemoryUpdate, Compaction, SafePrune, SafePruneDryRun, GoalValidation, Exit
 - `PumpStationError` — UnknownPath, InvalidPathRequest, DispatchJsonRepairFailed, PathExecutionException, PathTimeout, TokenBudgetExceeded, MemoryBlowout, KillSwitchTripped, MaxTurnsExceeded, LoopGuardTriggered, P2PRequestInvalid, InitNotCalled, CompactionInflated, CompactionRolledBack
 - `PumpStationExitReason` — JudgeComplete, PassSignal, TerminateSignal, MaxTurnsHit, KillSwitchTripped, GoalValidationFailed, InterventionTerminated, Error
 - `PumpStationPausePhase` — BeforeJudge, AfterJudge, BeforeDispatch, AfterDispatch, BeforePathSafety, BeforePathExecution, AfterPathExecution, BeforeMemoryUpdate, BeforeCompaction, BeforeGoalValidation, BeforeExit
@@ -402,6 +402,9 @@ The enums referenced by the API are documented in full in **[PumpStation Models 
 - `ExitMechanism` — JudgeAlways, JudgeFlagTriggered, PathPassPipeline, PathTerminatePipeline
 - `ChunkFanoutMode` — Sequential, Parallel
 - `LorebookOperation` — Merge, Replace
+- `PumpStationGatewayHistorySource` — Summarized, Full
+- `PumpStationGatewayPromptPlacement` — SystemPrompt, BeforeHistory, AfterHistory, Suffix
+- `PumpStationGatewaySetting` — ForegroundTurnInterval, BackgroundTurnInterval, MaxConcurrentForegroundAgents, MaxConcurrentBackgroundAgents, CompactionThreshold, MaxTurnHistorySize, MaxTurns
 
 Default prompts are documented in **[PumpStation Magic Contracts](../core-concepts/pumpstation-magic-contracts.md)**.
 
@@ -518,8 +521,108 @@ replay queue and no value-based deduplication. Close the `AutoCloseable`
 returned by `addEventObserver` to remove only that registration.
 
 
+## Gateway System
+
+A gateway is a named, LLM-driven gate that judges whether one step of a task has been completed. When the gate passes, the harness advances to the next stage and reconfigures itself for the work that comes next. See [PumpStation Gateway](../core-concepts/pumpstation-gateway.md) for the full concept.
+
+### Runtime API
+
+```kotlin
+// Register or replace a named gateway
+station.setGateway(
+    PumpStationGatewayConfig(
+        name = "todo-check",
+        agent = gatePipeline,
+        systemPrompt = "The step is done when the unit test file exists and the suite passes.",
+        userPrompt = "Focus on task 3.",
+        userPromptPlacement = PumpStationGatewayPromptPlacement.BeforeHistory,
+        historySource = PumpStationGatewayHistorySource.Summarized
+    )
+)
+
+// Remove a named gateway
+station.removeGateway("todo-check")
+
+// Inspect the registered gateways
+val gateways: Map<String, PumpStationGatewayConfig> = station.getGateways()
+```
+
+### Requesting an evaluation
+
+```kotlin
+// From developer code, a DITL hook or a custom harness agent
+station.signalGateway("todo-check")
+
+// Inspect the pending-request registry
+val pending: Boolean = station.isGatewayRequested("todo-check")
+
+// Discard every pending request without evaluating it
+station.clearGatewayRequests()
+```
+
+A request may also travel on a `MultimodalContent`:
+
+```kotlin
+content.requestGateway("todo-check")
+```
+
+`MultimodalContent.gatewayRequests` is `@Transient`, so the request never crosses a serialization boundary. Because the field is a constructor property, `MultimodalContent.copy()` carries it forward. The dispatch agent can request a gate too, by emitting `"gatewayRequest": "todo-check"` in its `PathRequest` JSON.
+
+The pending-request registry lives on the station, outside the serialized task state, so it survives `P2PInit` and is not part of a snapshot or resume. A nested station keeps its own registry.
+
+### Stages
+
+```kotlin
+// Set the ordered stage sequence
+station.setGatewayStages(
+    listOf(
+        PumpStationGatewayStage(
+            name = "tests",
+            gateway = "todo-check",
+            onEnter = listOf(PumpStationStageAction.SetVisiblePaths(listOf("write-tests")))
+        ),
+        PumpStationGatewayStage(
+            name = "implementation",
+            gateway = "todo-check",
+            onEnter = listOf(
+                PumpStationStageAction.SetVisiblePaths(listOf("implement")),
+                PumpStationStageAction.SetHarnessAgentEnabled("reviewer", true)
+            )
+        )
+    )
+)
+
+// Inspect the stage sequence and the active stage
+val stages: List<PumpStationGatewayStage> = station.getGatewayStages()
+val activeIndex: Int = station.getGatewayStageIndex()
+```
+
+Stage 0 is active from the start: its `onEnter` actions are applied when the harness initializes. A stage advances when its gating gateway returns `complete = true`; with `gateBlocking = false` the gate is advisory and the stage advances regardless.
+
+### DSL
+
+The gateway system is also available from the builder:
+
+```kotlin
+pumpStation {
+    gateway("todo-check") {
+        agent = gatePipeline
+        systemPrompt = "The step is done when the unit test file exists and the suite passes."
+    }
+    gatewayStage("implementation") {
+        gateway = "todo-check"
+        setVisiblePaths("implement")
+        enableHarnessAgent("reviewer")
+    }
+}
+```
+
+See [PumpStation Gateway](../core-concepts/pumpstation-gateway.md) for the trigger model, the verdict contract and the stage reconfiguration actions.
+
+
 ## Cross-References
 
+- **[PumpStation Gateway](../core-concepts/pumpstation-gateway.md)** — The gateway agent, the stage model, and the harness reconfiguration
 - **[PumpStation Container Doc](../containers/pumpstation.md)** — Architecture, execution flow, design philosophy
 - **[PumpStation Async Substrate](../containers/pumpstation.md#async-substrate)** — Thread-safety guarantees, drain ordering, cancellation lifecycle for async paths and agents
 - **[PumpStation Magic Contracts](../core-concepts/pumpstation-magic-contracts.md)** — JSON schemas, parsers, default prompts

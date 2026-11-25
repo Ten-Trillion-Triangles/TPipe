@@ -185,6 +185,9 @@ class TraceVisualizer
                 TraceEventType.PUMP_STATION_INTERRUPT_FIRED -> "⛔"
                 TraceEventType.PUMP_STATION_FORCE_APPLIED -> "🚩"
                 TraceEventType.PUMP_STATION_FORCE_SKIPPED -> "⚠"
+                TraceEventType.PUMP_STATION_GATEWAY_EVALUATED -> "🚦"
+                TraceEventType.PUMP_STATION_GATEWAY_STAGE_ADVANCED -> "🔓"
+                TraceEventType.PUMP_STATION_GATEWAY_SKIPPED -> "⚠"
 
                 else -> "ℹ️"
             }
@@ -2593,6 +2596,9 @@ class TraceVisualizer
         TraceEventType.PUMP_STATION_INTERRUPT_FIRED -> "Interrupt"
         TraceEventType.PUMP_STATION_FORCE_APPLIED -> "Force→"
         TraceEventType.PUMP_STATION_FORCE_SKIPPED -> "Force⊘"
+        TraceEventType.PUMP_STATION_GATEWAY_EVALUATED -> "Gateway"
+        TraceEventType.PUMP_STATION_GATEWAY_STAGE_ADVANCED -> "GatewayStage"
+        TraceEventType.PUMP_STATION_GATEWAY_SKIPPED -> "GatewaySkip"
         TraceEventType.PUMP_STATION_SAFE_PRUNE_APPLIED -> "SafePrune✂"
         TraceEventType.PUMP_STATION_SAFE_PRUNE_DRY_RUN_COMPLETED -> "SafePrune(dry)🔍"
         else -> eventType.name.removePrefix("PUMP_STATION_")
