@@ -2919,6 +2919,53 @@ object ContextBank
         skipRemote: Boolean = false
     )
     {
+        writeTodoListInternal(
+            key = key,
+            todoList = todoList,
+            mode = mode,
+            allowUpdatesOnly = allowUpdatesOnly,
+            allowCompletionsOnly = allowCompletionsOnly,
+            replaceSnapshot = false,
+            skipRemote = skipRemote
+        )
+    }
+
+    /**
+     * Replace an existing [TodoList] snapshot atomically without merging stale entries.
+     *
+     * @param key Page key for the todo list.
+     * @param todoList Authoritative replacement [TodoList] snapshot.
+     * @param mode [StorageMode] controlling memory, disk, or remote storage.
+     * @param skipRemote Whether to bypass configured remote persistence.
+     */
+    suspend fun replaceTodoListSuspend(
+        key: String,
+        todoList: TodoList,
+        mode: StorageMode = StorageMode.MEMORY_AND_DISK,
+        skipRemote: Boolean = false
+    )
+    {
+        writeTodoListInternal(
+            key = key,
+            todoList = todoList,
+            mode = mode,
+            allowUpdatesOnly = false,
+            allowCompletionsOnly = false,
+            replaceSnapshot = true,
+            skipRemote = skipRemote
+        )
+    }
+
+    private suspend fun writeTodoListInternal(
+        key: String,
+        todoList: TodoList,
+        mode: StorageMode,
+        allowUpdatesOnly: Boolean,
+        allowCompletionsOnly: Boolean,
+        replaceSnapshot: Boolean,
+        skipRemote: Boolean
+    )
+    {
         val activeScope = ContextAccess.requireScopeOrNull(
             ContextAccessOperation.WRITE,
             ContextResourceKind.TODO_LIST,
@@ -2932,6 +2979,7 @@ object ContextBank
                 requireRemotePersistenceBackend().putTodoList(key, todoListToEmplace)
                 updateMetadata(key, mode)
             }
+
             return
         }
 
@@ -2941,7 +2989,7 @@ object ContextBank
         getTodoMutex(key).withLock {
             authorizeTodoMutation(key, mode, skipRemote)
             val bankedTasks = ContextBank.todoList[key]
-            if(bankedTasks != null)
+            if(!replaceSnapshot && bankedTasks != null)
             {
                 todoListToEmplace = applyTodoListWriteProtection(todoListToEmplace, bankedTasks.deepCopy(), allowUpdatesOnly, allowCompletionsOnly)
             }

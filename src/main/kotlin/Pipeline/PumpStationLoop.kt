@@ -86,6 +86,7 @@ internal suspend fun PumpStation.refreshAgentInstances()
         goalAgent?.setParentInterface(this)
         goalAgent?.P2PInit()
     }
+    applyTodoConfigurationToAgents()
 }
 
 /**
@@ -3370,6 +3371,25 @@ internal suspend fun PumpStation.runPostGoalHook(inputContent: MultimodalContent
  */
 internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
 {
+    val isReentry = taskState.status == PumpStationStatus.Completed ||
+        taskState.status == PumpStationStatus.Failed ||
+        !isAsyncScopeActive()
+
+    if(isReentry)
+    {
+        reopenForNextRequest()
+        taskState.turnIndex = 0
+        taskState.goalFailCount = 0
+        taskState.selectedPathName = null
+        taskState.lastPathResult = null
+        taskState.lastError = null
+        taskState.exitReason = null
+        taskState.requestJudgeNextTurn = false
+        taskState.currentPathName = null
+        turnHistory.add(ConverseRole.user, content)
+        rawTurnHistory.add(ConverseRole.user, content)
+    }
+
     taskState.originalInput = content
     taskState.latestContent = content
     collectGatewayRequests(content)
@@ -3414,15 +3434,23 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
     val hasJudge = judgeAgent != null || judgeAgentBuilderFunction != null
     val isFlagTriggered = judgeRunModeInternal == PumpStationJudgeRunMode.FlagTriggered
     val hasPathExitSignal = pathList.values.any { it.hasExecutionFunction }
-    val allowsLongRun = maxTurnsInternal > 1
-    if (!hasJudge && !isFlagTriggered && !hasPathExitSignal && allowsLongRun)
+    val allowsLongRun = maxTurnsInternal <= 0 || maxTurnsInternal > 1
+    if(!hasJudge && !isFlagTriggered && !hasPathExitSignal && allowsLongRun)
     {
+        val capNote = if(maxTurnsInternal <= 0)
+        {
+            "Harness has unlimited turns (maxTurns <= 0) and will run indefinitely until a KillSwitch or external abort stops it."
+        }
+        else
+        {
+            "Harness will run until maxTurns and fail with MaxTurnsExceeded."
+        }
+
         emitEventInternal(HarnessWarning(
             runId = taskState.runId,
             turnIndex = 0,
             code = WarningCode.NoExitSignalConfigured,
-            message = "No exit signal configured. Harness will run until maxTurns " +
-                "and fail with MaxTurnsExceeded. Configure one of: " +
+            message = "No exit signal configured. $capNote Configure one of: " +
                 "(1) judge agent, " +
                 "(2) requestJudgeNextTurn() bound to a path with judgeRunMode = FlagTriggered, " +
                 "(3) passPipeline = true on a path result for success exit, " +
@@ -3442,10 +3470,11 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
 //=========================================Harness Loop============================================================
 
 /**
- * Main harness loop. Runs turns until [maxTurns] is reached, the task
+ * Main harness loop. Runs turns until [maxTurns] is reached (when `maxTurns > 0`;
+ * values `<= 0` disable the turn cap for unlimited turns), the task
  * is halted by the judge or exit flow, or the harness is suspended/killed.
  * Sets [PumpStationTaskState.lastError] and [PumpStationTaskState.exitReason]
- * when max turns is hit so the finalization phase emits a failure event.
+ * when a positive max turns cap is hit so the finalization phase emits a failure event.
  */
 /**
  * Drive the harness turn loop. Returns a [KillSwitchException] (re-thrown by the caller after
@@ -3463,7 +3492,7 @@ internal suspend fun PumpStation.runPreInitPhase(content: MultimodalContent)
 internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
 {
     var tripException: KillSwitchException? = null
-    while (taskState.turnIndex < maxTurnsInternal && taskState.status == PumpStationStatus.Running)
+    while((maxTurnsInternal <= 0 || taskState.turnIndex < maxTurnsInternal) && taskState.status == PumpStationStatus.Running)
 {
         if (!checkPauseGuards(PumpStationPausePhase.BeforeJudge)) break
         // Outer snapshot for the new turn. If an interrupt fires during
@@ -3513,8 +3542,8 @@ internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException?
         }
         taskState.turnIndex++
     }
-    if (taskState.turnIndex >= maxTurnsInternal && taskState.lastError == null)
-{
+    if(maxTurnsInternal > 0 && taskState.turnIndex >= maxTurnsInternal && taskState.lastError == null)
+    {
         taskState.lastError = PumpStationError.MaxTurnsExceeded
         taskState.exitReason = PumpStationExitReason.MaxTurnsHit
     }

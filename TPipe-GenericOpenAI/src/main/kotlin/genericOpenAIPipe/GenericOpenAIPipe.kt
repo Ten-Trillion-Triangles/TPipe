@@ -1775,6 +1775,8 @@ class GenericOpenAIPipe : Pipe()
         var totalInputTokens = 0
         var totalOutputTokens = 0
         var totalReasoningTokens = 0
+        var totalCacheReadTokens = 0
+        var totalCacheCreationTokens = 0
         // Captured from the first non-null finish_reason across the
         // choices[]. Defensive termination signal — the spec lets a
         // server emit finish_reason on the terminal chunk without
@@ -2059,9 +2061,31 @@ class GenericOpenAIPipe : Pipe()
                                     }
                                 }
                             }
-                            else if(parsed is AnthropicStreamEvent.MessageDelta && parsed.stopReason != null)
+                            else if(parsed is AnthropicStreamEvent.MessageDelta)
                             {
-                                // end of stream
+                                parsed.usage?.let { usage ->
+                                    if(usage.inputTokens > 0) totalInputTokens = maxOf(totalInputTokens, usage.inputTokens)
+                                    if(usage.outputTokens > 0) totalOutputTokens = maxOf(totalOutputTokens, usage.outputTokens)
+                                    usage.cacheReadInputTokens?.let { if(it > 0) totalCacheReadTokens = maxOf(totalCacheReadTokens, it) }
+                                    usage.cacheCreationInputTokens?.let { if(it > 0) totalCacheCreationTokens = maxOf(totalCacheCreationTokens, it) }
+                                }
+                                if(parsed.stopReason != null)
+                                {
+                                    streamingFinishReason = parsed.stopReason
+                                }
+                            }
+                            else if(lastEventType == "message_start")
+                            {
+                                AnthropicSseParser.parseAnthropicUsageInfo(dataLine)?.let { usage ->
+                                    if(usage.inputTokens > 0) totalInputTokens = maxOf(totalInputTokens, usage.inputTokens)
+                                    if(usage.outputTokens > 0) totalOutputTokens = maxOf(totalOutputTokens, usage.outputTokens)
+                                    usage.cacheReadInputTokens?.let { if(it > 0) totalCacheReadTokens = maxOf(totalCacheReadTokens, it) }
+                                    usage.cacheCreationInputTokens?.let { if(it > 0) totalCacheCreationTokens = maxOf(totalCacheCreationTokens, it) }
+                                }
+                            }
+                            else if(lastEventType == "message_stop" || dataLine.contains("\"type\":\"message_stop\"") || dataLine.contains("\"type\": \"message_stop\""))
+                            {
+                                break@lineLoop
                             }
                         }
                     }
@@ -2191,12 +2215,12 @@ class GenericOpenAIPipe : Pipe()
         }
         val streamingInputTok = when(apiMode)
         {
-            is ApiMode.OpenAIResponses -> streamingInputTokens
+            is ApiMode.OpenAIResponses, is ApiMode.Anthropic -> streamingInputTokens
             else -> 0
         }
         val streamingOutputTok = when(apiMode)
         {
-            is ApiMode.OpenAIResponses -> streamingOutputTokens
+            is ApiMode.OpenAIResponses, is ApiMode.Anthropic -> streamingOutputTokens
             else -> 0
         }
         val streamingReasonTok = when(apiMode)
@@ -2226,6 +2250,14 @@ class GenericOpenAIPipe : Pipe()
                 is ApiMode.Anthropic -> "AnthropicAPI"
             }
         )
+        if(totalCacheReadTokens > 0)
+        {
+            streamingMetadata["cacheReadTokens"] = totalCacheReadTokens
+        }
+        if(totalCacheCreationTokens > 0)
+        {
+            streamingMetadata["cacheCreationTokens"] = totalCacheCreationTokens
+        }
         // Surface the captured terminal reason when the chat-completions
         // API emitted one. This is the most operationally relevant
         // signal for OpenAI ChatAPI callers: a null finish_reason means
@@ -2665,6 +2697,8 @@ class GenericOpenAIPipe : Pipe()
         var totalInputTokens = 0
         var totalOutputTokens = 0
         var totalReasoningTokens = 0
+        var totalCacheReadTokens = 0
+        var totalCacheCreationTokens = 0
 
         while(!channel.isClosedForRead)
         {

@@ -153,6 +153,7 @@ class PumpStationDslParityTest
                 preCompactionFunction = { c, _, _, _ -> c }
                 postCompactionFunction = { c, _, _ -> c }
                 onContextTruncated = { _, _ -> }
+                messageFunction = { msg, _ -> "echo:$msg" }
 
                 // ===== Path with every new PathBlock surface =====
                 path("alpha") {
@@ -164,6 +165,7 @@ class PumpStationDslParityTest
                     pathMetadata["k1"] = "v1"
                     pathMetadata["k2"] = 42
                     setInternalAgent(SgTestAgent(agentTag = "alpha-agent"))
+                    setMessageFunction { msg, _ -> "path:$msg" }
                 }
                 path("beta") {
                     description = "beta path"
@@ -281,6 +283,10 @@ class PumpStationDslParityTest
             // and the PromptCompositionTest which exercises buildJudgeSystemPrompt.
             assertEquals("a friendly, focused assistant", station.getPersonality(),
                 "personality should round-trip on the station")
+
+            // Message hooks round-trip through station and PathBlock
+            assertEquals("echo:ping", station.sendMessage("ping"))
+            assertEquals("path:ping", alpha.sendMessage("ping"))
         }
     }
 }

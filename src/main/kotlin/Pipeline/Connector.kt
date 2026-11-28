@@ -42,6 +42,9 @@ class Connector : P2PInterface
     private var p2PRequirements: P2PRequirements? = null
     private var parentInterface: P2PInterface? = null
     @kotlinx.serialization.Transient
+    @Volatile
+    private var messageFunction: (suspend (message: Any, connector: Connector) -> Any?)? = null
+    @kotlinx.serialization.Transient
     private var _killSwitch: com.TTT.P2P.KillSwitch? = null
     override var killSwitch: com.TTT.P2P.KillSwitch?
         get() = _killSwitch
@@ -90,6 +93,26 @@ class Connector : P2PInterface
     }
 
     override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
+    /**
+     * Sets the DITL message hook invoked when [sendMessage] is called on this connector.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     * @return This [Connector] instance for method chaining.
+     */
+    fun setMessageFunction(func: (suspend (message: Any, connector: Connector) -> Any?)?): Connector
+    {
+        messageFunction = func
+        return this
+    }
+
+    /**
+     * Invokes this connector's [messageFunction] if bound.
+     *
+     * @param message Arbitrary message payload.
+     * @return Response returned by the hook, or `null` if no hook is bound.
+     */
+    override suspend fun sendMessage(message: Any): Any? = messageFunction?.invoke(message, this)
 
     override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
     {

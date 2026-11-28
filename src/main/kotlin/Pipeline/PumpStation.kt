@@ -402,6 +402,13 @@ open class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterfac
     var outputCaptureFunction: (suspend (content: MultimodalContent) -> Unit)? = null
 
     /**
+     * Optional DITL message hook invoked via [P2PInterface.sendMessage] on this path.
+     */
+    @kotlinx.serialization.Transient
+    @Volatile
+    var messageFunction: (suspend (message: Any, path: PathObject) -> Any?)? = null
+
+    /**
      * Optional internal agent. Stored as a P2P interface to allow any possible TPipe agent type to be stored internally
      * this includes embedding another [PumpStation] inside the path object that can be called by an outer PumpStation.
      * When assigned, the agent builder function will be skipped over.
@@ -644,6 +651,19 @@ open class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterfac
     }
 
     /**
+     * Sets the DITL message hook invoked when [sendMessage] is called on this path.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     * @return This [PathObject] instance for method chaining.
+     * @see [messageFunction]
+     */
+    fun setMessageFunction(func: (suspend (message: Any, path: PathObject) -> Any?)?): PathObject
+    {
+        messageFunction = func
+        return this
+    }
+
+    /**
      * True if this path suppresses its async result from being appended to
      * the harness [turnHistory]. Mirrors the mutable [setSuppressHistoryEmit]
      * setting.
@@ -658,6 +678,14 @@ open class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterfac
     {
         init()
     }
+
+    /**
+     * Invokes this path's [messageFunction] if bound.
+     *
+     * @param message Arbitrary message payload.
+     * @return Response returned by the hook, or `null` if no hook is bound.
+     */
+    override suspend fun sendMessage(message: Any): Any? = messageFunction?.invoke(message, this)
 
     /**
      * Executes this path with the given input.
@@ -794,6 +822,23 @@ open class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterfac
      * Open so [com.TTT.Pipeline.SuperPath] can provide a standalone (no-station) routing
      * entry point alongside the station-aware [execute] override.
      */
+    /**
+     * Delegates execution of this path from a wrapper path inside [station], preserving
+     * full support for `pcpSchema`, `executionFunction`, `internalAgent`, and `agentBuilderFunction`.
+     */
+    suspend fun executeDelegated(
+        content: MultimodalContent,
+        station: PumpStation,
+        turnHistory: ConverseHistory? = null,
+        turnSummary: String = ""
+    ): MultimodalContent = execute(
+        content = content,
+        station = station,
+        turnHistory = turnHistory,
+        turnSummary = turnSummary,
+        registerAsInteractiveControlPath = false
+    )
+
     override open suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {
         // Priority 1: PCP function — dispatch the request extracted from the content text.
@@ -1591,6 +1636,14 @@ fun getInterruptTargetMode(): PumpStationControlTargetMode = interruptTargetMode
     override fun getParentP2PInterface(): P2PInterface? = parentInterface
 
     /**
+     * Invokes this PumpStation's [messageFunction] if bound.
+     *
+     * @param message Arbitrary message payload.
+     * @return Response returned by the hook, or `null` if no hook is bound.
+     */
+    override suspend fun sendMessage(message: Any): Any? = messageFunction?.invoke(message, this)
+
+    /**
      * OPTIONAL: This agent judges if the given harness task is considered complete or not. Once completed,
      * the judge agent can shut down the harness and return the result. If not present, a stop signal
      * via [MultimodalContent.passPipeline], [MultimodalContent.terminatePipeline] or explicit pass signal
@@ -1913,11 +1966,13 @@ private fun pathKey(name: String): String = name.lowercase()
 
     /**
      * Maximum number of harness turns before forced exit. Acts as a safety limit to avoid
-     * llm loops and exploding token costs. The harness loop in
+     * llm loops and exploding token costs. Values `<= 0` (such as `0`) disable the turn cap
+     * so the harness runs unlimited turns until an exit signal, [killSwitch], loop guard, or
+     * external abort stops it. The harness loop in
      * [com.TTT.Pipeline.PumpStationLoop.runHarnessLoop] reads this field via
      * [maxTurnsInternal] and terminates with [PumpStationError.MaxTurnsExceeded] /
-     * [PumpStationExitReason.MaxTurnsHit] when [com.TTT.Pipeline.PumpStationTaskState.turnIndex]
-     * reaches the cap.
+     * [PumpStationExitReason.MaxTurnsHit] when `maxTurns > 0` and
+     * [com.TTT.Pipeline.PumpStationTaskState.turnIndex] reaches the cap.
      */
     private var maxTurns = 50
 
@@ -2344,7 +2399,7 @@ private fun pathKey(name: String): String = name.lowercase()
      * never block on a full queue; the harness's [maxConcurrentBackgroundAgents]
      * [Semaphore] is the real flow-control surface.
      */
-    private val pendingAsyncResults = Channel<PendingTurnEntry>(Channel.UNLIMITED)
+    private var pendingAsyncResults = Channel<PendingTurnEntry>(Channel.UNLIMITED)
 
     /**
      * Mutex held by all async-origin writes to harness state. The [ConverseHistory]
@@ -2361,11 +2416,12 @@ private fun pathKey(name: String): String = name.lowercase()
      * outlive [executeLocal] (closed by [cancelAsyncJobs] in [runFinalizationPhase])
      * and so the harness can enforce a single cancellation boundary.
      */
-    val asyncScope: kotlinx.coroutines.CoroutineScope =
+    var asyncScope: kotlinx.coroutines.CoroutineScope =
         kotlinx.coroutines.CoroutineScope(
             kotlinx.coroutines.SupervisorJob() +
                 kotlinx.coroutines.Dispatchers.Default
         )
+        private set
 
     /**
      * When true, async paths are appended to [turnHistory] by the foreground drain
@@ -2772,6 +2828,14 @@ private fun pathKey(name: String): String = name.lowercase()
      * data in the history itself. If not bound, a default function will be at harness startup time.
      */
     private var onContextTruncated: (suspend (wasTruncated: Boolean, remainingFreeSpace: Int) -> Unit)? = null
+
+    /**
+     * DITL message hook invoked via [P2PInterface.sendMessage] to allow external applications
+     * to send commands, signals, or adjustments into a running PumpStation harness.
+     */
+    @kotlinx.serialization.Transient
+    @Volatile
+    private var messageFunction: (suspend (message: Any, harness: PumpStation) -> Any?)? = null
 
     /**
      * P2PInterface required init function. Initializes the PumpStation harness.
@@ -4655,6 +4719,119 @@ private fun pathKey(name: String): String = name.lowercase()
     /** Internal access for the prompt-refresh extensions in PumpStationLoop.kt. */
     internal val implementationPlanInternal: String? get() = implementationPlan
 
+    private var todoPageKey: String = ""
+    private var todoInjectionPoint: com.TTT.Enums.TodoInjectionPoint = com.TTT.Enums.TodoInjectionPoint.AfterUserPromptWithConverse
+    private var todoListInstructions: String = ""
+    private var judgeTodoListInstructions: String = ""
+    private var goalTodoListInstructions: String = ""
+    private var summaryTodoListInstructions: String = ""
+
+    /**
+     * Configure a ContextBank todo-list page key for this station's control and summary agents.
+     *
+     * @param key ContextBank todo page key.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setTodoListPageKey(key: String): PumpStation
+    {
+        this.todoPageKey = key
+        applyTodoConfigurationToAgents()
+        return this
+    }
+
+    /**
+     * Configure where the bound todo list is injected into prompts.
+     *
+     * @param point Placement target for todo injection.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setTodoInjectionPoint(point: com.TTT.Enums.TodoInjectionPoint): PumpStation
+    {
+        this.todoInjectionPoint = point
+        applyTodoConfigurationToAgents()
+        return this
+    }
+
+    /**
+     * Override default instructions accompanying injected todo lists on dispatch (and fallback for other roles).
+     *
+     * @param instructions Custom instructions text.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setTodoListInstructions(instructions: String): PumpStation
+    {
+        this.todoListInstructions = instructions
+        applyTodoConfigurationToAgents()
+        return this
+    }
+
+    /**
+     * Override todo-list instructions specifically for the judge pipeline.
+     *
+     * @param instructions Custom judge todo instructions text.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setJudgeTodoListInstructions(instructions: String): PumpStation
+    {
+        this.judgeTodoListInstructions = instructions
+        applyTodoConfigurationToAgents()
+        return this
+    }
+
+    /**
+     * Override todo-list instructions specifically for the goal-validation pipeline.
+     *
+     * @param instructions Custom goal todo instructions text.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setGoalTodoListInstructions(instructions: String): PumpStation
+    {
+        this.goalTodoListInstructions = instructions
+        applyTodoConfigurationToAgents()
+        return this
+    }
+
+    /**
+     * Override todo-list instructions specifically for the compaction summary pipeline.
+     *
+     * @param instructions Custom summary todo instructions text.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setSummaryTodoListInstructions(instructions: String): PumpStation
+    {
+        this.summaryTodoListInstructions = instructions
+        applyTodoConfigurationToAgents()
+        return this
+    }
+
+    /** Apply configured todo injection settings to dispatch, judge, goal, and summary pipelines. */
+    internal fun applyTodoConfigurationToAgents()
+    {
+        applyTodoConfigurationToPipeline(dispatchAgent, todoListInstructions)
+        applyTodoConfigurationToPipeline(judgeAgent, judgeTodoListInstructions.ifBlank { todoListInstructions })
+        applyTodoConfigurationToPipeline(goalAgent as? Pipeline, goalTodoListInstructions.ifBlank { todoListInstructions })
+        applyTodoConfigurationToPipeline(summaryAgent as? Pipeline, summaryTodoListInstructions.ifBlank { todoListInstructions })
+    }
+
+    /** Apply configured todo injection settings to every pipe in [agent] without mutating system prompts for non-SystemPrompt targets. */
+    private fun applyTodoConfigurationToPipeline(agent: Pipeline?, instructions: String = todoListInstructions)
+    {
+        if(agent == null || todoPageKey.isBlank()) return
+        agent.getPipes().forEach { pipe ->
+            pipe.setTodoInjectionPoint(todoInjectionPoint)
+            if(instructions.isNotBlank())
+            {
+                pipe.setTodoListInstructions(instructions)
+            }
+
+            pipe.setTodoListPageKey(todoPageKey)
+            if(todoInjectionPoint == com.TTT.Enums.TodoInjectionPoint.SystemPrompt)
+            {
+                pipe.applySystemPrompt()
+            }
+        }
+    }
+
     /** Apply the current plan to exactly the configured PumpStation control agents. */
     private fun applyImplementationPlanToAgents()
     {
@@ -4690,6 +4867,7 @@ private fun pathKey(name: String): String = name.lowercase()
         {
             autoInjectDefaultPrompt(agent, customJudgeSystemPrompt, DEFAULT_JUDGE_PROMPT)
             if(implementationPlan != null) applyImplementationPlanToPipeline(agent)
+            applyTodoConfigurationToPipeline(agent, judgeTodoListInstructions.ifBlank { todoListInstructions })
         }
         return this
     }
@@ -4708,6 +4886,7 @@ private fun pathKey(name: String): String = name.lowercase()
         {
             autoInjectDefaultPrompt(agent, customDispatchSystemPrompt, DEFAULT_DISPATCH_PROMPT)
             if(implementationPlan != null) applyImplementationPlanToPipeline(agent)
+            applyTodoConfigurationToPipeline(agent, todoListInstructions)
         }
         return this
     }
@@ -4761,6 +4940,7 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setSummaryAgent(agent: P2PInterface?): PumpStation
     {
         this.summaryAgent = agent
+        applyTodoConfigurationToPipeline(agent as? Pipeline, summaryTodoListInstructions.ifBlank { todoListInstructions })
         return this
     }
 
@@ -4775,6 +4955,7 @@ private fun pathKey(name: String): String = name.lowercase()
     {
         this.goalAgent = agent
         if(implementationPlan != null) applyImplementationPlanToPipeline(agent as? Pipeline)
+        applyTodoConfigurationToPipeline(agent as? Pipeline, goalTodoListInstructions.ifBlank { todoListInstructions })
         return this
     }
 
@@ -5127,7 +5308,10 @@ private fun pathKey(name: String): String = name.lowercase()
      * the harness loop reads. Kept as a top-level setter so existing callers using
      * `station.setMaxHarnessTurns(N)` continue to work without modification.
      *
-     * @param max The maximum harness turns.
+     * Pass `<= 0` (e.g., `0`) to disable the turn cap for unlimited turns (relying on
+     * exit signals, [KillSwitch], loop guards, or external abort for termination).
+     *
+     * @param max The maximum harness turns, or `<= 0` for unlimited.
      * @return This PumpStation instance for method chaining.
      */
     fun setMaxHarnessTurns(max: Int): PumpStation
@@ -5245,11 +5429,13 @@ private fun pathKey(name: String): String = name.lowercase()
      * canonical loop-guard setter; the [com.TTT.Pipeline.PumpStationLoop.runHarnessLoop]
      * extension reads the value via [maxTurnsInternal] and terminates with
      * [PumpStationError.MaxTurnsExceeded] / [PumpStationExitReason.MaxTurnsHit]
-     * when [com.TTT.Pipeline.PumpStationTaskState.turnIndex] reaches the cap.
+     * when `max > 0` and [com.TTT.Pipeline.PumpStationTaskState.turnIndex] reaches the cap.
+     * Passing `<= 0` (e.g., `0`) disables the turn cap (unlimited turns; pair with an exit
+     * signal and [KillSwitch]).
      *
      * [setMaxHarnessTurns] is a delegating alias that writes the same field.
      *
-     * @param max The maximum number of harness turns.
+     * @param max The maximum number of harness turns, or `<= 0` for unlimited.
      * @return This PumpStation instance for method chaining.
      */
     fun setMaxTurns(max: Int): PumpStation
@@ -5278,7 +5464,7 @@ private fun pathKey(name: String): String = name.lowercase()
     fun getMaxGoalFailAttempts(): Int = maxGoalFailAttempts
 
     /**
-     * Returns the maximum number of harness turns. Public mirror of the
+     * Returns the maximum number of harness turns (`<= 0` means unlimited). Public mirror of the
      * private [maxTurns] field; the harness loop enforces this limit via
      * [com.TTT.Pipeline.PumpStationLoop]. Companion to [getMaxTurns] and
      * [setMaxHarnessTurns]; both names read the same backing field.
@@ -5287,9 +5473,9 @@ private fun pathKey(name: String): String = name.lowercase()
 
     /**
      * Returns the maximum number of harness turns configured via [setMaxTurns]
-     * (or its delegating alias [setMaxHarnessTurns]). This is the canonical
-     * loop-guard budget; the harness loop enforces it via
-     * [com.TTT.Pipeline.PumpStationLoop].
+     * (or its delegating alias [setMaxHarnessTurns]). Values `<= 0` disable the
+     * turn cap (unlimited turns). This is the canonical loop-guard budget;
+     * the harness loop enforces it via [com.TTT.Pipeline.PumpStationLoop].
      */
     fun getMaxTurns(): Int = maxTurns
 
@@ -6330,6 +6516,23 @@ private fun pathKey(name: String): String = name.lowercase()
     }
 
     /**
+     * Reopens [pendingAsyncResults] and [asyncScope] when a retained [PumpStation]
+     * begins a follow-up request after [runFinalizationPhase] closed the previous run's
+     * async channel and scope.
+     */
+    internal fun reopenForNextRequest()
+    {
+        pendingAsyncResults = Channel<PendingTurnEntry>(Channel.UNLIMITED)
+        if(!asyncScope.isActive)
+        {
+            asyncScope = kotlinx.coroutines.CoroutineScope(
+                kotlinx.coroutines.SupervisorJob() +
+                    kotlinx.coroutines.Dispatchers.Default
+            )
+        }
+    }
+
+    /**
      * Returns true if the [asyncScope] is still active (not yet cancelled).
      * Useful for tests and DITL tooling that needs to check whether a station
      * has been torn down.
@@ -6631,6 +6834,18 @@ private fun pathKey(name: String): String = name.lowercase()
     fun setOnContextTruncated(func: (suspend (wasTruncated: Boolean, remainingFreeSpace: Int) -> Unit)?): PumpStation
     {
         this.onContextTruncated = func
+        return this
+    }
+
+    /**
+     * Sets the DITL message hook invoked when [sendMessage] is called on this PumpStation.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     * @return This PumpStation instance for method chaining.
+     */
+    fun setMessageFunction(func: (suspend (message: Any, harness: PumpStation) -> Any?)?): PumpStation
+    {
+        this.messageFunction = func
         return this
     }
 

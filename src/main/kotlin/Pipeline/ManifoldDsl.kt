@@ -68,7 +68,8 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     var concurrencyModeConfiguration: P2PConcurrencyMode = P2PConcurrencyMode.SHARED,
     var killSwitchConfiguration: KillSwitch? = null,
     var maxIterationsConfiguration: Int? = null,
-    var implementationPlanConfiguration: String? = null
+    var implementationPlanConfiguration: String? = null,
+    var messageFunctionConfiguration: (suspend (message: Any, manifold: Manifold) -> Any?)? = null
 )
 {
     companion object
@@ -116,7 +117,8 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         concurrencyModeConfiguration: P2PConcurrencyMode = this.concurrencyModeConfiguration,
         killSwitchConfiguration: KillSwitch? = this.killSwitchConfiguration,
         maxIterationsConfiguration: Int? = this.maxIterationsConfiguration,
-        implementationPlanConfiguration: String? = this.implementationPlanConfiguration
+        implementationPlanConfiguration: String? = this.implementationPlanConfiguration,
+        messageFunctionConfiguration: (suspend (message: Any, manifold: Manifold) -> Any?)? = this.messageFunctionConfiguration
     ): ManifoldBuilder<T>
     {
         val newBuilder = ManifoldBuilder<T>(
@@ -131,7 +133,8 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
             concurrencyModeConfiguration = concurrencyModeConfiguration,
             killSwitchConfiguration = killSwitchConfiguration,
             maxIterationsConfiguration = maxIterationsConfiguration,
-            implementationPlanConfiguration = implementationPlanConfiguration
+            implementationPlanConfiguration = implementationPlanConfiguration,
+            messageFunctionConfiguration = messageFunctionConfiguration
         )
         pushBuilder(newBuilder)
         return newBuilder
@@ -362,6 +365,25 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
     }
 
     /**
+     * Configure an optional DITL message hook invoked via [P2PInterface.sendMessage].
+     *
+     * @param func The message hook receiving `(message, manifold)` and returning an optional response.
+     * @return This builder for chaining.
+     */
+    fun messageFunction(func: suspend (message: Any, manifold: Manifold) -> Any?): ManifoldBuilder<S>
+    {
+        val stackBuilder = peekBuilder()
+        val targetBuilder = if(stackBuilder != null && stackBuilder !== this) {
+            @Suppress("UNCHECKED_CAST")
+            stackBuilder as ManifoldBuilder<S>
+        } else {
+            this
+        }
+        targetBuilder.messageFunctionConfiguration = func
+        return this
+    }
+
+    /**
      * Configure tracing for the manifold and its child pipelines.
      *
      * @param block Builder block that enables tracing and optionally overrides the trace config.
@@ -506,6 +528,8 @@ class ManifoldBuilder<S : ManifoldStage> @PublishedApi internal constructor(
         {
             manifold.setMaxLoopIterations(maxIterationsConfiguration)
         }
+
+        messageFunctionConfiguration?.let { manifold.setMessageFunction(it) }
 
         return manifold
     }

@@ -77,8 +77,17 @@ sealed interface SavedPageMutationResult
  * sidecar lock is held. Callers should expose opaque identifiers rather than raw
  * relative paths to untrusted clients.
  */
-class LocalContextPersistence(root: Path = Path.of(TPipeConfig.getLorebookDir()))
+class LocalContextPersistence(
+    root: Path = Path.of(TPipeConfig.getLorebookDir()),
+    private val fileExtension: String = ".bank"
+)
 {
+    init
+    {
+        require(fileExtension.startsWith(".") && fileExtension.length > 1) {
+            "Saved-memory fileExtension must start with '.'"
+        }
+    }
     private val rootPath = root.toAbsolutePath().normalize().also { candidate ->
         Files.createDirectories(candidate)
         require(!Files.isSymbolicLink(candidate)) { "Saved-memory root must not be a symbolic link" }
@@ -106,9 +115,9 @@ class LocalContextPersistence(root: Path = Path.of(TPipeConfig.getLorebookDir())
             val normalizedQuery = query.trim().lowercase()
             val candidates = Files.walk(rootPath).use { stream ->
                 stream
-                    .filter { path -> !Files.isSymbolicLink(path) && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) && path.fileName.toString().endsWith(".bank") }
+                    .filter { path -> !Files.isSymbolicLink(path) && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) && path.fileName.toString().endsWith(fileExtension) }
                     .map { path -> path to relativePathFor(path) }
-                    .filter { (_, relativePath) -> normalizedQuery.isEmpty() || relativePath.lowercase().contains(normalizedQuery) || relativePath.substringAfterLast('/').removeSuffix(".bank").lowercase().contains(normalizedQuery) }
+                    .filter { (_, relativePath) -> normalizedQuery.isEmpty() || relativePath.lowercase().contains(normalizedQuery) || relativePath.substringAfterLast('/').removeSuffix(fileExtension).lowercase().contains(normalizedQuery) }
                     .sorted(Comparator.comparing<Pair<Path, String>, String> { it.second })
                     .toList()
             }
@@ -256,7 +265,7 @@ class LocalContextPersistence(root: Path = Path.of(TPipeConfig.getLorebookDir())
         if(relativePath.isBlank() || relativePath.contains('\\') || relativePath.contains(':') || relativePath.startsWith("//") || Path.of(relativePath).isAbsolute) return null
         if(relativePath.split('/').any { component -> component == "." || component == ".." }) return null
         val candidate = rootPath.resolve(relativePath).normalize()
-        if(!candidate.startsWith(rootPath) || !candidate.fileName.toString().endsWith(".bank")) return null
+        if(!candidate.startsWith(rootPath) || !candidate.fileName.toString().endsWith(fileExtension)) return null
         if(Files.exists(candidate, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(candidate)) return null
         var current = candidate.parent
         while(current != null && current != rootPath)

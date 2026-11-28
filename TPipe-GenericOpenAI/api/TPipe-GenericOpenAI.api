@@ -135,11 +135,14 @@ public final class genericOpenAIPipe/api/AnthropicContentBlock$Companion {
 
 public final class genericOpenAIPipe/api/AnthropicContentBlock$ImageBlock : genericOpenAIPipe/api/AnthropicContentBlock {
 	public static final field Companion LgenericOpenAIPipe/api/AnthropicContentBlock$ImageBlock$Companion;
-	public fun <init> (LgenericOpenAIPipe/api/ImageSource;)V
+	public fun <init> (LgenericOpenAIPipe/api/ImageSource;LgenericOpenAIPipe/api/AnthropicCacheControl;)V
+	public synthetic fun <init> (LgenericOpenAIPipe/api/ImageSource;LgenericOpenAIPipe/api/AnthropicCacheControl;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()LgenericOpenAIPipe/api/ImageSource;
-	public final fun copy (LgenericOpenAIPipe/api/ImageSource;)LgenericOpenAIPipe/api/AnthropicContentBlock$ImageBlock;
-	public static synthetic fun copy$default (LgenericOpenAIPipe/api/AnthropicContentBlock$ImageBlock;LgenericOpenAIPipe/api/ImageSource;ILjava/lang/Object;)LgenericOpenAIPipe/api/AnthropicContentBlock$ImageBlock;
+	public final fun component2 ()LgenericOpenAIPipe/api/AnthropicCacheControl;
+	public final fun copy (LgenericOpenAIPipe/api/ImageSource;LgenericOpenAIPipe/api/AnthropicCacheControl;)LgenericOpenAIPipe/api/AnthropicContentBlock$ImageBlock;
+	public static synthetic fun copy$default (LgenericOpenAIPipe/api/AnthropicContentBlock$ImageBlock;LgenericOpenAIPipe/api/ImageSource;LgenericOpenAIPipe/api/AnthropicCacheControl;ILjava/lang/Object;)LgenericOpenAIPipe/api/AnthropicContentBlock$ImageBlock;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCacheControl ()LgenericOpenAIPipe/api/AnthropicCacheControl;
 	public final fun getSource ()LgenericOpenAIPipe/api/ImageSource;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -162,11 +165,14 @@ public final class genericOpenAIPipe/api/AnthropicContentBlock$ImageBlock$Compan
 
 public final class genericOpenAIPipe/api/AnthropicContentBlock$TextBlock : genericOpenAIPipe/api/AnthropicContentBlock {
 	public static final field Companion LgenericOpenAIPipe/api/AnthropicContentBlock$TextBlock$Companion;
-	public fun <init> (Ljava/lang/String;)V
+	public fun <init> (Ljava/lang/String;LgenericOpenAIPipe/api/AnthropicCacheControl;)V
+	public synthetic fun <init> (Ljava/lang/String;LgenericOpenAIPipe/api/AnthropicCacheControl;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;)LgenericOpenAIPipe/api/AnthropicContentBlock$TextBlock;
-	public static synthetic fun copy$default (LgenericOpenAIPipe/api/AnthropicContentBlock$TextBlock;Ljava/lang/String;ILjava/lang/Object;)LgenericOpenAIPipe/api/AnthropicContentBlock$TextBlock;
+	public final fun component2 ()LgenericOpenAIPipe/api/AnthropicCacheControl;
+	public final fun copy (Ljava/lang/String;LgenericOpenAIPipe/api/AnthropicCacheControl;)LgenericOpenAIPipe/api/AnthropicContentBlock$TextBlock;
+	public static synthetic fun copy$default (LgenericOpenAIPipe/api/AnthropicContentBlock$TextBlock;Ljava/lang/String;LgenericOpenAIPipe/api/AnthropicCacheControl;ILjava/lang/Object;)LgenericOpenAIPipe/api/AnthropicContentBlock$TextBlock;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCacheControl ()LgenericOpenAIPipe/api/AnthropicCacheControl;
 	public final fun getText ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -249,19 +255,17 @@ public final class genericOpenAIPipe/api/AnthropicMessagesRequest {
 	public fun toString ()Ljava/lang/String;
 }
 
-public final synthetic class genericOpenAIPipe/api/AnthropicMessagesRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
-	public static final field INSTANCE LgenericOpenAIPipe/api/AnthropicMessagesRequest$$serializer;
-	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
-	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)LgenericOpenAIPipe/api/AnthropicMessagesRequest;
-	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
-	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
-	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;LgenericOpenAIPipe/api/AnthropicMessagesRequest;)V
-	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
-	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
-}
-
 public final class genericOpenAIPipe/api/AnthropicMessagesRequest$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class genericOpenAIPipe/api/AnthropicMessagesRequestSerializer : kotlinx/serialization/KSerializer {
+	public static final field INSTANCE LgenericOpenAIPipe/api/AnthropicMessagesRequestSerializer;
+	public fun deserialize (Lkotlinx/serialization/encoding/Decoder;)LgenericOpenAIPipe/api/AnthropicMessagesRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public fun serialize (Lkotlinx/serialization/encoding/Encoder;LgenericOpenAIPipe/api/AnthropicMessagesRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
 }
 
 public final class genericOpenAIPipe/api/AnthropicMessagesResponse {
@@ -678,12 +682,17 @@ public final class genericOpenAIPipe/api/ResponseParser$Factory {
 
 public final class genericOpenAIPipe/api/UsageInfo {
 	public static final field Companion LgenericOpenAIPipe/api/UsageInfo$Companion;
-	public fun <init> (II)V
+	public fun <init> (IILjava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (IILjava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()I
 	public final fun component2 ()I
-	public final fun copy (II)LgenericOpenAIPipe/api/UsageInfo;
-	public static synthetic fun copy$default (LgenericOpenAIPipe/api/UsageInfo;IIILjava/lang/Object;)LgenericOpenAIPipe/api/UsageInfo;
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun copy (IILjava/lang/Integer;Ljava/lang/Integer;)LgenericOpenAIPipe/api/UsageInfo;
+	public static synthetic fun copy$default (LgenericOpenAIPipe/api/UsageInfo;IILjava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)LgenericOpenAIPipe/api/UsageInfo;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCacheCreationInputTokens ()Ljava/lang/Integer;
+	public final fun getCacheReadInputTokens ()Ljava/lang/Integer;
 	public final fun getInputTokens ()I
 	public final fun getOutputTokens ()I
 	public fun hashCode ()I
@@ -965,12 +974,17 @@ public final class genericOpenAIPipe/env/AnthropicStreamingChunk$Companion {
 
 public final class genericOpenAIPipe/env/AnthropicUsageInfo {
 	public static final field Companion LgenericOpenAIPipe/env/AnthropicUsageInfo$Companion;
-	public fun <init> (II)V
+	public fun <init> (IILjava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (IILjava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()I
 	public final fun component2 ()I
-	public final fun copy (II)LgenericOpenAIPipe/env/AnthropicUsageInfo;
-	public static synthetic fun copy$default (LgenericOpenAIPipe/env/AnthropicUsageInfo;IIILjava/lang/Object;)LgenericOpenAIPipe/env/AnthropicUsageInfo;
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun copy (IILjava/lang/Integer;Ljava/lang/Integer;)LgenericOpenAIPipe/env/AnthropicUsageInfo;
+	public static synthetic fun copy$default (LgenericOpenAIPipe/env/AnthropicUsageInfo;IILjava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)LgenericOpenAIPipe/env/AnthropicUsageInfo;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCacheCreationInputTokens ()Ljava/lang/Integer;
+	public final fun getCacheReadInputTokens ()Ljava/lang/Integer;
 	public final fun getInputTokens ()I
 	public final fun getOutputTokens ()I
 	public fun hashCode ()I

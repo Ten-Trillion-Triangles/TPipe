@@ -140,6 +140,14 @@ class Manifold : P2PInterface
     }
 
     /**
+     * Invokes this manifold's [messageFunction] if bound.
+     *
+     * @param message Arbitrary message payload.
+     * @return Response returned by the hook, or `null` if no hook is bound.
+     */
+    override suspend fun sendMessage(message: Any): Any? = messageFunction?.invoke(message, this)
+
+    /**
      * Override the [P2PInterface.executeLocal] identity pass-through so a Manifold embedded
      * as a per-pipe shim doesn't silently echo input back to its caller without doing work.
      *
@@ -413,6 +421,13 @@ class Manifold : P2PInterface
      * to execute any pcp tools.
      */
     private var transformationFunction: (suspend (content: MultimodalContent) -> MultimodalContent)? = null
+
+    /**
+     * Optional DITL message hook invoked via [P2PInterface.sendMessage].
+     */
+    @kotlinx.serialization.Transient
+    @Volatile
+    private var messageFunction: (suspend (message: Any, manifold: Manifold) -> Any?)? = null
 
 
 
@@ -823,6 +838,18 @@ class Manifold : P2PInterface
     fun setTransformationFunction(func: suspend (content: MultimodalContent) -> MultimodalContent) : Manifold
     {
         transformationFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL message hook invoked when [sendMessage] is called on this manifold.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     * @return This [Manifold] instance for method chaining.
+     */
+    fun setMessageFunction(func: (suspend (message: Any, manifold: Manifold) -> Any?)?): Manifold
+    {
+        messageFunction = func
         return this
     }
     /**

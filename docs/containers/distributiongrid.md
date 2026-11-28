@@ -235,6 +235,7 @@ val workerPipeline = Pipeline().apply {
 | `hooks { afterLocalWorker { } }` | Intercepts after worker completes. Can add execution notes. |
 | `hooks { beforePeerDispatch { } }` | Intercepts before peer handoff. Can set PCP forwarding flag. |
 | `hooks { afterPeerResponse { } }` | Intercepts after peer response. |
+| `hooks { messageFunction { } }` | Out-of-band DITL message hook invoked via `P2PInterface.sendMessage(message)`. |
 | `killSwitch(input, output, onTripped)` | Halts execution if token limits are exceeded. |
 | `concurrencyMode(ISOLATED)` | Required for P2P exposure. Each request gets a fresh grid state. |
 
@@ -486,6 +487,21 @@ hooks {
     }
 }
 ```
+
+### messageFunction
+
+Binds an out-of-band DITL message hook invoked when `P2PInterface.sendMessage(message)` is called on the grid:
+
+```kotlin
+hooks {
+    messageFunction { message, grid ->
+        // Handle external message and return optional Any? response
+        "ack:$message"
+    }
+}
+```
+
+This is equivalent to calling `grid.setMessageFunction(...)` on the API (pass `null` to clear).
 
 ## Memory Summarization Backends
 

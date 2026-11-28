@@ -3,7 +3,9 @@ package com.TTT.Pipeline
 import com.TTT.Pipe.MultimodalContent
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * Regression tests for the [PumpStation.setMaxTurns] / [PumpStation.setMaxHarnessTurns]
@@ -207,6 +209,127 @@ class PumpStationMaxTurnsLoopTest
                 "DSL's maxHarnessTurns alias must bound the harness loop"
             )
             assertEquals(3, station.getTaskState().turnIndex)
+        }
+    }
+
+    @Test
+    fun testSetMaxTurnsZeroRunsUnlimitedUntilExitSignal()
+    {
+        runBlocking {
+            val calls = AtomicInteger(0)
+            val passOnFifthCallPath = PathObject().apply {
+                pathName = "p1"
+                pathDescription = "Passes on 5th call"
+                setExecutionFunction { _, _, _, _ ->
+                    val count = calls.incrementAndGet()
+                    MultimodalContent(text = "step $count").apply {
+                        if(count >= 5) passPipeline = true
+                    }
+                }
+            }
+            val judgePipe = ScriptedTestPipe(
+                response = """{"isComplete": false, "shouldTerminate": false}"""
+            )
+            val dispatchPipe = ScriptedTestPipe(
+                response = """{"pathName": "p1", "pathSchema": "{}"}"""
+            )
+            val station = PumpStation()
+                .setJudgeAgent(Pipeline().apply { add(judgePipe) })
+                .setDispatchAgent(Pipeline().apply { add(dispatchPipe) })
+                .setMaxTurns(0)
+                .apply { addPath(passOnFifthCallPath) }
+
+            assertEquals(0, station.getMaxTurns(), "getMaxTurns must return 0 when unlimited")
+            assertEquals(0, station.getMaxHarnessTurns(), "getMaxHarnessTurns must return 0 when unlimited")
+
+            station.executeLocal(MultimodalContent(text = "task"))
+
+            val state = station.getTaskState()
+            assertEquals(5, calls.get(), "Unlimited loop (maxTurns = 0) must run until exit signal on turn 5")
+            assertNull(state.lastError, "Unlimited loop must not fail with MaxTurnsExceeded")
+            assertEquals(PumpStationExitReason.PassSignal, state.exitReason)
+        }
+    }
+
+    @Test
+    fun testDslMaxHarnessTurnsZeroRunsUnlimited()
+    {
+        runBlocking {
+            val calls = AtomicInteger(0)
+            val station = pumpStation("dsl-unlimited-test") {
+                dispatchAgent = Pipeline()
+                judgeAgent = Pipeline()
+                maxHarnessTurns = 0
+                path("p1") {
+                    description = "p1"
+                    setInternalAgent(SgTestAgent(agentTag = "p1"))
+                }
+            }
+            val scriptedJudgePipe = ScriptedTestPipe(
+                response = """{"isComplete": false, "shouldTerminate": false}"""
+            )
+            val scriptedDispatchPipe = ScriptedTestPipe(
+                response = """{"pathName": "p1", "pathSchema": "{}"}"""
+            )
+            val passOnFourthCallPath = PathObject().apply {
+                pathName = "p1"
+                pathDescription = "Passes on 4th call"
+                setExecutionFunction { _, _, _, _ ->
+                    val count = calls.incrementAndGet()
+                    MultimodalContent(text = "step $count").apply {
+                        if(count >= 4) passPipeline = true
+                    }
+                }
+            }
+            station.setJudgeAgent(Pipeline().apply { add(scriptedJudgePipe) })
+            station.setDispatchAgent(Pipeline().apply { add(scriptedDispatchPipe) })
+            station.addPath(passOnFourthCallPath)
+
+            assertEquals(0, station.getMaxTurns())
+            assertEquals(0, station.getMaxHarnessTurns())
+
+            station.executeLocal(MultimodalContent(text = "task"))
+
+            val state = station.getTaskState()
+            assertEquals(4, calls.get(), "DSL maxHarnessTurns = 0 must run unlimited turns until exit signal")
+            assertNull(state.lastError)
+            assertEquals(PumpStationExitReason.PassSignal, state.exitReason)
+        }
+    }
+
+    @Test
+    fun testNegativeMaxTurnsRunsUnlimited()
+    {
+        runBlocking {
+            val calls = AtomicInteger(0)
+            val passOnThirdCallPath = PathObject().apply {
+                pathName = "p1"
+                pathDescription = "Passes on 3rd call"
+                setExecutionFunction { _, _, _, _ ->
+                    val count = calls.incrementAndGet()
+                    MultimodalContent(text = "step $count").apply {
+                        if(count >= 3) passPipeline = true
+                    }
+                }
+            }
+            val judgePipe = ScriptedTestPipe(
+                response = """{"isComplete": false, "shouldTerminate": false}"""
+            )
+            val dispatchPipe = ScriptedTestPipe(
+                response = """{"pathName": "p1", "pathSchema": "{}"}"""
+            )
+            val station = PumpStation()
+                .setJudgeAgent(Pipeline().apply { add(judgePipe) })
+                .setDispatchAgent(Pipeline().apply { add(dispatchPipe) })
+                .setMaxTurns(-1)
+                .apply { addPath(passOnThirdCallPath) }
+
+            station.executeLocal(MultimodalContent(text = "task"))
+
+            val state = station.getTaskState()
+            assertEquals(3, calls.get(), "Negative maxTurns (-1) must disable the turn cap")
+            assertNull(state.lastError)
+            assertEquals(PumpStationExitReason.PassSignal, state.exitReason)
         }
     }
 }

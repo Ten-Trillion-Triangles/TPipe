@@ -16,6 +16,7 @@
 - [Reasoning Capture Function](#reasoning-capture-function)
 - [Final Capture Function](#final-capture-function)
 - [Transformation Function - The Most Critical DITL Function](#transformation-function---the-most-critical-ditl-function)
+- [Message Hook (Out-of-Band Messaging)](#message-hook-out-of-band-messaging)
 - [Flow Control Methods](#flow-control-methods)
 - [Pipeline-Level Pre-Validation](#pipeline-level-pre-validation)
 
@@ -262,6 +263,51 @@ pipe.setTransformationFunction { content ->
 ```
 
 Developer-in-the-loop functions provide precise control over AI processing at key intervention points, enabling sophisticated validation, error handling, and adaptive processing logic that goes far beyond simple linear AI model calls.
+
+## Message Hook (Out-of-Band Messaging)
+
+**What it does**: Unlike the lifecycle hooks above—which fire automatically at fixed points inside `execute()`—the **DITL message hook** (`messageFunction` / `setMessageFunction`) is an **on-demand, out-of-band** intervention point triggered whenever an external caller invokes `P2PInterface.sendMessage(message: Any): Any?` on a running component.
+
+Every message hook uses a **component-aware** suspending signature:
+`(suspend (message: Any, target: Self) -> Any?)?`
+
+- **Thread-safe & transient**: Stored with `@kotlinx.serialization.Transient` and `@Volatile` so external callers can safely deliver concurrent messages while an agent is running, without affecting serialization or state fingerprinting. Passing `null` to `setMessageFunction(null)` clears the binding.
+- **Universal coverage**: Supported on `Pipe`, `Pipeline`, `Connector`, `MultiConnector`, `Splitter`, `Manifold`, `Junction`, `DistributionGrid`, `PumpStation`, and `PathObject` (plus `MultiPath` and `SuperPath`). Non-agent `P2PInterface` adapters inherit the default no-op returning `null`.
+- **`Pipe.containerPtr` delegation**: Calling `sendMessage()` on a proxy `Pipe` runs its own `messageFunction` if bound; otherwise it delegates to `containerPtr?.sendMessage(message)`.
+- **Template preservation**: `constructPipeFromTemplate(..., copyFunctions = true)` preserves `Pipe.messageFunction`.
+
+**When to use**: Glue between an external host application and a running TPipe agent—such as signaling a `PumpStation` gateway, pushing live control adjustments, or querying/mutating `metadata` through a uniform `P2PInterface` reference.
+
+```kotlin
+// Pipe-level message hook
+val workerPipe = BedrockPipe()
+    .setMessageFunction { message, pipe ->
+        when(message)
+        {
+            is String -> "ack:${pipe.pipeName}:$message"
+            else -> null
+        }
+    }
+
+// PumpStation gateway glue via P2PInterface
+val station = pumpStation("worker-station") {
+    messageFunction = { message, harness ->
+        when(message)
+        {
+            is GateSignal -> {
+                harness.signalGateway(message.gateName)
+                harness.getGatewayStageIndex()
+            }
+            else -> null
+        }
+    }
+    // ...
+}
+
+// External caller holding only a P2PInterface reference
+val runningAgent: P2PInterface = station
+val stageIndex = runningAgent.sendMessage(GateSignal("todo-check"))
+```
 
 ## Flow Control Methods
 

@@ -344,6 +344,24 @@ val builtManifold = manifold {
 
 This is equivalent to calling `manifold.setManifoldInitFunction(...)` on the API.
 
+### messageFunction { }
+
+The `messageFunction { message, manifold -> ... }` block binds an optional out-of-band DITL message hook invoked when `P2PInterface.sendMessage(message)` is called on the `Manifold`:
+
+```kotlin
+val builtManifold = manifold {
+    // ...
+    messageFunction { message, manifold ->
+        // Inspect or adjust manifold state, then return an optional Any? response
+        "workers:${manifold.getWorkerComponents().size}:$message"
+    }
+}
+
+val reply = builtManifold.sendMessage("status")
+```
+
+This is equivalent to calling `manifold.setMessageFunction(...)` on the API (pass `null` to clear).
+
 ### workerP2P { }
 
 The `workerP2P("name") { }` block registers any `P2PInterface` as a worker — Junction, DistributionGrid, PumpStation, or a nested Manifold. This is the companion block to `worker("name") { }`: same stage transitions, same uniqueness rules, mixed freely in the same builder.

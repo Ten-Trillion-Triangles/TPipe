@@ -1,24 +1,30 @@
 public final class env/ChatRequest {
 	public static final field Companion Lenv/ChatRequest$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/Integer;
 	public final fun component2 ()Ljava/util/List;
 	public final fun component3 ()Ljava/util/List;
 	public final fun component4 ()Lkotlinx/serialization/json/JsonElement;
 	public final fun component5 ()Z
 	public final fun component6 ()Lenv/OllamaOptions;
 	public final fun component7 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;)Lenv/ChatRequest;
-	public static synthetic fun copy$default (Lenv/ChatRequest;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;ILjava/lang/Object;)Lenv/ChatRequest;
+	public final fun component8 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component9 ()Ljava/lang/Boolean;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;)Lenv/ChatRequest;
+	public static synthetic fun copy$default (Lenv/ChatRequest;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lkotlinx/serialization/json/JsonElement;ZLenv/OllamaOptions;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;ILjava/lang/Object;)Lenv/ChatRequest;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getFormat ()Lkotlinx/serialization/json/JsonElement;
 	public final fun getKeepAlive ()Ljava/lang/String;
+	public final fun getLogprobs ()Ljava/lang/Boolean;
 	public final fun getMessages ()Ljava/util/List;
 	public final fun getModel ()Ljava/lang/String;
 	public final fun getOptions ()Lenv/OllamaOptions;
 	public final fun getStream ()Z
+	public final fun getThink ()Lkotlinx/serialization/json/JsonElement;
 	public final fun getTools ()Ljava/util/List;
+	public final fun getTopLogprobs ()Ljava/lang/Integer;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -86,12 +92,88 @@ public final class env/ChatResponse$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
+public final class env/EmbedRequest {
+	public static final field Companion Lenv/EmbedRequest$Companion;
+	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/String;Lenv/OllamaOptions;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/String;Lenv/OllamaOptions;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component3 ()Ljava/lang/Boolean;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Lenv/OllamaOptions;
+	public final fun copy (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/String;Lenv/OllamaOptions;)Lenv/EmbedRequest;
+	public static synthetic fun copy$default (Lenv/EmbedRequest;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/String;Lenv/OllamaOptions;ILjava/lang/Object;)Lenv/EmbedRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDimensions ()Ljava/lang/Integer;
+	public final fun getInput ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getKeepAlive ()Ljava/lang/String;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getOptions ()Lenv/OllamaOptions;
+	public final fun getTruncate ()Ljava/lang/Boolean;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/EmbedRequest$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/EmbedRequest$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/EmbedRequest;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/EmbedRequest;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/EmbedRequest$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/EmbedResponse {
+	public static final field Companion Lenv/EmbedResponse$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component3 ()Ljava/lang/Long;
+	public final fun component4 ()Ljava/lang/Long;
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;)Lenv/EmbedResponse;
+	public static synthetic fun copy$default (Lenv/EmbedResponse;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Long;Ljava/lang/Long;Ljava/lang/Integer;ILjava/lang/Object;)Lenv/EmbedResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEmbeddings ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getLoadDuration ()Ljava/lang/Long;
+	public final fun getModel ()Ljava/lang/String;
+	public final fun getPromptEvalCount ()Ljava/lang/Integer;
+	public final fun getTotalDuration ()Ljava/lang/Long;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class env/EmbedResponse$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lenv/EmbedResponse$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lenv/EmbedResponse;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lenv/EmbedResponse;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class env/EmbedResponse$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
 public final class env/Endpoints {
 	public static final field INSTANCE Lenv/Endpoints;
 	public final fun getChatEndpoint ()Ljava/lang/String;
 	public final fun getCopyEndpoint ()Ljava/lang/String;
 	public final fun getCreateEndpoint ()Ljava/lang/String;
 	public final fun getDeleteEndpoint ()Ljava/lang/String;
+	public final fun getEmbedEndpoint ()Ljava/lang/String;
 	public final fun getEmbeddingsEndpoint ()Ljava/lang/String;
 	public final fun getGenerateEndpoint ()Ljava/lang/String;
 	public final fun getListEndpoint ()Ljava/lang/String;
@@ -105,33 +187,41 @@ public final class env/Endpoints {
 
 public final class env/GeneratedRequest {
 	public static final field Companion Lenv/GeneratedRequest$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
-	public final fun component10 ()Lenv/OllamaOptions;
-	public final fun component11 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/util/List;
+	public final fun component11 ()Lenv/OllamaOptions;
+	public final fun component12 ()Ljava/lang/String;
+	public final fun component13 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun component14 ()Ljava/lang/Boolean;
+	public final fun component15 ()Ljava/lang/Integer;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/String;
-	public final fun component5 ()Ljava/util/List;
-	public final fun component6 ()Z
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/util/List;
 	public final fun component7 ()Z
-	public final fun component8 ()Lkotlinx/serialization/json/JsonElement;
-	public final fun component9 ()Ljava/util/List;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;)Lenv/GeneratedRequest;
-	public static synthetic fun copy$default (Lenv/GeneratedRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;ILjava/lang/Object;)Lenv/GeneratedRequest;
+	public final fun component8 ()Z
+	public final fun component9 ()Lkotlinx/serialization/json/JsonElement;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;)Lenv/GeneratedRequest;
+	public static synthetic fun copy$default (Lenv/GeneratedRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZZLkotlinx/serialization/json/JsonElement;Ljava/util/List;Lenv/OllamaOptions;Ljava/lang/String;Lkotlinx/serialization/json/JsonElement;Ljava/lang/Boolean;Ljava/lang/Integer;ILjava/lang/Object;)Lenv/GeneratedRequest;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getContext ()Ljava/util/List;
 	public final fun getFormat ()Lkotlinx/serialization/json/JsonElement;
 	public final fun getImages ()Ljava/util/List;
 	public final fun getKeepAlive ()Ljava/lang/String;
+	public final fun getLogprobs ()Ljava/lang/Boolean;
 	public final fun getModel ()Ljava/lang/String;
 	public final fun getOptions ()Lenv/OllamaOptions;
 	public final fun getPrompt ()Ljava/lang/String;
 	public final fun getRaw ()Z
 	public final fun getStream ()Z
+	public final fun getSuffix ()Ljava/lang/String;
 	public final fun getSystem ()Ljava/lang/String;
 	public final fun getTemplate ()Ljava/lang/String;
+	public final fun getThink ()Lkotlinx/serialization/json/JsonElement;
+	public final fun getTopLogprobs ()Ljava/lang/Integer;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -371,21 +461,25 @@ public final class env/OllamaFunctionDefinition$Companion {
 
 public final class env/OllamaMessage {
 	public static final field Companion Lenv/OllamaMessage$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/util/List;
 	public final fun component4 ()Ljava/util/List;
 	public final fun component5 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)Lenv/OllamaMessage;
-	public static synthetic fun copy$default (Lenv/OllamaMessage;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lenv/OllamaMessage;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lenv/OllamaMessage;
+	public static synthetic fun copy$default (Lenv/OllamaMessage;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lenv/OllamaMessage;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getContent ()Ljava/lang/String;
 	public final fun getImages ()Ljava/util/List;
 	public final fun getRole ()Ljava/lang/String;
 	public final fun getThinking ()Ljava/lang/String;
+	public final fun getToolCallId ()Ljava/lang/String;
 	public final fun getToolCalls ()Ljava/util/List;
+	public final fun getToolName ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -408,8 +502,8 @@ public final class env/OllamaMessage$Companion {
 public final class env/OllamaOptions {
 	public static final field Companion Lenv/OllamaOptions$Companion;
 	public fun <init> ()V
-	public fun <init> (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;)V
-	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/Integer;
 	public final fun component10 ()Ljava/lang/Float;
 	public final fun component11 ()Ljava/lang/Float;
@@ -430,6 +524,7 @@ public final class env/OllamaOptions {
 	public final fun component25 ()Ljava/lang/Boolean;
 	public final fun component26 ()Ljava/lang/Boolean;
 	public final fun component27 ()Ljava/lang/Integer;
+	public final fun component28 ()Ljava/lang/Integer;
 	public final fun component3 ()Ljava/lang/Integer;
 	public final fun component4 ()Ljava/lang/Integer;
 	public final fun component5 ()Ljava/lang/Double;
@@ -437,9 +532,10 @@ public final class env/OllamaOptions {
 	public final fun component7 ()Ljava/lang/Float;
 	public final fun component8 ()Ljava/lang/Integer;
 	public final fun component9 ()Ljava/lang/Double;
-	public final fun copy (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;)Lenv/OllamaOptions;
-	public static synthetic fun copy$default (Lenv/OllamaOptions;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;ILjava/lang/Object;)Lenv/OllamaOptions;
+	public final fun copy (Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;)Lenv/OllamaOptions;
+	public static synthetic fun copy$default (Lenv/OllamaOptions;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Double;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Integer;Ljava/lang/Float;Ljava/lang/Float;Ljava/lang/Boolean;Ljava/util/List;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)Lenv/OllamaOptions;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDraftNumPredict ()Ljava/lang/Integer;
 	public final fun getFrequencyPenalty ()Ljava/lang/Float;
 	public final fun getLowVram ()Ljava/lang/Boolean;
 	public final fun getMainGpu ()Ljava/lang/Integer;
@@ -468,6 +564,7 @@ public final class env/OllamaOptions {
 	public final fun getUseMmap ()Ljava/lang/Boolean;
 	public final fun getVocabOnly ()Ljava/lang/Boolean;
 	public fun hashCode ()I
+	public final fun setDraftNumPredict (Ljava/lang/Integer;)V
 	public final fun setFrequencyPenalty (Ljava/lang/Float;)V
 	public final fun setLowVram (Ljava/lang/Boolean;)V
 	public final fun setMainGpu (Ljava/lang/Integer;)V
@@ -602,6 +699,9 @@ public final class ollamaPipe/OllamaPipe : com/TTT/Pipe/Pipe {
 	public fun <init> ()V
 	public fun abort (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun disableStreaming ()LollamaPipe/OllamaPipe;
+	public final fun disableThink ()LollamaPipe/OllamaPipe;
+	public final fun embeddings (Ljava/lang/String;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun embeddings$default (LollamaPipe/OllamaPipe;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun enableStreaming (Lkotlin/jvm/functions/Function2;ZZ)LollamaPipe/OllamaPipe;
 	public static synthetic fun enableStreaming$default (LollamaPipe/OllamaPipe;Lkotlin/jvm/functions/Function2;ZZILjava/lang/Object;)LollamaPipe/OllamaPipe;
 	public final fun enableThink ()LollamaPipe/OllamaPipe;
@@ -617,12 +717,14 @@ public final class ollamaPipe/OllamaPipe : com/TTT/Pipe/Pipe {
 	public final fun serve ()V
 	public final fun setBatchSize (I)LollamaPipe/OllamaPipe;
 	public final fun setChatStreamLinesForTest (Ljava/util/List;)V
+	public final fun setDraftNumPredict (I)LollamaPipe/OllamaPipe;
 	public final fun setFrequencyPenalty (F)LollamaPipe/OllamaPipe;
 	public final fun setGenerateStreamLinesForTest (Ljava/util/List;)V
 	public final fun setGpuSettings (ILjava/lang/Integer;)LollamaPipe/OllamaPipe;
 	public static synthetic fun setGpuSettings$default (LollamaPipe/OllamaPipe;ILjava/lang/Integer;ILjava/lang/Object;)LollamaPipe/OllamaPipe;
 	public final fun setIP (Ljava/lang/String;)LollamaPipe/OllamaPipe;
 	public final fun setKeepAlive (Ljava/lang/String;)LollamaPipe/OllamaPipe;
+	public final fun setLogprobs (Z)LollamaPipe/OllamaPipe;
 	public final fun setLowVram (Z)LollamaPipe/OllamaPipe;
 	public final fun setMinP (F)LollamaPipe/OllamaPipe;
 	public final fun setMirostat (ILjava/lang/Float;Ljava/lang/Float;)LollamaPipe/OllamaPipe;
@@ -636,6 +738,8 @@ public final class ollamaPipe/OllamaPipe : com/TTT/Pipe/Pipe {
 	public final fun setRepeatLastN (I)LollamaPipe/OllamaPipe;
 	public final fun setStreamingCallback (Lkotlin/jvm/functions/Function2;)LollamaPipe/OllamaPipe;
 	public fun setStreamingEnabled (Z)V
+	public final fun setThinkLevel (Ljava/lang/String;)LollamaPipe/OllamaPipe;
+	public final fun setTopLogprobs (I)LollamaPipe/OllamaPipe;
 	public final fun setTypicalP (F)LollamaPipe/OllamaPipe;
 	public final fun setUseMlock (Z)LollamaPipe/OllamaPipe;
 	public final fun setUseMmap (Z)LollamaPipe/OllamaPipe;

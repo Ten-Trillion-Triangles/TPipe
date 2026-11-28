@@ -239,6 +239,7 @@ All builder methods return `JunctionBuilder<S>` for chaining:
 | `requirements(requirements)` | any | Sets the P2P requirements |
 | `memoryPolicy { }` | any | Configures outbound memory policy |
 | `summaryAgent(agent)` | any | Configures optional summary agent (suspend-coroutine invocation; takes priority over the summarizer lambda) |
+| `messageFunction { message, junction -> ... }` | any | Binds the DITL message hook invoked by `P2PInterface.sendMessage(message)` (API equivalent: `junction.setMessageFunction(...)`) |
 
 ### Manual Builder
 

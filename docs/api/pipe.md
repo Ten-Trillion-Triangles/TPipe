@@ -257,6 +257,11 @@ Implements the [P2PInterface recursive propagation pattern](./p2p-interface.md#r
 
 **Behavior:** Mirrors `setTokenBudgetRecursive` and `setPipeSettingsRecursively`. Leaf path invokes the open `abort()` method. Container path delegates upward via `containerPtr.abortRecursive()`. Cycle safety comes from `propagateAbortRecursively`'s `visited` set.
 
+#### `sendMessage(message: Any): Any?` (suspend) — `P2PInterface` override
+Delivers an out-of-band message to this pipe's DITL message hook (`messageFunction`) or, if unbound on a proxy pipe, delegates to `containerPtr`.
+
+**Behavior:** If `messageFunction` is non-null, invokes `messageFunction(message, this)` and returns its `Any?` result. Otherwise, if `containerPtr` is set, delegates to `containerPtr!!.sendMessage(message)`. Returns `null` if neither is set.
+
 #### `propagatePipeTimeout(visited: MutableSet<String> = mutableSetOf())`
 Walks this pipe's descendant tree (validator, transformation, branch, reasoning child pipes and their own children), calling `enablePipeTimeout(...)` on each leaf. The walk is cycle-safe via `pipeId`-keyed `visited` set. This is the leaf-side walker that the container-level `P2PInterface.enablePipeTimeoutRecursive(...)` ends up calling. Used internally — direct callers rarely need this; prefer `enablePipeTimeout(applyRecursively = true, ...)`.
 
@@ -1214,6 +1219,21 @@ Sets function to capture the raw reasoning output before it is converted into th
 Sets function to capture the final content object just before it exits to the parent pipe.
 
 **Behavior:** Fires on the actual content object that exits the pipe, on all return paths of `executeMultimodal` (success, branch success, failure-recovery success, terminated, exception-caught). Unlike `setOnFailure`, fires regardless of whether execution succeeded or failed — observes the terminal content of every invocation. Useful for outer-scaffolding / agent-harness interception that needs to mirror pipe output to a UI/UX sink without altering the pipeline. Implemented at `Pipe.kt:4425`.
+
+#### `setMessageFunction(func: (suspend (message: Any, pipe: Pipe) -> Any?)?): Pipe`
+Sets the DITL message hook invoked when `P2PInterface.sendMessage(message)` is called on this pipe.
+
+**Parameters:**
+- **`func`**: Suspending handler receiving the incoming `message: Any` and this live `Pipe` instance, returning an optional `Any?` response. Pass `null` to clear the binding.
+
+**Behavior:** Stored in the `@Transient @Volatile` `messageFunction` property for thread-safe out-of-band access. Preserved by `constructPipeFromTemplate(..., copyFunctions = true)`. Returns `this` for chaining.
+
+```kotlin
+pipe.setMessageFunction { message, self ->
+    self.pipeMetadata["lastMessage"] = message
+    "ack:${self.pipeName}"
+}
+```
 
 #### `setOnFailure(func: suspend (MultimodalContent, MultimodalContent) -> MultimodalContent): Pipe`
 Sets function to handle validation failures.

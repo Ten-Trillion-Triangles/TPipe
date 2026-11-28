@@ -115,6 +115,15 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     /** Optional stable implementation guidance for the station control agents. */
     var implementationPlan: String? = null
 
+    /** Optional ContextBank todo-list page key for dispatch prompt injection. */
+    var todoPageKey: String? = null
+
+    /** Placement target for automatic todo-list injection; defaults to a prefix-cache-safe target. */
+    var todoInjectionPoint: com.TTT.Enums.TodoInjectionPoint = com.TTT.Enums.TodoInjectionPoint.AfterUserPromptWithConverse
+
+    /** Optional custom instructions accompanying injected todo lists. */
+    var todoListInstructions: String = ""
+
 //=========================================Agent Assignments=========================================================
 
     /**
@@ -320,8 +329,8 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
     var entryUserPrompt: String = ""
 
     /**
-     * Maximum harness turns before forced exit. Delegating alias for
-     * [maxTurns]; the harness loop reads the canonical [maxTurns] field,
+     * Maximum harness turns before forced exit (`<= 0` disables the cap for unlimited turns).
+     * Delegating alias for [maxTurns]; the harness loop reads the canonical [maxTurns] field,
      * so writing this var has the same effect as writing [maxTurns].
      * Kept as a top-level DSL var so existing pumpStation blocks using
      * `maxHarnessTurns = N` continue to work.
@@ -336,8 +345,9 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * where the dispatch agent (or any code holding a [PumpStation] reference) has called
      * [PumpStation.requestJudgeNextTurn].
      *
-     * Trade-off: in `FlagTriggered` mode, [maxTurns] is the only safety net if the dispatch
-     * never signals - set it conservatively.
+     * Trade-off: in `FlagTriggered` mode, [maxTurns] is the only turn-count safety net if the dispatch
+     * never signals - set it conservatively, or pair unlimited turns (`<= 0`) with a [KillSwitch]
+     * and reliable exit path.
      */
     var judgeRunMode: PumpStationJudgeRunMode = PumpStationJudgeRunMode.Always
 
@@ -532,7 +542,9 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * [com.TTT.Pipeline.PumpStationLoop.runHarnessLoop] reads the corresponding
      * [PumpStation.maxTurnsInternal] and terminates with
      * [PumpStationError.MaxTurnsExceeded] / [PumpStationExitReason.MaxTurnsHit]
-     * when the cap is hit. [maxHarnessTurns] is a delegating alias for symmetry.
+     * when `maxTurns > 0` and the cap is hit. Passing `<= 0` (e.g., `0`) disables
+     * the turn cap (unlimited turns; pair with a [KillSwitch] and exit signal).
+     * [maxHarnessTurns] is a delegating alias for symmetry.
      */
     var maxTurns: Int = 50
 
@@ -846,6 +858,12 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
      * not the raw object).
      */
     var postGoalFunction: (suspend (MultimodalContent, PumpStation) -> MultimodalContent)? = null
+
+    /**
+     * DITL message hook invoked via [P2PInterface.sendMessage] to allow external applications
+     * to send commands, signals, or adjustments into this PumpStation harness.
+     */
+    var messageFunction: (suspend (message: Any, harness: PumpStation) -> Any?)? = null
 
 //=========================================Nested Blocks Storage====================================================
 
@@ -1266,6 +1284,9 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         waitConfiguration = source.waitConfiguration
         forceConfiguration = source.forceConfiguration
         implementationPlan = source.implementationPlan
+        todoPageKey = source.todoPageKey
+        todoInjectionPoint = source.todoInjectionPoint
+        todoListInstructions = source.todoListInstructions
         judgeAgent = source.judgeAgent
         dispatchAgent = source.dispatchAgent
         interventionAgent = source.interventionAgent
@@ -1369,6 +1390,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
         preCompactionFunction = source.preCompactionFunction
         postCompactionFunction = source.postCompactionFunction
         onContextTruncated = source.onContextTruncated
+        messageFunction = source.messageFunction
         pathObjects.putAll(source.pathObjects)
         dispatcherRules.addAll(source.dispatcherRules)
         return this
@@ -1480,6 +1502,12 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setLorebookSystemPrompt(lorebookSystemPrompt)
             .setGoalSystemPrompt(goalSystemPrompt)
             .setImplementationPlan(implementationPlan)
+            .setTodoInjectionPoint(todoInjectionPoint)
+            .also { station ->
+                if(todoListInstructions.isNotBlank()) station.setTodoListInstructions(todoListInstructions)
+                val key = todoPageKey
+                if(!key.isNullOrBlank()) station.setTodoListPageKey(key)
+            }
 
         // Event observer
         eventObserver?.let { station.setEventObserver(it) }
@@ -1595,6 +1623,7 @@ class PumpStationBuilder<S : PumpStationStage> @PublishedApi internal constructo
             .setPostCompactionFunction(postCompactionFunction)
             .setPostJudgeFunction(postJudgeFunction)
             .setOnContextTruncated(onContextTruncated)
+            .setMessageFunction(messageFunction)
 
         // Compaction configuration - applied before path registration so the
         // per-path settings see the configured values on the first addPath call.
@@ -1942,6 +1971,16 @@ class PathBuilder(internal val pathName: String)
     }
 
     /**
+     * Sets the DITL message hook invoked when [PathObject.sendMessage] is called on this path.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     */
+    fun setMessageFunction(func: (suspend (message: Any, path: PathObject) -> Any?)?)
+    {
+        pathObject.setMessageFunction(func)
+    }
+
+    /**
      * Build and return the configured [PathObject]. Idempotent — safe to call multiple times.
      */
     fun build(): PathObject = pathObject
@@ -2080,6 +2119,16 @@ class PathBlock(private val pathName: String, private val builder: PumpStationBu
     }
 
     /**
+     * Sets the DITL message hook invoked when [PathObject.sendMessage] is called on this path.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     */
+    fun setMessageFunction(func: (suspend (message: Any, path: PathObject) -> Any?)?)
+    {
+        pathObject.setMessageFunction(func)
+    }
+
+    /**
      * Build and add this path to the parent builder.
      */
     fun build(): PathObject {
@@ -2149,6 +2198,16 @@ class ReservePathBlock(private val pathName: String, private val builder: PumpSt
     fun revealWhen(predicate: (PumpStationTaskState, MutableMap<String, Any>) -> Boolean)
     {
         pathObject.revealWhen = predicate
+    }
+
+    /**
+     * Sets the DITL message hook invoked when [PathObject.sendMessage] is called on this reserve path.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     */
+    fun setMessageFunction(func: (suspend (message: Any, path: PathObject) -> Any?)?)
+    {
+        pathObject.setMessageFunction(func)
     }
 
     /**

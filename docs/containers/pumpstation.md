@@ -73,14 +73,14 @@ Use `PumpStation` when:
 
 ## Architecture at a Glance
 
-The runtime has two scopes. The outer loop (`runHarnessLoop`) drives turns via `while (turnIndex < maxTurns)`, calling the inner cycle (`runTurn`) each iteration, then runs finalization once. The inner cycle runs the per-turn phases (health, judge, dispatch, path, gateway, foreground agents, background agents, memory update, compaction) and returns `Continue` or `Halt(reason)`. A separate transition phase, `runExitFlow`, runs goal validation when the judge says the task is complete or a path signals pass.
+The runtime has two scopes. The outer loop (`runHarnessLoop`) drives turns via `while ((maxTurns <= 0 || turnIndex < maxTurns) && status == Running)` (`maxTurns <= 0` disables the turn cap for unlimited turns), calling the inner cycle (`runTurn`) each iteration, then runs finalization once. The inner cycle runs the per-turn phases (health, judge, dispatch, path, gateway, foreground agents, background agents, memory update, compaction) and returns `Continue` or `Halt(reason)`. A separate transition phase, `runExitFlow`, runs goal validation when the judge says the task is complete or a path signals pass.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │  runHarnessLoop (outer)                                                │
 │                                                                        │
 │  runPreInitPhase(content)                  ← ONCE                      │
-│  while (turnIndex < maxTurns) {                                       │
+│  while (maxTurns <= 0 || turnIndex < maxTurns) {                       │
 │      runTurn()                            ← inner cycle               │
 │          healthCheck → judge → dispatch → path → gateway → fg agents    │
 │            → bg agents → memory update → compaction                    │
@@ -192,7 +192,7 @@ data class JudgeVerdict(
 
 Set `setJudgeRunMode(PumpStationJudgeRunMode.FlagTriggered)`. The judge is skipped on every turn except turns where `requestJudgeNextTurn()` was called. The flag is one-shot — the judge clears it after consuming. A path's `setExecutionFunction` typically calls `station.requestJudgeNextTurn()` when it believes the task is done, deferring the cost of judge LLM calls to the turns that actually need them.
 
-In `FlagTriggered` mode, `maxTurns` is the only safety net if the dispatch agent never signals. Set it conservatively.
+In `FlagTriggered` mode, `maxTurns` is the only turn-count safety net if the dispatch agent never signals. Set it conservatively, or if you set `maxTurns <= 0` (unlimited), pair it with a `KillSwitch` and a reliable exit path.
 
 ### The Dispatch Agent Contract
 
@@ -782,8 +782,8 @@ The `pumpStation { }` builder supports these top-level blocks and setters.
 | `entryUserPrompt`        | `String`                                   | `""`    | Core task, fourth-priority. Set programmatically or via the input content. |
 | `implementationPlan`     | `String?`                                  | `null`  | Stable guidance appended to judge, dispatch, and Pipeline-shaped goal system prompts. Blank values clear it. |
 | `judgeRunMode`           | `PumpStationJudgeRunMode`                  | `Always`| `Always` (judge every turn) or `FlagTriggered` (judge only when `requestJudgeNextTurn()` is set). |
-| `maxHarnessTurns`        | `Int`                                      | `50`    | Safety cap on loop iterations. |
-| `maxTurns`               | `Int`                                      | `50`    | Canonical setter. `maxHarnessTurns` is a delegating alias. |
+| `maxHarnessTurns`        | `Int`                                      | `50`    | Safety cap on loop iterations; `<= 0` disables (unlimited). |
+| `maxTurns`               | `Int`                                      | `50`    | Canonical setter (`<= 0` disables for unlimited turns). `maxHarnessTurns` is a delegating alias. |
 | `maxGoalFailAttempts`    | `Int`                                      | `3`     | Max consecutive goal-validation failures before `GoalValidationFailed` exit. |
 | `maxRawTurnHistorySize`  | `Int?`                                     | `null`  | Cap on `rawTurnHistory.history`; null disables. |
 | `goalHistorySource`      | `PumpStationGoalHistorySource`             | `Curated` | History supplied to goal validation: curated `turnHistory` or full retained `rawTurnHistory`. |
@@ -1057,27 +1057,27 @@ PumpStation's loop has two scopes. Confusing them is the most common documentati
 
 ### Outer loop: `runHarnessLoop`
 
-`runHarnessLoop` drives turns via `while (turnIndex < maxTurns && status == Running)`. Each iteration calls `runTurn()`. After the while loop exits, it runs `runFinalizationPhase()` once.
+`runHarnessLoop` drives turns via `while ((maxTurnsInternal <= 0 || turnIndex < maxTurnsInternal) && status == Running)` (values `<= 0` disable the turn cap). Each iteration calls `runTurn()`. After the while loop exits, it runs `runFinalizationPhase()` once.
 
 ```kotlin
 internal suspend fun PumpStation.runHarnessLoop(): KillSwitchException? {
     var tripException: KillSwitchException? = null
-    while (taskState.turnIndex < maxTurns && taskState.status == PumpStationStatus.Running) {
-        if (!checkPauseGuards(PumpStationPausePhase.BeforeJudge)) break
+    while((maxTurnsInternal <= 0 || taskState.turnIndex < maxTurnsInternal) && taskState.status == PumpStationStatus.Running) {
+        if(!checkPauseGuards(PumpStationPausePhase.BeforeJudge)) break
         val result = try { runTurn() }
-        catch (e: KillSwitchException) {
+        catch(e: KillSwitchException) {
             taskState.lastError = PumpStationError.KillSwitchTripped
             taskState.exitReason = PumpStationExitReason.KillSwitchTripped
             tripException = e
             break
         }
-        if (result is TurnResult.Halt) {
+        if(result is TurnResult.Halt) {
             taskState.exitReason = result.reason
             break
         }
         taskState.turnIndex++
     }
-    if (taskState.turnIndex >= maxTurns && taskState.lastError == null) {
+    if(maxTurnsInternal > 0 && taskState.turnIndex >= maxTurnsInternal && taskState.lastError == null) {
         taskState.lastError = PumpStationError.MaxTurnsExceeded
         taskState.exitReason = PumpStationExitReason.MaxTurnsHit
     }
@@ -1241,7 +1241,7 @@ internal suspend fun PumpStation.runFinalizationPhase(): MultimodalContent {
 
 - `judgeAgent == null` AND `judgeAgentBuilderFunction == null`
 - `judgeRunModeInternal != PumpStationJudgeRunMode.FlagTriggered`
-- `maxTurnsInternal > 1`
+- `maxTurnsInternal <= 0 || maxTurnsInternal > 1`
 
 The advisory is non-blocking — the harness continues. The `mechanisms` field of the `HarnessWarning` lists the four legitimate exit mechanisms (`JudgeAlways`, `JudgeFlagTriggered`, `PathPassPipeline`, `PathTerminatePipeline`).
 
@@ -1429,6 +1429,7 @@ PumpStation exposes six Developer-in-the-Loop hooks plus three agent-level funct
 | `pathSafetyFunction` | `(suspend (PathObject, String, PumpStation) -> Boolean)?` | For medium/high risk paths (alternative to `pathSafetyAgent`) | Path + schema | `true` to approve, `false` to reject |
 | `pathLimitExceededFunction` | `(suspend (PathObject, String, PumpStation) -> PathLimitExceededResult)?` | When `maxTotalPathCallsPerPath` is exceeded | Path + reason | Dynamic policy result |
 | `compactionRolledBackFunction` | `(suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)?` | When a backup is restored | Backup + reason | Replacement backup (or null to use as-is) |
+| `messageFunction` | `(suspend (Any, PumpStation) -> Any?)?` | On demand when `P2PInterface.sendMessage(message)` is called | Incoming `message: Any` + live `PumpStation` | Optional `Any?` response |
 | `externalContextProvider` | `((PumpStationTaskState) -> MutableMap<String, Any>)?` | Per dispatch turn (passed to reserve path `revealWhen`) | Task state | External context map |
 
 The DITL hook order per turn:
@@ -1467,10 +1468,42 @@ fun setOnContextTruncated(fn: (suspend (Boolean, Int) -> Unit)?): PumpStation
 fun setPathSafetyFunction(fn: (suspend (PathObject, String, PumpStation) -> Boolean)?): PumpStation
 fun setPathLimitExceededFunction(fn: (suspend (PathObject, String, PumpStation) -> PathLimitExceededResult)?): PumpStation
 fun setCompactionRolledBackFunction(fn: (suspend (CompactionBackup, String, PumpStation) -> CompactionBackup?)?): PumpStation
+fun setMessageFunction(func: (suspend (Any, PumpStation) -> Any?)?): PumpStation
 fun setExternalContextProvider(provider: ((PumpStationTaskState) -> MutableMap<String, Any>)?): PumpStation
 ```
 
 All setters return `this` for chaining. The DSL exposes these as `setXyz { ... }` builder setters via the top-level `PumpStationBuilder`.
+
+
+### Message Hook (`sendMessage`)
+
+`messageFunction` provides an out-of-band bridge between an external host application and a running `PumpStation` (or individual `PathObject`). Unlike lifecycle hooks, it does not fire automatically per turn — it runs whenever `sendMessage(message)` is called on the `P2PInterface`:
+
+```kotlin
+val station = pumpStation("external-glue") {
+    messageFunction = { message, harness ->
+        when(message)
+        {
+            is GateSignal -> {
+                harness.signalGateway(message.gateName)
+                harness.getGatewayStageIndex()
+            }
+            else -> null
+        }
+    }
+    path("work") {
+        setMessageFunction { message, path -> "${path.pathName}:$message" }
+        setExecutionFunction { content, _, _, _ -> content }
+    }
+}
+
+// External caller holding only a P2PInterface reference:
+val p2pRef: P2PInterface = station
+val stageIndex = p2pRef.sendMessage(GateSignal("todo-check"))
+```
+
+- Stored as `@Transient @Volatile` so concurrent external callers can invoke `sendMessage()` safely while the harness loop is running.
+- Pass `null` to `setMessageFunction(null)` to clear the binding.
 
 
 ### Pre-Memory Hook
@@ -2584,7 +2617,7 @@ The loop hit `maxTurns` (default 50) before any of the legitimate exit signals f
 - No `terminatePipeline` either
 - A `HarnessWarning` with `code = NoExitSignalConfigured` was emitted at startup if none of the above are configured
 
-Fix: increase `maxTurns` conservatively, wire an exit signal, or supply a goal agent if you want the loop to keep verifying until the goal accepts.
+Fix: increase `maxTurns` conservatively (or set `maxTurns = 0` / `<= 0` to disable the turn cap for long-running generalist agents, paired with a `KillSwitch`), wire an exit signal, or supply a goal agent if you want the loop to keep verifying until the goal accepts.
 
 ### `KillSwitchTripped`
 
@@ -2615,7 +2648,7 @@ The path was not called. The original input flows through as the turn's result s
 
 - **Start with `PumpStationDefaults.withOpenRouter(config) { ... }`** from `TPipe-Defaults` for a pre-wired station. Override slots only when you need custom behavior.
 - **Wire at least one exit signal** before running. Judge with default prompt, or a path that returns `passPipeline = true`, or `FlagTriggered` mode with a path-bound `requestJudgeNextTurn()`.
-- **Set `maxTurns` conservatively in `FlagTriggered` mode.** The judge's absence means a runaway dispatch agent can loop forever otherwise.
+- **Set `maxTurns` conservatively in `FlagTriggered` mode.** The judge's absence means a runaway dispatch agent can loop forever otherwise; if you configure `maxTurns = 0` (unlimited) for a generalist agent, always pair it with a `KillSwitch` and a reliable exit signal.
 - **Use a `goalAgent` for Ralph-loop semantics.** The goal agent forces a re-loop with critique if the work isn't acceptable, up to `maxGoalFailAttempts`.
 - **Use reserve paths for expensive capabilities.** Hide them from the dispatch prompt until needed; their `revealWhen` predicate gates visibility.
 - **Bind functions as PCP tools** rather than writing full `setExecutionFunction` closures. The dispatch agent gets typed parameter schema and the path stays lightweight.

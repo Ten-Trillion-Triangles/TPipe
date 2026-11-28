@@ -137,6 +137,24 @@ Executes content locally without P2P protocol overhead.
 - **Performance**: Skip P2P overhead for local execution
 - **Testing**: Direct execution without P2P setup requirements
 
+#### `sendMessage(message: Any): Any?` (suspend)
+Sends an arbitrary out-of-band message to this agent or container and returns the optional response produced by its bound DITL message hook (`messageFunction`).
+
+**Parameters:**
+- **`message`**: Arbitrary `Any` payload delivered to the component's message hook.
+
+**Returns:** Optional `Any?` response returned by the component's `messageFunction`, or `null` if no hook is bound.
+
+**Behavior:**
+- **Default**: No-op returning `null` so non-agent adapters (`P2PHostedRegistry`, `AgentCoreHarnessAgent`, `AgentCoreRuntimeAgent`, etc.) and custom `P2PInterface` implementations remain source-compatible.
+- **Core components**: `Pipe`, `Pipeline`, `Connector`, `MultiConnector`, `Splitter`, `Manifold`, `Junction`, `DistributionGrid`, `PumpStation`, and `PathObject` bind `sendMessage` to their `@Volatile @Transient` `messageFunction` (`suspend (message: Any, target: Self) -> Any?`), which is configured via `setMessageFunction(...)` (or DSL).
+- **`Pipe` proxy delegation**: When `Pipe.messageFunction` is `null` and `Pipe.containerPtr` is set, `Pipe.sendMessage(message)` delegates to `containerPtr!!.sendMessage(message)`. If the pipe has its own `messageFunction`, it handles the message locally instead.
+
+```kotlin
+val agent: P2PInterface = station
+val ack = agent.sendMessage("refresh-status")
+```
+
 ## Key Behaviors
 
 ### Interface Contract

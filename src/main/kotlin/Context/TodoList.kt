@@ -12,8 +12,23 @@ data class TodoListTask(
     var taskNumber: Int = 0,
     var task: String = "",
     var completionRequirements: String = "",
-    var isComplete: Boolean = false
+    var isComplete: Boolean = false,
+    var id: String = "",
+    var status: String = ""
 )
+{
+    /**
+     * Returns the normalized lifecycle status (`"Completed"`, `"InProgress"`, or `"Pending"`).
+     *
+     * @return Normalized status string compatible with both legacy [isComplete] and rich [status] fields.
+     */
+    fun effectiveStatus(): String = when
+    {
+        isComplete || status.equals("Completed", ignoreCase = true) -> "Completed"
+        status.equals("InProgress", ignoreCase = true) || status.equals("in_progress", ignoreCase = true) -> "InProgress"
+        else -> "Pending"
+    }
+}
 
 @kotlinx.serialization.Serializable
 data class TodoTaskArray(

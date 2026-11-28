@@ -1152,6 +1152,7 @@ inline fun <reified T : Any> constructPipeFromTemplate(
             template.preInitFunction?.let { newPipeInstance.preInitFunction = it }
             template.onFailure?.let { newPipeInstance.onFailure = it }
             template.postGenerateFunction?.let { newPipeInstance.postGenerateFunction = it }
+            template.messageFunction?.let { newPipeInstance.messageFunction = it }
         }
 
         if(copyMetadata)

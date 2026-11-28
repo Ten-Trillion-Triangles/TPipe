@@ -155,6 +155,13 @@ class Junction : P2PInterface
     private var customAdjusterSystemPrompt: String? = null
     private var customOutputSystemPrompt: String? = null
 
+    /**
+     * Optional DITL message hook invoked via [P2PInterface.sendMessage].
+     */
+    @kotlinx.serialization.Transient
+    @Volatile
+    private var messageFunction: (suspend (message: Any, junction: Junction) -> Any?)? = null
+
 //==========================================Kill Switch Accumulator=================================================
 
     /** Accumulates input tokens from all participant executions */
@@ -330,6 +337,14 @@ class Junction : P2PInterface
         // identically whether it is invoked directly or through the P2P surface.
         return execute(content)
     }
+
+    /**
+     * Invokes this junction's [messageFunction] if bound.
+     *
+     * @param message Arbitrary message payload.
+     * @return Response returned by the hook, or `null` if no hook is bound.
+     */
+    override suspend fun sendMessage(message: Any): Any? = messageFunction?.invoke(message, this)
 
     override fun setTokenBudgetRecursive(budget: TokenBudgetSettings)
     {
@@ -696,6 +711,18 @@ class Junction : P2PInterface
     fun setSummaryAgent(agent: P2PInterface?): Junction
     {
         junctionMemoryPolicy.summaryAgent = agent
+        return this
+    }
+
+    /**
+     * Sets the DITL message hook invoked when [sendMessage] is called on this junction.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     * @return This [Junction] instance for method chaining.
+     */
+    fun setMessageFunction(func: (suspend (message: Any, junction: Junction) -> Any?)?): Junction
+    {
+        messageFunction = func
         return this
     }
 

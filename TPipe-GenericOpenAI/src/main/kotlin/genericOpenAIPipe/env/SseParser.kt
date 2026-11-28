@@ -359,11 +359,19 @@ object AnthropicSseParser
      * We extract these via regex since the top-level fields don't deserialize into
      * AnthropicStreamingChunk (which expects a `delta` field that message_delta lacks).
      */
-    private fun parseAnthropicUsageInfo(json: String): AnthropicUsageInfo?
+    internal fun parseAnthropicUsageInfo(json: String): AnthropicUsageInfo?
     {
-        val inputTokens = json.extractJsonString("input_tokens")?.toIntOrNull() ?: return null
-        val outputTokens = json.extractJsonString("output_tokens")?.toIntOrNull() ?: return null
-        return AnthropicUsageInfo(inputTokens, outputTokens)
+        val inputTokens = json.extractJsonString("input_tokens")?.toIntOrNull()
+        val outputTokens = json.extractJsonString("output_tokens")?.toIntOrNull()
+        if(inputTokens == null && outputTokens == null) return null
+        val cacheCreation = json.extractJsonString("cache_creation_input_tokens")?.toIntOrNull()
+        val cacheRead = json.extractJsonString("cache_read_input_tokens")?.toIntOrNull()
+        return AnthropicUsageInfo(
+            inputTokens = inputTokens ?: 0,
+            outputTokens = outputTokens ?: 0,
+            cacheCreationInputTokens = cacheCreation,
+            cacheReadInputTokens = cacheRead
+        )
     }
 }
 

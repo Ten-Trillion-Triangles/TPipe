@@ -82,7 +82,25 @@ path("write-tests") {
 station.signalGateway("todo-check")
 ```
 
-Use this from external code, a DITL hook, or a custom harness agent.
+Use this from external code, a DITL hook, or a custom harness agent. If external host code holds only a `P2PInterface` reference (rather than the concrete `PumpStation`), bind a `messageFunction` hook to bridge `sendMessage(...)` to `signalGateway(...)`:
+
+```kotlin
+val station = pumpStation("gated-worker") {
+    messageFunction = { message, harness ->
+        if(message is String && message.startsWith("gate:"))
+        {
+            val gateName = message.removePrefix("gate:")
+            harness.signalGateway(gateName)
+            harness.getGatewayStageIndex()
+        }
+        else null
+    }
+    // ...
+}
+
+val agent: P2PInterface = station
+val stage = agent.sendMessage("gate:todo-check")
+```
 
 ### 3. The dispatch magic contract
 
@@ -210,7 +228,7 @@ The settings a stage may change:
 | `MaxConcurrentBackgroundAgents` | Int |
 | `CompactionThreshold` | Double |
 | `MaxTurnHistorySize` | Int |
-| `MaxTurns` | Int |
+| `MaxTurns` | Int (`<= 0` = unlimited) |
 
 A value whose type does not match the target setting is **rejected, not coerced**. The action is recorded as failed and the rest of the stage still applies.
 

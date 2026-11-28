@@ -1989,6 +1989,14 @@ abstract class Pipe : P2PInterface, ProviderInterface
     var finalCaptureFunction: (suspend (content: MultimodalContent) -> Unit)? = null
 
     /**
+     * Optional DITL message hook invoked via [P2PInterface.sendMessage]. Receives an arbitrary
+     * external message payload along with this live [Pipe] instance and returns an optional response.
+     */
+    @kotlinx.serialization.Transient
+    @Volatile
+    var messageFunction: (suspend (message: Any, pipe: Pipe) -> Any?)? = null
+
+    /**
      * Optional function to handle validation failures. If the function returns a valid MultimodalContent,
      * the pipeline will continue. If it returns content marked for termination, the pipeline will exit.
      */
@@ -3385,7 +3393,24 @@ abstract class Pipe : P2PInterface, ProviderInterface
         //Inject todo list and focus point if supplied.
         if(injectTodoList && todoInjectionPoint == TodoInjectionPoint.SystemPrompt)
         {
-            val todoListObj = ContextBank.getPagedTodoList(todoPageKey)
+            val todoListObj = try
+            {
+                ContextBank.getPagedTodoList(todoPageKey)
+            }
+
+            catch(exception: com.TTT.Context.ContextAccessDeniedException)
+            {
+                if(exception.reason == com.TTT.Context.ContextAccessDenialReason.METADATA_UNAVAILABLE)
+                {
+                    com.TTT.Context.TodoList()
+                }
+
+                else
+                {
+                    throw exception
+                }
+            }
+
             val taskNumber = content?.metadata["todoTaskNumber"] ?: -1
             val focusTask = if(taskNumber as Int > 0) todoListObj.find(taskNumber) else null
             val todoBlock = buildTodoInjectionBlock(todoListObj, focusTask)
@@ -3459,7 +3484,7 @@ abstract class Pipe : P2PInterface, ProviderInterface
 
         val defaultTodoListInstructions = """You will be provided with a todo list that has a list of tasks
             |you have been asked to complete. Each element on the list will contain a description of the task,
-            |the requirements to verify it has been completed, and weather it has been completed or not. The
+            |the requirements to verify it has been completed, and whether it has been completed or not. The
             |todo list is as follows:
         """.trimMargin()
 
@@ -5571,6 +5596,19 @@ abstract class Pipe : P2PInterface, ProviderInterface
     fun setFinalCaptureFunction(func: suspend (content: MultimodalContent) -> Unit) : Pipe
     {
         finalCaptureFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL message hook invoked when [sendMessage] is called on this pipe.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     * @return This [Pipe] instance for method chaining.
+     * @see [messageFunction]
+     */
+    fun setMessageFunction(func: (suspend (message: Any, pipe: Pipe) -> Any?)?): Pipe
+    {
+        messageFunction = func
         return this
     }
 
@@ -9086,7 +9124,21 @@ abstract class Pipe : P2PInterface, ProviderInterface
     {
         if(!injectTodoList || todoInjectionPoint == TodoInjectionPoint.SystemPrompt) return
 
-        val todoListObj = ContextBank.getPagedTodoListSuspend(todoPageKey)
+        val todoListObj = try
+        {
+            ContextBank.getPagedTodoListSuspend(todoPageKey)
+        }
+
+        catch(exception: com.TTT.Context.ContextAccessDeniedException)
+        {
+            if(exception.reason == com.TTT.Context.ContextAccessDenialReason.METADATA_UNAVAILABLE)
+            {
+                return
+            }
+
+            throw exception
+        }
+
         if(todoListObj.isEmpty()) return
 
         val taskNumber = (content.metadata["todoTaskNumber"] ?: -1) as Int
@@ -9137,11 +9189,59 @@ abstract class Pipe : P2PInterface, ProviderInterface
     private fun placeTodoIntoConverseHistory(content: MultimodalContent, block: String, prepend: Boolean)
     {
         val entry = ConverseData(ConverseRole.system, MultimodalContent(text = block))
+        val startMarker = "[CONVERSATION HISTORY]"
+        val endMarker = "[/CONVERSATION HISTORY]"
+        val markerStart = content.text.indexOf(startMarker)
+        val markerEnd = if(markerStart >= 0) content.text.indexOf(endMarker, markerStart + startMarker.length) else -1
+        if(markerStart >= 0 && markerEnd > markerStart)
+        {
+            val innerStart = markerStart + startMarker.length
+            val inner = content.text.substring(innerStart, markerEnd).trim()
+            val embedded = deserialize<ConverseHistory>(inner)
+            if(embedded != null)
+            {
+                if(prepend)
+                {
+                    embedded.history.add(0, entry)
+                }
+                else
+                {
+                    embedded.history.add(entry)
+                }
+
+                content.text = content.text.substring(0, innerStart) +
+                    "\n" + serializeConverseHistory(embedded) + "\n" +
+                    content.text.substring(markerEnd)
+                return
+            }
+        }
+
+        val trimmed = content.text.trim()
+        if(trimmed.startsWith("{") && trimmed.endsWith("}"))
+        {
+            val standalone = deserialize<ConverseHistory>(trimmed)
+            if(standalone != null)
+            {
+                if(prepend)
+                {
+                    standalone.history.add(0, entry)
+                }
+                else
+                {
+                    standalone.history.add(entry)
+                }
+
+                content.text = serializeConverseHistory(standalone)
+                return
+            }
+        }
+
         val jsonObjectsFound = extractAllJsonObjects(content.text)
 
         for(jsonObject in jsonObjectsFound)
         {
-            val history = deserialize<ConverseHistory>(jsonObject.toString()) ?: continue
+            val rawJson = jsonObject.toString()
+            val history = deserialize<ConverseHistory>(rawJson) ?: continue
             if(prepend)
             {
                 history.history.add(0, entry)
@@ -9150,8 +9250,17 @@ abstract class Pipe : P2PInterface, ProviderInterface
             {
                 history.history.add(entry)
             }
-            content.text = serializeConverseHistory(history)
-            return
+
+            val spanStart = content.text.indexOf(rawJson)
+            if(spanStart >= 0)
+            {
+                content.text = content.text.substring(0, spanStart) +
+                    serializeConverseHistory(history) +
+                    content.text.substring(spanStart + rawJson.length)
+                return
+            }
+
+            break
         }
 
         if(prepend)
@@ -9550,6 +9659,23 @@ abstract class Pipe : P2PInterface, ProviderInterface
         {
             containerPtr!!.abortRecursive()
         }
+    }
+
+    /**
+     * Invokes this pipe's [messageFunction] if bound; otherwise, if this pipe is a proxy
+     * wrapping a container via [containerPtr], delegates the message to [containerPtr].
+     *
+     * @param message Arbitrary message payload.
+     * @return Response returned by the hook or delegated container, or `null` if unhandled.
+     */
+    override suspend fun sendMessage(message: Any): Any?
+    {
+        val handler = messageFunction
+        if(handler != null)
+        {
+            return handler.invoke(message, this)
+        }
+        return containerPtr?.sendMessage(message)
     }
 
     /**

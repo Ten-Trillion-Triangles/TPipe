@@ -106,7 +106,7 @@ KillSwitch provides token limit enforcement across all containers. See the **[Ki
 | Manifold | ✅ Yes | ✅ Yes (default 100) | To manager + workers |
 | DistributionGrid | ✅ Yes | ❌ No | To router + workers |
 | Junction | ✅ Yes | ❌ No | To moderator + participants |
-| PumpStation | ✅ Yes | ✅ Yes (default 50, alias `maxHarnessTurns`) | To judge + dispatch + paths + all child agents |
+| PumpStation | ✅ Yes | ✅ Yes (default 50, `<= 0` = unlimited, alias `maxHarnessTurns`) | To judge + dispatch + paths + all child agents |
 
 ### Quick Example
 
@@ -173,6 +173,16 @@ class Splitter : P2PInterface {
 
 ### Not Yet P2P-Functional Containers
 - **DistributionGrid**: Implements `P2PInterface` and now supports local execution, explicit-peer remote handoff, trusted registry discovery, runtime hardening, and Kotlin DSL assembly
+
+### Out-of-Band Message Hooks (`sendMessage`)
+
+Every container implementing `P2PInterface` (`Connector`, `MultiConnector`, `Splitter`, `Manifold`, `Junction`, `DistributionGrid`, `PumpStation`, and `PathObject`), along with `Pipe` and `Pipeline`, supports an out-of-band DITL message hook:
+
+- Configure with `setMessageFunction { message, self -> ... }` (or the corresponding DSL property/block). Pass `null` to clear.
+- Invoke from external host code through `suspend fun P2PInterface.sendMessage(message: Any): Any?` (returns `null` if no hook is bound).
+- Stored as `@kotlinx.serialization.Transient @Volatile` for thread-safe concurrent delivery without affecting serialization.
+
+See [P2PInterface API](../api/p2p-interface.md#sendmessagemessage-any-any-suspend) and [Developer-in-the-Loop Functions](../core-concepts/developer-in-the-loop.md#message-hook-out-of-band-messaging) for details.
 
 ## Container State Management
 
@@ -382,7 +392,7 @@ return coroutineScope {
 | **Manifold** | ✅ Complete | `execute()`, manager pipeline required, `setMaxLoopIterations()` | ✅ | ✅ | ✅ (default 100) |
 | **DistributionGrid** | ✅ Phase 8 shipped | `setRouter()`, `setWorker()`, peer registration, discovery/membership APIs, execution entrypoints, hardening helpers, trace export, and `distributionGrid { ... }` | ✅ | ✅ | ❌ |
 | **Junction** | ✅ Complete | `execute()`, `conductDiscussion()` | ✅ | ✅ | ❌ |
-| **PumpStation** | ✅ Complete | `executeLocal()`, judge + dispatch + path agents, `setMaxTurns()` / `setMaxHarnessTurns()`, magic contracts, kill switch, v3 compaction, reserve paths, goal validation, tracing | ✅ | ✅ | ✅ (default 50) |
+| **PumpStation** | ✅ Complete | `executeLocal()`, judge + dispatch + path agents, `setMaxTurns()` / `setMaxHarnessTurns()`, magic contracts, kill switch, v3 compaction, reserve paths, goal validation, tracing | ✅ | ✅ | ✅ (default 50, `<= 0` = unlimited) |
 
 ## Best Practices Based on Actual APIs
 

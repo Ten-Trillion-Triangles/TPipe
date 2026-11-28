@@ -95,5 +95,9 @@ data class UsageInfo(
     @SerialName("input_tokens")
     val inputTokens: Int,
     @SerialName("output_tokens")
-    val outputTokens: Int
+    val outputTokens: Int,
+    @SerialName("cache_creation_input_tokens")
+    val cacheCreationInputTokens: Int? = null,
+    @SerialName("cache_read_input_tokens")
+    val cacheReadInputTokens: Int? = null
 )

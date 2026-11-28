@@ -34,9 +34,26 @@ class AnthropicRequestSerializer : RequestSerializer
         val anthropicMessages = request.messages
             .filter { it.role != "system" }
             .map { chatMessage -> convertToAnthropicMessage(chatMessage) }
+            .toMutableList()
 
         val cacheControl = request.cacheControl?.let {
             AnthropicCacheControl(type = it.type, ttl = it.ttl)
+        }
+        if(cacheControl != null && anthropicMessages.size >= 2)
+        {
+            val penultIndex = anthropicMessages.lastIndex - 1
+            val penultMsg = anthropicMessages[penultIndex]
+            if(penultMsg.content.isNotEmpty())
+            {
+                val updatedBlocks = penultMsg.content.toMutableList()
+                val lastBlockIndex = updatedBlocks.lastIndex
+                updatedBlocks[lastBlockIndex] = when(val block = updatedBlocks[lastBlockIndex])
+                {
+                    is AnthropicContentBlock.TextBlock -> block.copy(cacheControl = cacheControl)
+                    is AnthropicContentBlock.ImageBlock -> block.copy(cacheControl = cacheControl)
+                }
+                anthropicMessages[penultIndex] = penultMsg.copy(content = updatedBlocks)
+            }
         }
         val reasoning = request.reasoning.toAnthropicReasoning(maxTokens)
 
@@ -49,7 +66,7 @@ class AnthropicRequestSerializer : RequestSerializer
             thinking = reasoning.thinking,
             outputConfig = reasoning.outputConfig,
             stream = request.stream,
-            cacheControl = cacheControl,
+            cacheControl = null,
             sessionId = null
         )
 

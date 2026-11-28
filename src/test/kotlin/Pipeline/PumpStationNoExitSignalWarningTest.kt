@@ -185,4 +185,39 @@ class PumpStationNoExitSignalWarningTest
             assertTrue(ExitMechanism.PathTerminatePipeline in mechanisms, "Warning should list PathTerminatePipeline mechanism")
         }
     }
+
+    @Test
+    fun noExitSignalWarning_unlimitedMaxTurnsZero_emitsAdvisory()
+    {
+        runBlocking {
+            val events = mutableListOf<PumpStationEvent>()
+            lateinit var station: PumpStation
+            val observer: (PumpStationEvent) -> Unit = { ev ->
+                synchronized(events) { events.add(ev) }
+                if(ev is HarnessWarning && ev.code == WarningCode.NoExitSignalConfigured)
+                {
+                    station.setMaxTurns(1)
+                }
+            }
+            station = buildTestStation(maxHarnessTurns = 0)
+                .setDispatchAgent(dispatchAlwaysPicks("plain"))
+                .setEventObserver(observer)
+            station.addPath(plainPath("plain"))
+
+            station.executeLocal(MultimodalContent(text = "task"))
+
+            val warnings = synchronized(events) {
+                events.filterIsInstance<HarnessWarning>()
+                    .filter { it.code == WarningCode.NoExitSignalConfigured }
+            }
+            assertTrue(
+                warnings.isNotEmpty(),
+                "Expected NoExitSignalConfigured warning when maxTurns=0 (unlimited) and no exit mechanism exists"
+            )
+            assertTrue(
+                warnings.first().message.contains("unlimited", ignoreCase = true),
+                "Warning message should note unlimited turns when maxTurns <= 0; got: ${warnings.first().message}"
+            )
+        }
+    }
 }

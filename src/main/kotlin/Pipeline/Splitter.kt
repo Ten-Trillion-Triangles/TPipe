@@ -57,12 +57,36 @@ class Splitter: P2PInterface
 
     private var parentInterface: P2PInterface? = null
 
+    @kotlinx.serialization.Transient
+    @Volatile
+    private var messageFunction: (suspend (message: Any, splitter: Splitter) -> Any?)? = null
+
     override fun setParentInterface(parent: P2PInterface)
     {
         parentInterface = parent
     }
 
     override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
+    /**
+     * Sets the DITL message hook invoked when [sendMessage] is called on this splitter.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     * @return This [Splitter] instance for method chaining.
+     */
+    fun setMessageFunction(func: (suspend (message: Any, splitter: Splitter) -> Any?)?): Splitter
+    {
+        messageFunction = func
+        return this
+    }
+
+    /**
+     * Invokes this splitter's [messageFunction] if bound.
+     *
+     * @param message Arbitrary message payload.
+     * @return Response returned by the hook, or `null` if no hook is bound.
+     */
+    override suspend fun sendMessage(message: Any): Any? = messageFunction?.invoke(message, this)
 
     override suspend fun executeLocal(content: MultimodalContent): MultimodalContent
     {

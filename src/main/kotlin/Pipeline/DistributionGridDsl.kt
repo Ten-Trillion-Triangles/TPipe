@@ -501,6 +501,7 @@ class DistributionGridBuilder<S : GridStage> @PublishedApi internal constructor(
             grid.setOutboundMemoryHook(hooks.outboundMemoryHook)
             grid.setFailureHook(hooks.failureHook)
             grid.setOutcomeTransformationHook(hooks.outcomeTransformationHook)
+            grid.setMessageFunction(hooks.messageFunction)
         }
 
         operationsConfiguration?.let { operations ->
@@ -710,7 +711,8 @@ internal data class DistributionGridHooksConfiguration(
     var afterPeerResponseHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
     var outboundMemoryHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
     var failureHook: (suspend (DistributionGridEnvelope) -> DistributionGridEnvelope)? = null,
-    var outcomeTransformationHook: (suspend (com.TTT.Pipe.MultimodalContent, DistributionGridEnvelope) -> com.TTT.Pipe.MultimodalContent)? = null
+    var outcomeTransformationHook: (suspend (com.TTT.Pipe.MultimodalContent, DistributionGridEnvelope) -> com.TTT.Pipe.MultimodalContent)? = null,
+    var messageFunction: (suspend (message: Any, grid: DistributionGrid) -> Any?)? = null
 )
 
 internal data class DistributionGridOperationsConfiguration(
@@ -1283,6 +1285,11 @@ class DistributionGridHooksDsl
     fun outcomeTransformation(hook: suspend (com.TTT.Pipe.MultimodalContent, DistributionGridEnvelope) -> com.TTT.Pipe.MultimodalContent)
     {
         configuration.outcomeTransformationHook = hook
+    }
+
+    fun messageFunction(func: suspend (message: Any, grid: DistributionGrid) -> Any?)
+    {
+        configuration.messageFunction = func
     }
 
     internal fun build(): DistributionGridHooksConfiguration = configuration

@@ -305,4 +305,38 @@ class TodoInjectionPointTest
         assertTrue(pipe.copySystemToUserPromptForTest())
         assertTrue(pipe.getPrompt().contains("Build the first thing"))
     }
+
+    @Test
+    fun embeddedConversationHistoryMarkerSplicesTodoWithoutDroppingSurroundingText() = runBlocking {
+        val key = "todo-placement-embedded-history"
+        seedTodoPage(key)
+        val history = ConverseHistory().apply {
+            add(ConverseRole.user, MultimodalContent(text = "The user ask."))
+        }
+        val wrappedText = buildString {
+            append("Original prompt text.\n\n")
+            append("[TURN SUMMARY]\nSummary text.\n[/TURN SUMMARY]\n\n")
+            append("Select the next path to invoke.\n\n")
+            append("[CONVERSATION HISTORY]\n")
+            append(serializeConverseHistory(history))
+            append("\n[/CONVERSATION HISTORY]\n\n")
+            append("[LATEST PRIOR AGENT OUTPUT]\nLatest output.\n[/LATEST PRIOR AGENT OUTPUT]")
+        }
+        val pipe = TestPipe().apply {
+            setTodoListPageKey(key)
+            setTodoInjectionPoint(TodoInjectionPoint.AfterUserPromptWithConverse)
+            applySystemPrompt()
+        }
+        val content = MultimodalContent(text = wrappedText)
+        pipe.injectTPipeTodo(content)
+
+        assertTrue(content.text.contains("Original prompt text."))
+        assertTrue(content.text.contains("[TURN SUMMARY]\nSummary text.\n[/TURN SUMMARY]"))
+        assertTrue(content.text.contains("[LATEST PRIOR AGENT OUTPUT]\nLatest output.\n[/LATEST PRIOR AGENT OUTPUT]"))
+        val startIdx = content.text.indexOf("[CONVERSATION HISTORY]") + "[CONVERSATION HISTORY]".length
+        val endIdx = content.text.indexOf("[/CONVERSATION HISTORY]")
+        val updated = deserialize<ConverseHistory>(content.text.substring(startIdx, endIdx).trim())!!
+        assertEquals(2, updated.history.size)
+        assertTrue(updated.history[1].content.text.contains("Build the first thing"))
+    }
 }

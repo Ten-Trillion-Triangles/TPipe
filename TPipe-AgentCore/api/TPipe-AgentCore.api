@@ -582,6 +582,7 @@ public final class com/TTT/AgentCore/harness/AgentCoreHarnessAgent : com/TTT/P2P
 	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
 	public fun getTopLevelParentInterface ()Lcom/TTT/P2P/P2PInterface;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
@@ -1426,6 +1427,7 @@ public final class com/TTT/AgentCore/runtime/AgentCoreRuntimeAgent : com/TTT/P2P
 	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
 	public fun getTopLevelParentInterface ()Lcom/TTT/P2P/P2PInterface;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V

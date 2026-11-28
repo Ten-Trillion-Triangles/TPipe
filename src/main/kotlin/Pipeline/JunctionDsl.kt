@@ -462,6 +462,18 @@ class JunctionBuilder<S : JunctionStage> @PublishedApi internal constructor(
     }
 
     /**
+     * Configure an optional DITL message hook invoked via [P2PInterface.sendMessage].
+     *
+     * @param func The message hook receiving `(message, junction)` and returning an optional response.
+     * @return This builder for chaining.
+     */
+    fun messageFunction(func: suspend (message: Any, junction: Junction) -> Any?): JunctionBuilder<S>
+    {
+        junction.setMessageFunction(func)
+        return this
+    }
+
+    /**
      * Configure the planner role for workflow-oriented Junction execution.
      *
      * @param roleName Stable planner routing name.

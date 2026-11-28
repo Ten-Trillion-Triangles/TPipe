@@ -91,6 +91,14 @@ var pipelineCompletionCallBack: (suspend (Pipeline, MultimodalContent) -> Unit)?
 ```
 Callback function executed when the entire pipeline completes execution.
 
+**`messageFunction`**
+```kotlin
+@kotlinx.serialization.Transient
+@Volatile
+var messageFunction: (suspend (message: Any, pipeline: Pipeline) -> Any?)? = null
+```
+Optional DITL message hook invoked via `P2PInterface.sendMessage(message)`. Receives the incoming message payload and this live `Pipeline` instance, returning an optional `Any?` response.
+
 ## Public Functions
 
 ### Configuration
@@ -114,6 +122,16 @@ val pipeline = Pipeline()
         // Add dynamic context based on input
         context.addContextElement("inputType", detectInputType(content.text))
     }
+```
+
+#### `setMessageFunction(func: (suspend (message: Any, pipeline: Pipeline) -> Any?)?): Pipeline`
+Sets the DITL message hook invoked when `sendMessage(message)` is called on this pipeline. Pass `null` to clear the binding. Returns `this` for chaining.
+
+```kotlin
+pipeline.setMessageFunction { message, self ->
+    self.pipeMetaData["externalSignal"] = message
+    "received:${self.pipelineName}"
+}
 ```
 
 #### `setPipelineCompletionCallback(func: suspend (Pipeline, MultimodalContent) -> Unit): Pipeline`
@@ -446,6 +464,9 @@ Returns reference to parent container.
 
 #### `getPipelinesFromInterface(): List<Pipeline>`
 Returns list containing this pipeline (P2P interface requirement).
+
+#### `sendMessage(message: Any): Any?` (suspend)
+Invokes this pipeline's `messageFunction` with `(message, this)` if bound, or returns `null` when unbound.
 
 #### `executeP2PRequest(request: P2PRequest): P2PResponse?`
 Executes P2P requests with advanced features.

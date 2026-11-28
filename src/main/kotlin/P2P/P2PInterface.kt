@@ -271,6 +271,19 @@ interface P2PInterface
     suspend fun P2PInit() { }
 
     /**
+     * Sends an arbitrary out-of-band message to this agent/container and returns the optional
+     * response produced by its bound DITL message hook (`messageFunction`).
+     *
+     * Intended as lightweight glue between an external host application and running TPipe agents.
+     * Default no-op implementation returns `null` so adapters, registries, and custom
+     * [P2PInterface] implementations remain source-compatible.
+     *
+     * @param message Arbitrary message payload to deliver to this component's message hook.
+     * @return Optional response returned by the component's message hook, or `null` if no hook is bound.
+     */
+    suspend fun sendMessage(message: Any): Any? = null
+
+    /**
      * Implemented only on [PumpStation]. Will retrieve the [com.TTT.Pipeline.PathDescriptionList] and serialize it
      * returning a string based set of results that can be injected into a pipe similar to pcp tool and p2p injectors.
      */

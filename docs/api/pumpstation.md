@@ -16,6 +16,7 @@ These are the public methods of the `P2PInterface` contract that `PumpStation` o
 | `P2PInit()` (suspend) | Initializes the harness. |
 | `executeLocal(content: MultimodalContent): MultimodalContent` (suspend) | Primary execution entry. |
 | `executeP2PRequest(request: P2PRequest): P2PResponse?` (suspend) | P2P entry. |
+| `sendMessage(message: Any): Any?` (suspend) | Invokes the station's `messageFunction` if bound, returning `Any?` (or `null`). |
 
 
 ## PathObject Class
@@ -43,6 +44,7 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 | `isRunsInBackground` | `Boolean` (getter) | `false` | True if the path runs in background. |
 | `isSuppressHistoryEmit` | `Boolean` (getter) | `false` | True if the async path's completion is suppressed from being merged into `turnHistory`. Only takes effect when `isRunsInBackground` is also true. |
 | `killSwitch` | `KillSwitch?` (override) | `null` | Per-path token cap. Propagated by the station. |
+| `messageFunction` | `(suspend (Any, PathObject) -> Any?)?` | `null` | Optional `@Transient @Volatile` DITL message hook invoked via `sendMessage`. |
 
 ### PathObject Public Functions
 
@@ -50,9 +52,11 @@ class PathObject(override var killSwitch: KillSwitch? = null) : P2PInterface
 |----------|-------------|
 | `setInternalAgent(agent: P2PInterface)` | Sets the internal agent. Overrides any agent builder. |
 | `setExecutionFunction(function: (suspend (MultimodalContent, PumpStation, ConverseHistory?, String) -> MultimodalContent)?)` | Sets the execution function. |
+| `setMessageFunction(func: (suspend (Any, PathObject) -> Any?)?): PathObject` | Sets (or clears with `null`) the path's DITL message hook. |
 | `setRunsInBackground(value: Boolean)` | Marks the path as background. |
 | `setSuppressHistoryEmit(value: Boolean)` | When `true`, an async path's `PathCompleted` event is still emitted, but the foreground drain skips merging the result into `turnHistory`. Only meaningful when the path is also `isRunsInBackground = true`. |
 | `P2PInit()` (suspend, override) | Delegates to `init()`. |
+| `sendMessage(message: Any): Any?` (suspend, override) | Invokes the path's `messageFunction` if bound, or returns `null`. |
 | `init(): PathDescriptionData` (suspend) | Validates configuration and returns the `PathDescriptionData` record. |
 | `getPathTokenUsage(): com.TTT.Pipe.TokenUsage?` | Reads the path's token usage when the internal agent is a `Pipeline`. |
 | `getPathLegacyTokenUsage(): Pair<Int, Int>` | Reads legacy `(input, output)` token counters. |
@@ -128,6 +132,7 @@ pumpStation("name") {
     goalAgent = pipeline()
     postGoalAgent = pipeline()
     postGoalFunction = { content, station -> content }
+    messageFunction = { message, station -> null }
     preInitAgent = pipeline()
     pathSafetyAgent = pipeline()
 
@@ -147,6 +152,7 @@ pumpStation("name") {
         pathMetadata = mutableMapOf<Any, Any>()
         setInternalAgent(pipeline())
         setExecutionFunction { content, station, history, summary -> ... }
+        setMessageFunction { message, path -> null }
         bindFunction("fn", ::fn)
     }
 
@@ -174,8 +180,8 @@ pumpStation("name") {
     setCompactionRolledBackFunction { backup, reason, station -> null }
 
     // Loop guards
-    setMaxHarnessTurns(10)
-    setMaxTurns(10)
+    setMaxHarnessTurns(10) // default 50; <= 0 = unlimited
+    setMaxTurns(10)        // default 50; <= 0 = unlimited
     setMaxGoalFailAttempts(3)
     setMaxConsecutiveSamePath(3)
     setMaxTotalPathCallsPerPath(10)
@@ -220,6 +226,7 @@ pumpStation("name") {
     setPathSafetyFunction { path, schema, station -> true }
     setPathLimitExceededFunction { path, reason, station -> PathLimitExceededResult(...) }
     setCompactionRolledBackFunction { backup, reason, station -> null }
+    setMessageFunction { message, station -> null }
     setExternalContextProvider { taskState -> mutableMapOf() }
 
     // Custom prompts

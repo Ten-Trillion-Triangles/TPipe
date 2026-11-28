@@ -246,6 +246,14 @@ class Pipeline : P2PInterface
      * at the start of the execution step.
      */
     var preValidationFunction: (suspend (context: ContextWindow, miniBank: MiniBank, content: MultimodalContent) -> Unit)? = null
+
+    /**
+     * Optional DITL message hook invoked via [P2PInterface.sendMessage]. Receives an arbitrary
+     * external message payload along with this live [Pipeline] instance and returns an optional response.
+     */
+    @kotlinx.serialization.Transient
+    @Volatile
+    var messageFunction: (suspend (message: Any, pipeline: Pipeline) -> Any?)? = null
     
     // Timeout Configuration Properties
     private var enablePipeTimeout = false
@@ -336,6 +344,14 @@ class Pipeline : P2PInterface
     }
 
     override fun getParentP2PInterface(): P2PInterface? = parentInterface
+
+    /**
+     * Invokes this pipeline's [messageFunction] if bound.
+     *
+     * @param message Arbitrary message payload.
+     * @return Response returned by the hook, or `null` if no hook is bound.
+     */
+    override suspend fun sendMessage(message: Any): Any? = messageFunction?.invoke(message, this)
 
     /**
      * Checks the kill switch if one is set. If token consumption exceeds the configured limits,
@@ -729,6 +745,19 @@ class Pipeline : P2PInterface
     fun setPreValidationFunction(func:  (suspend (context: ContextWindow, miniBank: MiniBank, content: MultimodalContent) -> Unit)) : Pipeline
     {
         preValidationFunction = func
+        return this
+    }
+
+    /**
+     * Sets the DITL message hook invoked when [sendMessage] is called on this pipeline.
+     *
+     * @param func The message hook, or `null` to clear the binding.
+     * @return This [Pipeline] instance for method chaining.
+     * @see [messageFunction]
+     */
+    fun setMessageFunction(func: (suspend (message: Any, pipeline: Pipeline) -> Any?)?): Pipeline
+    {
+        messageFunction = func
         return this
     }
 

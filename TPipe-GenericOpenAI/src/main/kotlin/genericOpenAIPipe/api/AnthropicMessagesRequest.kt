@@ -1,7 +1,20 @@
 package genericOpenAIPipe.api
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Request body for Anthropic /v1/messages endpoint.
@@ -25,7 +38,7 @@ import kotlinx.serialization.Serializable
  * @property systemPparam Optional system-level parameters
  * @property sessionId Session identifier for follow-up requests
  */
-@Serializable
+@Serializable(with = AnthropicMessagesRequestSerializer::class)
 data class AnthropicMessagesRequest(
     val model: String,
     val messages: List<AnthropicMessage>,
@@ -43,6 +56,140 @@ data class AnthropicMessagesRequest(
     @SerialName("session_id")
     val sessionId: String? = null
 )
+
+@Serializable
+private data class AnthropicMessagesRequestSurrogate(
+    val model: String,
+    val messages: List<AnthropicMessage>,
+    val system: String? = null,
+    @SerialName("max_tokens")
+    val maxTokens: Int,
+    val thinking: AnthropicThinkingConfig? = null,
+    @SerialName("output_config")
+    val outputConfig: AnthropicOutputConfig? = null,
+    val stream: Boolean = false,
+    @SerialName("cache_control")
+    val cacheControl: AnthropicCacheControl? = null,
+    @SerialName("system_pparam")
+    val systemPparam: Map<String, String>? = null,
+    @SerialName("session_id")
+    val sessionId: String? = null
+)
+
+/**
+ * Custom serializer for [AnthropicMessagesRequest] that emits `"system"` as a
+ * JSON array of [AnthropicSystemBlock] when [AnthropicMessagesRequest.systemBlocks]
+ * is non-null (matching Anthropic and MiniMax `/anthropic/v1/messages` wire format),
+ * and deserializes either a string or array `"system"` field cleanly.
+ */
+object AnthropicMessagesRequestSerializer : KSerializer<AnthropicMessagesRequest>
+{
+    private val surrogateSerializer = AnthropicMessagesRequestSurrogate.serializer()
+    private val systemBlocksSerializer = ListSerializer(AnthropicSystemBlock.serializer())
+
+    override val descriptor: SerialDescriptor = surrogateSerializer.descriptor
+
+    override fun serialize(encoder: Encoder, value: AnthropicMessagesRequest)
+    {
+        val surrogate = AnthropicMessagesRequestSurrogate(
+            model = value.model,
+            messages = value.messages,
+            system = if(value.systemBlocks != null) null else value.system,
+            maxTokens = value.maxTokens,
+            thinking = value.thinking,
+            outputConfig = value.outputConfig,
+            stream = value.stream,
+            cacheControl = value.cacheControl,
+            systemPparam = value.systemPparam,
+            sessionId = value.sessionId
+        )
+
+        if(encoder !is JsonEncoder || value.systemBlocks == null)
+        {
+            encoder.encodeSerializableValue(surrogateSerializer, surrogate)
+            return
+        }
+
+        val baseObj = encoder.json.encodeToJsonElement(surrogateSerializer, surrogate) as JsonObject
+        val blocksElem = encoder.json.encodeToJsonElement(systemBlocksSerializer, value.systemBlocks)
+        val merged = buildJsonObject {
+            for((k, v) in baseObj)
+            {
+                if(k != "system")
+                {
+                    put(k, v)
+                }
+            }
+            put("system", blocksElem)
+        }
+        encoder.encodeJsonElement(merged)
+    }
+
+    override fun deserialize(decoder: Decoder): AnthropicMessagesRequest
+    {
+        if(decoder !is JsonDecoder)
+        {
+            val surrogate = decoder.decodeSerializableValue(surrogateSerializer)
+            return AnthropicMessagesRequest(
+                model = surrogate.model,
+                messages = surrogate.messages,
+                system = surrogate.system,
+                systemBlocks = null,
+                maxTokens = surrogate.maxTokens,
+                thinking = surrogate.thinking,
+                outputConfig = surrogate.outputConfig,
+                stream = surrogate.stream,
+                cacheControl = surrogate.cacheControl,
+                systemPparam = surrogate.systemPparam,
+                sessionId = surrogate.sessionId
+            )
+        }
+
+        val element = decoder.decodeJsonElement()
+        val obj = element as JsonObject
+        val systemElem = obj["system"]
+        val systemBlocks = if(systemElem is JsonArray)
+        {
+            decoder.json.decodeFromJsonElement(systemBlocksSerializer, systemElem)
+        }
+        else
+        {
+            null
+        }
+        val systemString = if(systemElem != null && systemElem !is JsonArray)
+        {
+            systemElem.jsonPrimitive.content
+        }
+        else
+        {
+            null
+        }
+
+        val filteredObj = buildJsonObject {
+            for((k, v) in obj)
+            {
+                if(k != "system" && k != "systemBlocks")
+                {
+                    put(k, v)
+                }
+            }
+        }
+        val surrogate = decoder.json.decodeFromJsonElement(surrogateSerializer, filteredObj)
+        return AnthropicMessagesRequest(
+            model = surrogate.model,
+            messages = surrogate.messages,
+            system = systemString,
+            systemBlocks = systemBlocks,
+            maxTokens = surrogate.maxTokens,
+            thinking = surrogate.thinking,
+            outputConfig = surrogate.outputConfig,
+            stream = surrogate.stream,
+            cacheControl = surrogate.cacheControl,
+            systemPparam = surrogate.systemPparam,
+            sessionId = surrogate.sessionId
+        )
+    }
+}
 
 /**
  * Anthropic Messages thinking configuration.
@@ -81,8 +228,10 @@ data class AnthropicOutputConfig(
  * @property ttl Time-to-live: "5m" (default, 5 minutes) or "1h" (1 hour).
  *        Note: MiniMax ignores this field and always uses 5 minutes.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class AnthropicCacheControl(
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     @SerialName("type")
     val type: String = "ephemeral",
     val ttl: String? = null
@@ -101,8 +250,10 @@ data class AnthropicCacheControl(
  * @property cacheControl Optional cache control marker for explicit caching.
  *        When set, this block marks the end of the cacheable prefix.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class AnthropicSystemBlock(
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     @SerialName("type")
     val type: String = "text",
     val text: String,
@@ -135,18 +286,23 @@ sealed class AnthropicContentBlock {
     @Serializable
     @SerialName("text")
     data class TextBlock(
-        val text: String
+        val text: String,
+        @SerialName("cache_control")
+        val cacheControl: AnthropicCacheControl? = null
     ) : AnthropicContentBlock()
 
     /**
      * Image content block for multi-modal input.
      *
      * @property source Image source (base64 or URL)
+     * @property cacheControl Optional explicit cache control breakpoint.
      */
     @Serializable
     @SerialName("image")
     data class ImageBlock(
-        val source: ImageSource
+        val source: ImageSource,
+        @SerialName("cache_control")
+        val cacheControl: AnthropicCacheControl? = null
     ) : AnthropicContentBlock()
 }
 

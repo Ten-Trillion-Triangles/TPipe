@@ -274,6 +274,8 @@ public final class com/TTT/Context/ContextBank {
 	public final fun registerWriteBackFunction (Ljava/lang/String;Lkotlin/jvm/functions/Function3;)V
 	public final fun removeRetrievalFunction (Ljava/lang/String;)V
 	public final fun removeWriteBackFunction (Ljava/lang/String;)V
+	public final fun replaceTodoListSuspend (Ljava/lang/String;Lcom/TTT/Context/TodoList;Lcom/TTT/Context/StorageMode;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun replaceTodoListSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Lcom/TTT/Context/TodoList;Lcom/TTT/Context/StorageMode;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun requireAccessSuspend (Ljava/lang/String;Lcom/TTT/Context/ContextResourceKind;Lcom/TTT/Context/ContextAccessOperation;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun requireAccessSuspend$default (Lcom/TTT/Context/ContextBank;Ljava/lang/String;Lcom/TTT/Context/ContextResourceKind;Lcom/TTT/Context/ContextAccessOperation;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun setRemotePersistenceBackend (Lcom/TTT/Context/Persistence/ContextPersistenceBackend;)V
@@ -1153,8 +1155,8 @@ public final class com/TTT/Context/Persistence/ContextResourceMetadataBackend$De
 
 public final class com/TTT/Context/Persistence/LocalContextPersistence {
 	public fun <init> ()V
-	public fun <init> (Ljava/nio/file/Path;)V
-	public synthetic fun <init> (Ljava/nio/file/Path;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/nio/file/Path;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun deleteSavedPage (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getNamespaceRoot ()Ljava/nio/file/Path;
 	public final fun listSavedPages (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -1484,22 +1486,29 @@ public final class com/TTT/Context/TodoList$Companion {
 public final class com/TTT/Context/TodoListTask {
 	public static final field Companion Lcom/TTT/Context/TodoListTask$Companion;
 	public fun <init> ()V
-	public fun <init> (ILjava/lang/String;Ljava/lang/String;Z)V
-	public synthetic fun <init> (ILjava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (ILjava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (ILjava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()I
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Z
-	public final fun copy (ILjava/lang/String;Ljava/lang/String;Z)Lcom/TTT/Context/TodoListTask;
-	public static synthetic fun copy$default (Lcom/TTT/Context/TodoListTask;ILjava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lcom/TTT/Context/TodoListTask;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy (ILjava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;)Lcom/TTT/Context/TodoListTask;
+	public static synthetic fun copy$default (Lcom/TTT/Context/TodoListTask;ILjava/lang/String;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Context/TodoListTask;
+	public final fun effectiveStatus ()Ljava/lang/String;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCompletionRequirements ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getStatus ()Ljava/lang/String;
 	public final fun getTask ()Ljava/lang/String;
 	public final fun getTaskNumber ()I
 	public fun hashCode ()I
 	public final fun isComplete ()Z
 	public final fun setComplete (Z)V
 	public final fun setCompletionRequirements (Ljava/lang/String;)V
+	public final fun setId (Ljava/lang/String;)V
+	public final fun setStatus (Ljava/lang/String;)V
 	public final fun setTask (Ljava/lang/String;)V
 	public final fun setTaskNumber (I)V
 	public fun toString ()Ljava/lang/String;
@@ -2854,6 +2863,7 @@ public final class com/TTT/P2P/P2PHostedRegistry : com/TTT/P2P/P2PInterface {
 	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
 	public fun getTopLevelParentInterface ()Lcom/TTT/P2P/P2PInterface;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
@@ -3979,6 +3989,7 @@ public abstract interface class com/TTT/P2P/P2PInterface {
 	public fun getTokenBudgetSettings ()Lcom/TTT/Pipe/TokenBudgetSettings;
 	public fun getTopLevelParentInterface ()Lcom/TTT/P2P/P2PInterface;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public abstract fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
@@ -4015,6 +4026,7 @@ public final class com/TTT/P2P/P2PInterface$DefaultImpls {
 	public static fun getTokenBudgetSettings (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipe/TokenBudgetSettings;
 	public static fun getTopLevelParentInterface (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/P2P/P2PInterface;
 	public static fun removeStreamingCallbackRecursive (Lcom/TTT/P2P/P2PInterface;Lkotlin/jvm/functions/Function2;)V
+	public static fun sendMessage (Lcom/TTT/P2P/P2PInterface;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static fun setContainerObject (Lcom/TTT/P2P/P2PInterface;Ljava/lang/Object;)V
 	public static fun setConverseRoleRecursive (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/Context/ConverseRole;)V
 	public static fun setP2pDescription (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;)V
@@ -4948,6 +4960,7 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	protected final fun getMaxTokens ()I
 	protected final fun getMemoryIntrospectionConfig ()Lcom/TTT/Context/MemoryIntrospectionConfig;
 	protected final fun getMergedPcpJsonInstructions ()Ljava/lang/String;
+	public final fun getMessageFunction ()Lkotlin/jvm/functions/Function3;
 	protected final fun getMetaPageKeys ()Ljava/lang/String;
 	public final fun getMiddlePromptForReasoning ()Ljava/lang/String;
 	protected final fun getMiddlePromptInstructions ()Ljava/lang/String;
@@ -5087,6 +5100,7 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	public final fun requireJsonPromptInjection (Z)Lcom/TTT/Pipe/Pipe;
 	public static synthetic fun requireJsonPromptInjection$default (Lcom/TTT/Pipe/Pipe;ZILjava/lang/Object;)Lcom/TTT/Pipe/Pipe;
 	public final fun selectGlobalContextMode ()Ljava/lang/String;
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	protected final fun setAllowEmptyContentObject (Z)V
 	protected final fun setAllowEmptyUserPrompt (Z)V
 	protected final fun setAllowMaxTokenOverflow (Z)V
@@ -5159,6 +5173,8 @@ public abstract class com/TTT/Pipe/Pipe : com/TTT/P2P/P2PInterface, com/TTT/Pipe
 	protected final fun setMemoryIntrospectionConfig (Lcom/TTT/Context/MemoryIntrospectionConfig;)V
 	public final fun setMergedPcpJsonInstructions (Ljava/lang/String;)Lcom/TTT/Pipe/Pipe;
 	protected final fun setMergedPcpJsonInstructions (Ljava/lang/String;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipe/Pipe;
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setMetaPageKeys (Ljava/lang/String;)Lcom/TTT/Pipe/Pipe;
 	protected final fun setMetaPageKeys (Ljava/lang/String;)V
 	public final fun setMiddlePrompt (Ljava/lang/String;)Lcom/TTT/Pipe/Pipe;
@@ -8309,10 +8325,12 @@ public final class com/TTT/Pipeline/Connector : com/TTT/P2P/P2PInterface {
 	public final fun getTraceReport (Lcom/TTT/Debug/TraceFormat;)Ljava/lang/String;
 	public static synthetic fun getTraceReport$default (Lcom/TTT/Pipeline/Connector;Lcom/TTT/Debug/TraceFormat;ILjava/lang/Object;)Ljava/lang/String;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public final fun setDefaultPath (Ljava/lang/Object;)Lcom/TTT/Pipeline/Connector;
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Connector;
 	public fun setP2pDescription (Lcom/TTT/P2P/P2PDescriptor;)V
 	public fun setP2pRequirements (Lcom/TTT/P2P/P2PRequirements;)V
 	public fun setP2pTransport (Lcom/TTT/P2P/P2PTransport;)V
@@ -8736,6 +8754,7 @@ public final class com/TTT/Pipeline/DistributionGrid : com/TTT/P2P/P2PInterface 
 	public final fun resume ()V
 	public final fun resume (Ljava/lang/String;)V
 	public final fun resumeTask (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setAfterLocalWorkerHook (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/DistributionGrid;
 	public final fun setAfterPeerResponseHook (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/DistributionGrid;
 	public final fun setBeforeLocalWorkerHook (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/DistributionGrid;
@@ -8750,6 +8769,7 @@ public final class com/TTT/Pipeline/DistributionGrid : com/TTT/P2P/P2PInterface 
 	public final fun setMaxHops (I)Lcom/TTT/Pipeline/DistributionGrid;
 	public final fun setMaxSessionDuration (I)Lcom/TTT/Pipeline/DistributionGrid;
 	public final fun setMemoryPolicy (Lcom/TTT/Pipeline/DistributionGridMemoryPolicy;)Lcom/TTT/Pipeline/DistributionGrid;
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/DistributionGrid;
 	public final fun setOutboundMemoryHook (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/DistributionGrid;
 	public final fun setOutcomeTransformationHook (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/DistributionGrid;
 	public fun setP2pDescription (Lcom/TTT/P2P/P2PDescriptor;)V
@@ -9370,6 +9390,7 @@ public final class com/TTT/Pipeline/DistributionGridHooksDsl {
 	public final fun beforePeerDispatch (Lkotlin/jvm/functions/Function2;)V
 	public final fun beforeRoute (Lkotlin/jvm/functions/Function2;)V
 	public final fun failure (Lkotlin/jvm/functions/Function2;)V
+	public final fun messageFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun outboundMemory (Lkotlin/jvm/functions/Function2;)V
 	public final fun outcomeTransformation (Lkotlin/jvm/functions/Function3;)V
 }
@@ -11905,6 +11926,7 @@ public final class com/TTT/Pipeline/Junction : com/TTT/P2P/P2PInterface {
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun resume ()V
 	public final fun roundRobin ()Lcom/TTT/Pipeline/Junction;
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setActor (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;)Lcom/TTT/Pipeline/Junction;
 	public final fun setActor (Ljava/lang/String;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;)Lcom/TTT/Pipeline/Junction;
 	public static synthetic fun setActor$default (Lcom/TTT/Pipeline/Junction;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/Junction;
@@ -11920,6 +11942,7 @@ public final class com/TTT/Pipeline/Junction : com/TTT/P2P/P2PInterface {
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
 	public final fun setMaxNestedDepth (I)Lcom/TTT/Pipeline/Junction;
 	public final fun setMemoryPolicy (Lcom/TTT/Pipeline/JunctionMemoryPolicy;)Lcom/TTT/Pipeline/Junction;
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Junction;
 	public final fun setModerator (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;)Lcom/TTT/Pipeline/Junction;
 	public final fun setModerator (Ljava/lang/String;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;)Lcom/TTT/Pipeline/Junction;
 	public static synthetic fun setModerator$default (Lcom/TTT/Pipeline/Junction;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/Junction;
@@ -11989,6 +12012,7 @@ public final class com/TTT/Pipeline/JunctionBuilder {
 	public static synthetic fun killSwitch$default (Lcom/TTT/Pipeline/JunctionBuilder;Ljava/lang/Integer;Ljava/lang/Integer;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/JunctionBuilder;
 	public final fun maxNestedDepth (I)Lcom/TTT/Pipeline/JunctionBuilder;
 	public final fun memoryPolicy (Lkotlin/jvm/functions/Function1;)Lcom/TTT/Pipeline/JunctionBuilder;
+	public final fun messageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/JunctionBuilder;
 	public final fun moderator (Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;)Lcom/TTT/Pipeline/JunctionBuilder;
 	public final fun moderator (Ljava/lang/String;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;)Lcom/TTT/Pipeline/JunctionBuilder;
 	public static synthetic fun moderator$default (Lcom/TTT/Pipeline/JunctionBuilder;Lcom/TTT/P2P/P2PInterface;Lcom/TTT/P2P/P2PDescriptor;Lcom/TTT/P2P/P2PRequirements;Ljava/lang/String;ILjava/lang/Object;)Lcom/TTT/Pipeline/JunctionBuilder;
@@ -12832,6 +12856,7 @@ public final class com/TTT/Pipeline/Manifold : com/TTT/P2P/P2PInterface {
 	public final fun pause (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun resume (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public final fun setContextTruncationFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/Manifold;
 	public final fun setContextWindowSize (I)Lcom/TTT/Pipeline/Manifold;
@@ -12845,6 +12870,7 @@ public final class com/TTT/Pipeline/Manifold : com/TTT/P2P/P2PInterface {
 	public final fun setManagerTokenBudget (Lcom/TTT/Pipe/TokenBudgetSettings;)Lcom/TTT/Pipeline/Manifold;
 	public final fun setManifoldInitFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Manifold;
 	public final fun setMaxLoopIterations (Ljava/lang/Integer;)Lcom/TTT/Pipeline/Manifold;
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Manifold;
 	public final fun setP2pAgentNames (Ljava/util/List;)Lcom/TTT/Pipeline/Manifold;
 	public fun setP2pDescription (Lcom/TTT/P2P/P2PDescriptor;)V
 	public fun setP2pRequirements (Lcom/TTT/P2P/P2PRequirements;)V
@@ -12867,8 +12893,8 @@ public final class com/TTT/Pipeline/Manifold : com/TTT/P2P/P2PInterface {
 public final class com/TTT/Pipeline/ManifoldBuilder {
 	public static final field Companion Lcom/TTT/Pipeline/ManifoldBuilder$Companion;
 	public fun <init> ()V
-	public fun <init> (Lcom/TTT/Pipeline/ManagerConfiguration;Ljava/util/List;Ljava/util/List;Lcom/TTT/Pipeline/HistoryConfiguration;Lcom/TTT/Pipeline/ValidationConfiguration;Lcom/TTT/Pipeline/InitFunctionConfiguration;Lcom/TTT/Debug/TraceConfig;Lcom/TTT/Pipeline/SummaryPipelineConfiguration;Lcom/TTT/Pipeline/SummaryInjectionConfiguration;Lcom/TTT/P2P/P2PConcurrencyMode;Lcom/TTT/P2P/KillSwitch;Ljava/lang/Integer;Ljava/lang/String;)V
-	public synthetic fun <init> (Lcom/TTT/Pipeline/ManagerConfiguration;Ljava/util/List;Ljava/util/List;Lcom/TTT/Pipeline/HistoryConfiguration;Lcom/TTT/Pipeline/ValidationConfiguration;Lcom/TTT/Pipeline/InitFunctionConfiguration;Lcom/TTT/Debug/TraceConfig;Lcom/TTT/Pipeline/SummaryPipelineConfiguration;Lcom/TTT/Pipeline/SummaryInjectionConfiguration;Lcom/TTT/P2P/P2PConcurrencyMode;Lcom/TTT/P2P/KillSwitch;Ljava/lang/Integer;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/TTT/Pipeline/ManagerConfiguration;Ljava/util/List;Ljava/util/List;Lcom/TTT/Pipeline/HistoryConfiguration;Lcom/TTT/Pipeline/ValidationConfiguration;Lcom/TTT/Pipeline/InitFunctionConfiguration;Lcom/TTT/Debug/TraceConfig;Lcom/TTT/Pipeline/SummaryPipelineConfiguration;Lcom/TTT/Pipeline/SummaryInjectionConfiguration;Lcom/TTT/P2P/P2PConcurrencyMode;Lcom/TTT/P2P/KillSwitch;Ljava/lang/Integer;Ljava/lang/String;Lkotlin/jvm/functions/Function3;)V
+	public synthetic fun <init> (Lcom/TTT/Pipeline/ManagerConfiguration;Ljava/util/List;Ljava/util/List;Lcom/TTT/Pipeline/HistoryConfiguration;Lcom/TTT/Pipeline/ValidationConfiguration;Lcom/TTT/Pipeline/InitFunctionConfiguration;Lcom/TTT/Debug/TraceConfig;Lcom/TTT/Pipeline/SummaryPipelineConfiguration;Lcom/TTT/Pipeline/SummaryInjectionConfiguration;Lcom/TTT/P2P/P2PConcurrencyMode;Lcom/TTT/P2P/KillSwitch;Ljava/lang/Integer;Ljava/lang/String;Lkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun buildInternal ()Lcom/TTT/Pipeline/Manifold;
 	public final fun concurrencyMode (Lcom/TTT/P2P/P2PConcurrencyMode;)Lcom/TTT/Pipeline/ManifoldBuilder;
 	public final fun configureManifoldInternal ()Lcom/TTT/Pipeline/Manifold;
@@ -12880,6 +12906,7 @@ public final class com/TTT/Pipeline/ManifoldBuilder {
 	public final fun getKillSwitchConfiguration ()Lcom/TTT/P2P/KillSwitch;
 	public final fun getManagerConfig ()Lcom/TTT/Pipeline/ManagerConfiguration;
 	public final fun getMaxIterationsConfiguration ()Ljava/lang/Integer;
+	public final fun getMessageFunctionConfiguration ()Lkotlin/jvm/functions/Function3;
 	public final fun getSummaryInjectionConfiguration ()Lcom/TTT/Pipeline/SummaryInjectionConfiguration;
 	public final fun getSummaryPipelineConfiguration ()Lcom/TTT/Pipeline/SummaryPipelineConfiguration;
 	public final fun getTracingConfiguration ()Lcom/TTT/Debug/TraceConfig;
@@ -12893,6 +12920,7 @@ public final class com/TTT/Pipeline/ManifoldBuilder {
 	public static synthetic fun killSwitch$default (Lcom/TTT/Pipeline/ManifoldBuilder;Ljava/lang/Integer;Ljava/lang/Integer;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/TTT/Pipeline/ManifoldBuilder;
 	public final fun manager (Lkotlin/jvm/functions/Function1;)V
 	public final fun maxIterations (I)Lcom/TTT/Pipeline/ManifoldBuilder;
+	public final fun messageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/ManifoldBuilder;
 	public final fun setConcurrencyModeConfiguration (Lcom/TTT/P2P/P2PConcurrencyMode;)V
 	public final fun setHistoryConfiguration (Lcom/TTT/Pipeline/HistoryConfiguration;)V
 	public final fun setImplementationPlanConfiguration (Ljava/lang/String;)V
@@ -12900,6 +12928,7 @@ public final class com/TTT/Pipeline/ManifoldBuilder {
 	public final fun setKillSwitchConfiguration (Lcom/TTT/P2P/KillSwitch;)V
 	public final fun setManagerConfig (Lcom/TTT/Pipeline/ManagerConfiguration;)V
 	public final fun setMaxIterationsConfiguration (Ljava/lang/Integer;)V
+	public final fun setMessageFunctionConfiguration (Lkotlin/jvm/functions/Function3;)V
 	public final fun setSummaryInjectionConfiguration (Lcom/TTT/Pipeline/SummaryInjectionConfiguration;)V
 	public final fun setSummaryPipelineConfiguration (Lcom/TTT/Pipeline/SummaryPipelineConfiguration;)V
 	public final fun setTracingConfiguration (Lcom/TTT/Debug/TraceConfig;)V
@@ -13311,9 +13340,11 @@ public final class com/TTT/Pipeline/MultiConnector : com/TTT/P2P/P2PInterface {
 	public final fun getTraceReport (Lcom/TTT/Debug/TraceFormat;)Ljava/lang/String;
 	public static synthetic fun getTraceReport$default (Lcom/TTT/Pipeline/MultiConnector;Lcom/TTT/Debug/TraceFormat;ILjava/lang/Object;)Ljava/lang/String;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/MultiConnector;
 	public final fun setMode (Lcom/TTT/Pipeline/MultiConnector$ExecutionMode;)Lcom/TTT/Pipeline/MultiConnector;
 	public fun setP2pDescription (Lcom/TTT/P2P/P2PDescriptor;)V
 	public fun setP2pRequirements (Lcom/TTT/P2P/P2PRequirements;)V
@@ -13624,6 +13655,7 @@ public final class com/TTT/Pipeline/PathBlock {
 	public final fun setDispatchHint (Ljava/lang/String;)V
 	public final fun setExecutionFunction (Lkotlin/jvm/functions/Function5;)V
 	public final fun setInternalAgent (Lcom/TTT/P2P/P2PInterface;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setOutputCaptureFunction (Lkotlin/jvm/functions/Function2;)V
 	public final fun setPathMetadata (Ljava/util/Map;)V
 	public final fun setPcpSchema (Lcom/TTT/PipeContextProtocol/PcpContext;)V
@@ -13651,6 +13683,7 @@ public final class com/TTT/Pipeline/PathBuilder {
 	public final fun setDispatchHint (Ljava/lang/String;)V
 	public final fun setExecutionFunction (Lkotlin/jvm/functions/Function5;)V
 	public final fun setInternalAgent (Lcom/TTT/P2P/P2PInterface;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setOutputCaptureFunction (Lkotlin/jvm/functions/Function2;)V
 	public final fun setPathMetadata (Ljava/util/Map;)V
 	public final fun setPcpSchema (Lcom/TTT/PipeContextProtocol/PcpContext;)V
@@ -13916,12 +13949,15 @@ public class com/TTT/Pipeline/PathObject : com/TTT/P2P/P2PInterface {
 	public fun clearStreamingCallbacksRecursive ()V
 	public fun enablePipeTimeoutRecursive (ZJZI)V
 	public fun enableStallDetectorRecursive (Lcom/TTT/Pipe/StreamingStallConfig;Lkotlin/jvm/functions/Function2;)V
+	public final fun executeDelegated (Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/Context/ConverseHistory;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun executeDelegated$default (Lcom/TTT/Pipeline/PathObject;Lcom/TTT/Pipe/MultimodalContent;Lcom/TTT/Pipeline/PumpStation;Lcom/TTT/Context/ConverseHistory;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public fun executeLocal (Lcom/TTT/Pipe/MultimodalContent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun executeP2PRequest (Lcom/TTT/P2P/P2PRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun getContainerObject ()Ljava/lang/Object;
 	public fun getContextWindowFromInterface ()Lcom/TTT/Context/ContextWindow;
 	public final fun getDispatchHint ()Ljava/lang/String;
 	public fun getKillSwitch ()Lcom/TTT/P2P/KillSwitch;
+	public final fun getMessageFunction ()Lkotlin/jvm/functions/Function3;
 	public fun getMiniBankFromInterface ()Lcom/TTT/Context/MiniBank;
 	public fun getNearestPumpStationParent ()Lcom/TTT/P2P/P2PInterface;
 	public final fun getOutputCaptureFunction ()Lkotlin/jvm/functions/Function2;
@@ -13948,12 +13984,15 @@ public class com/TTT/Pipeline/PathObject : com/TTT/P2P/P2PInterface {
 	public final fun isRunsInBackground ()Z
 	public final fun isSuppressHistoryEmit ()Z
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public final fun setDispatchHint (Ljava/lang/String;)V
 	public final fun setExecutionFunction (Lkotlin/jvm/functions/Function5;)V
 	public final fun setInternalAgent (Lcom/TTT/P2P/P2PInterface;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/PathObject;
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setOutputCaptureFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/PathObject;
 	public final fun setOutputCaptureFunction (Lkotlin/jvm/functions/Function2;)V
 	public fun setP2pDescription (Lcom/TTT/P2P/P2PDescriptor;)V
@@ -14331,6 +14370,7 @@ public final class com/TTT/Pipeline/Pipeline : com/TTT/P2P/P2PInterface {
 	public final fun getLastDecisionPipeName ()Ljava/lang/String;
 	public final fun getLastError ()Lcom/TTT/Pipe/PipeError;
 	public final fun getLastFailedPipe ()Lcom/TTT/Pipe/Pipe;
+	public final fun getMessageFunction ()Lkotlin/jvm/functions/Function3;
 	public final fun getMiniBank ()Lcom/TTT/Context/MiniBank;
 	public fun getMiniBankFromInterface ()Lcom/TTT/Context/MiniBank;
 	public fun getNearestPumpStationParent ()Lcom/TTT/P2P/P2PInterface;
@@ -14380,6 +14420,7 @@ public final class com/TTT/Pipeline/Pipeline : com/TTT/P2P/P2PInterface {
 	public final fun pauseWhen (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Pipeline;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun resume (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setConditionalPauseFunction (Lkotlin/jvm/functions/Function3;)V
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public final fun setContent (Lcom/TTT/Pipe/MultimodalContent;)V
@@ -14393,6 +14434,8 @@ public final class com/TTT/Pipeline/Pipeline : com/TTT/P2P/P2PInterface {
 	public final fun setLastDecisionPipeName (Ljava/lang/String;)V
 	public final fun setLastError (Lcom/TTT/Pipe/PipeError;)V
 	public final fun setLastFailedPipe (Lcom/TTT/Pipe/Pipe;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Pipeline;
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setMiniBank (Lcom/TTT/Context/MiniBank;)Lcom/TTT/Pipeline/Pipeline;
 	public final fun setMiniBank (Lcom/TTT/Context/MiniBank;)V
 	public final fun setOutputTokensSpent (I)V
@@ -14652,6 +14695,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun resume (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun retrieveStash (Ljava/lang/String;)Lcom/TTT/Context/ConverseData;
 	public final fun saveSnapshot ()Lcom/TTT/Pipeline/PumpStationSnapshot;
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setAsyncAgentsAppendToTurnHistory (Z)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setAsyncJobGracePeriodMs (Ljava/lang/Long;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setAsyncJobsScopedToStation (Z)Lcom/TTT/Pipeline/PumpStation;
@@ -14682,6 +14726,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setGoalAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setGoalHistorySource (Lcom/TTT/Enums/PumpStationGoalHistorySource;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setGoalSystemPrompt (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setGoalTodoListInstructions (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setHealthAgent (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setHealthAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setHealthAgentConcurrencyMode (Lcom/TTT/Pipeline/PumpStationConcurrencyMode;)Lcom/TTT/Pipeline/PumpStation;
@@ -14700,6 +14745,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setJudgeJsonContractEnabled (Z)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setJudgeRunMode (Lcom/TTT/Pipeline/PumpStationJudgeRunMode;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setJudgeSystemPrompt (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setJudgeTodoListInstructions (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
 	public final fun setLatestContentInjectionEnabled (Z)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setLatestContentPosition (Lcom/TTT/Enums/PumpStationLatestContentPosition;)Lcom/TTT/Pipeline/PumpStation;
@@ -14724,6 +14770,7 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public final fun setMaxTurns (I)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setMemoryManagementMode (Lcom/TTT/Pipeline/PumpStationMemoryManagementMode;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setMemoryUpdateTimeoutMs (J)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setMetaPageKeys (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setOnContextTruncated (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/PumpStation;
 	public fun setP2pDescription (Lcom/TTT/P2P/P2PDescriptor;)V
@@ -14774,7 +14821,11 @@ public final class com/TTT/Pipeline/PumpStation : com/TTT/P2P/P2PInterface {
 	public fun setStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
 	public final fun setSummaryAgent (Lcom/TTT/P2P/P2PInterface;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setSummaryAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setSummaryTodoListInstructions (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setSystemTask (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setTodoInjectionPoint (Lcom/TTT/Enums/TodoInjectionPoint;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setTodoListInstructions (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
+	public final fun setTodoListPageKey (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public fun setTokenBudgetRecursive (Lcom/TTT/Pipe/TokenBudgetSettings;)V
 	public final fun setUserGuidelines (Ljava/lang/String;)Lcom/TTT/Pipeline/PumpStation;
 	public final fun setWaitAllPathsOnMultiDispatch (Z)Lcom/TTT/Pipeline/PumpStation;
@@ -14865,6 +14916,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun getMaxTurns ()I
 	public final fun getMemoryManagementMode ()Lcom/TTT/Pipeline/PumpStationMemoryManagementMode;
 	public final fun getMemoryUpdateTimeoutMs ()J
+	public final fun getMessageFunction ()Lkotlin/jvm/functions/Function3;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getOnContextTruncated ()Lkotlin/jvm/functions/Function3;
 	public final fun getPathExecutionShape ()Lcom/TTT/Pipeline/PathExecutionShape;
@@ -14905,6 +14957,9 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun getSummaryAgent ()Lcom/TTT/P2P/P2PInterface;
 	public final fun getSummaryAgentBuilderFunction ()Lkotlin/jvm/functions/Function2;
 	public final fun getSystemTask ()Ljava/lang/String;
+	public final fun getTodoInjectionPoint ()Lcom/TTT/Enums/TodoInjectionPoint;
+	public final fun getTodoListInstructions ()Ljava/lang/String;
+	public final fun getTodoPageKey ()Ljava/lang/String;
 	public final fun getTracingConfiguration ()Lcom/TTT/Debug/TraceConfig;
 	public final fun getUserGuidelines ()Ljava/lang/String;
 	public final fun getWaitConfiguration ()Lcom/TTT/Pipeline/PumpStationWaitConfiguration;
@@ -14983,6 +15038,7 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun setMaxTurns (I)V
 	public final fun setMemoryManagementMode (Lcom/TTT/Pipeline/PumpStationMemoryManagementMode;)V
 	public final fun setMemoryUpdateTimeoutMs (J)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setOnContextTruncated (Lkotlin/jvm/functions/Function3;)V
 	public final fun setPathExecutionShape (Lcom/TTT/Pipeline/PathExecutionShape;)V
 	public final fun setPathLimitExceededFunction (Lkotlin/jvm/functions/Function4;)V
@@ -15025,6 +15081,9 @@ public final class com/TTT/Pipeline/PumpStationBuilder {
 	public final fun setSummaryAgent (Lcom/TTT/P2P/P2PInterface;)V
 	public final fun setSummaryAgentBuilderFunction (Lkotlin/jvm/functions/Function2;)V
 	public final fun setSystemTask (Ljava/lang/String;)V
+	public final fun setTodoInjectionPoint (Lcom/TTT/Enums/TodoInjectionPoint;)V
+	public final fun setTodoListInstructions (Ljava/lang/String;)V
+	public final fun setTodoPageKey (Ljava/lang/String;)V
 	public final fun setTracingConfiguration (Lcom/TTT/Debug/TraceConfig;)V
 	public final fun setUserGuidelines (Ljava/lang/String;)V
 	public final fun setWaitConfiguration (Lcom/TTT/Pipeline/PumpStationWaitConfiguration;)V
@@ -15954,6 +16013,7 @@ public final class com/TTT/Pipeline/ReservePathBlock {
 	public final fun revealWhen (Lkotlin/jvm/functions/Function2;)V
 	public final fun setDescription (Ljava/lang/String;)V
 	public final fun setInternalAgent (Lcom/TTT/P2P/P2PInterface;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)V
 	public final fun setPathMetadata (Ljava/util/Map;)V
 	public final fun setPcpSchema (Lcom/TTT/PipeContextProtocol/PcpContext;)V
 	public final fun setRisk (Lcom/TTT/Pipeline/PathRiskLevel;)V
@@ -16214,9 +16274,11 @@ public final class com/TTT/Pipeline/Splitter : com/TTT/P2P/P2PInterface {
 	public final fun removeKey (Ljava/lang/Object;)Lcom/TTT/Pipeline/Splitter;
 	public final fun removePipeline (Lcom/TTT/Pipeline/Pipeline;)Lcom/TTT/Pipeline/Splitter;
 	public fun removeStreamingCallbackRecursive (Lkotlin/jvm/functions/Function2;)V
+	public fun sendMessage (Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun setContainerObject (Ljava/lang/Object;)V
 	public fun setConverseRoleRecursive (Lcom/TTT/Context/ConverseRole;)V
 	public fun setKillSwitch (Lcom/TTT/P2P/KillSwitch;)V
+	public final fun setMessageFunction (Lkotlin/jvm/functions/Function3;)Lcom/TTT/Pipeline/Splitter;
 	public final fun setOnPipeLineFinish (Lkotlin/jvm/functions/Function4;)V
 	public final fun setOnPipelineFinish (Lkotlin/jvm/functions/Function4;)Lcom/TTT/Pipeline/Splitter;
 	public final fun setOnSplitterFinish (Lkotlin/jvm/functions/Function2;)Lcom/TTT/Pipeline/Splitter;
